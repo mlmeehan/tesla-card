@@ -21,6 +21,10 @@ pressures, a map, and the media player.
   of identical buttons.
 - **Charging** — battery summary, start/stop, draggable charge-limit and
   charge-current sliders, plus power / rate / energy / time-to-full / voltage.
+- **Energy** — when a Tesla **Powerwall** / **Wall Connector** is detected, a
+  live power-flow diagram (solar · grid · Powerwall · home · car) with animated
+  directional flows, plus backup-reserve, operation-mode and charging-session
+  readouts. The tab auto-appears only when you have an energy site.
 - **Climate** — temperature stepper, per-seat heater cyclers (Off→Low→Med→High),
   steering-wheel heater, defrost, and cabin-overheat protection.
 - **Tyres** — pressures laid out at each corner of the car with low-pressure
@@ -30,6 +34,9 @@ pressures, a map, and the media player.
 - **Media** — now-playing, transport, and a volume slider.
 - **Graceful asleep state** — when the vehicle is offline the card dims rather
   than showing a wall of *Unknown*.
+- **Built-in car render** — ships with a clean, recolorable EV illustration, so
+  a zero-config card looks right immediately. Swap in your own `image:` or a
+  layered `body:` render whenever you like.
 - **Zero entity config** — auto-detects your Tesla device and resolves every
   entity by its stable function-name, so it works whatever your vehicle is
   called. Every key is still overridable.
@@ -68,14 +75,29 @@ resources:
 
 ## Usage
 
+The minimal card — it auto-detects your Tesla and shows a clean built-in car
+illustration, so there's nothing else to configure:
+
 ```yaml
 type: custom:tesla-card
 name: Model Y
-image: /local/model_y.png
 ```
 
-Drop your car render (a transparent PNG works best) into `config/www/` and
-point `image:` at it.
+The built-in render recolours to any paint (see [Paint](#paint)):
+
+```yaml
+type: custom:tesla-card
+name: Model Y
+paint: Deep Blue
+```
+
+Prefer your own render? Point `image:` at a file in `config/www/` (a transparent
+PNG works best):
+
+```yaml
+type: custom:tesla-card
+image: /local/model_y.png
+```
 
 ## Options
 
@@ -83,10 +105,13 @@ point `image:` at it.
 | -------------------- | ------- | ---------------- | ---------------------------------------------------- |
 | `type`               | string  | —                | `custom:tesla-card` (required).                      |
 | `name`               | string  | `Model Y`        | Vehicle name shown in the hero.                      |
-| `image`              | string  | `/local/model_y.png` | Car render URL.                                  |
+| `image`              | string  | _built-in EV_    | Custom flat car render URL. When unset (and no `body`), the card shows its built-in recolorable EV illustration. |
+| `body`               | map     | _none_           | Recolorable car-body layer set — see [Recolorable car body](#recolorable-car-body). |
+| `paint`              | string \| map | _silver_   | Body colour for the built-in render or a `body` layer set: a CSS colour, a Tesla colour name, or an entity source — see [Paint](#paint). |
+| `energy`             | map     | _auto_           | Energy-site / Wall-Connector wiring + hide switch — see [Energy panel](#energy-panel). |
 | `device`             | string  | _auto_           | Vehicle device id or name, if you have more than one Tesla. |
 | `prefix`             | string  | _auto_           | Force the entity-id prefix slug (e.g. `model_y`). Rarely needed. |
-| `default_panel`      | string  | `charging`       | One of `climate`, `charging`, `closures`, `tyres`, `location`, `media`. |
+| `default_panel`      | string  | `charging`       | One of `climate`, `charging`, `energy`, `closures`, `tyres`, `location`, `media`. |
 | `hide_quick_actions` | boolean | `false`          | Hide the circular quick-action row.                  |
 | `hide_panels`        | boolean | `false`          | Hide the tabbed detail panels.                       |
 | `hide_commands`      | boolean | `false`          | Hide the command buttons (wake/honk/flash/…).        |
@@ -126,6 +151,101 @@ entities:
 
 The full list of keys (≈80) lives in [`src/const.ts`](src/const.ts).
 
+## Recolorable car body
+
+Out of the box the hero shows a **built-in EV illustration** that already
+recolours to any [paint](#paint) — a deliberately generic car, not modelled on
+any specific vehicle, so a fresh install looks right with zero config. Point
+`image:` at your own render to replace it, or — for a photoreal car that *also*
+recolours to any colour — supply a **layered body render** so one asset set
+covers every colour instead of one PNG per colour.
+
+```yaml
+type: custom:tesla-card
+name: Model Y
+paint: Deep Blue          # or '#2a4f93', or an entity (see Paint)
+body:
+  color: /local/tesla-card/color.webp      # base: glass, wheels, lights, shadow
+  shade: /local/tesla-card/shade.webp      # grayscale form, composited ×multiply
+  highlight: /local/tesla-card/highlight.webp  # clearcoat glints, ×screen (optional)
+  mask: /local/tesla-card/mask.png         # white = the paintable body region
+  # width: 1024   # intrinsic layer size for the viewBox (defaults to 1024×687)
+  # height: 687
+```
+
+How it composites: the `color` image is drawn as-is, then **inside the `mask`**
+the card stacks your chosen `paint`, the `shade` layer (`multiply`, so the body's
+form survives on any colour), and the `highlight` layer (`screen`, so clearcoat
+glints stay bright). All the per-vehicle geometry lives in the **mask**, so the
+renderer itself is generic.
+
+**No vehicle artwork ships with this card** — you bring your own render. The
+step-by-step pipeline for baking the four layers from a single source image is
+in **[docs/recolorable-body.md](docs/recolorable-body.md)**.
+
+> **Trademark note.** Tesla's vehicle designs are trade dress and Tesla's
+> badges/wordmark are trademarks. Use a render you have the right to use, keep it
+> for your personal install, and don't redistribute Tesla's artwork. A generic
+> EV silhouette is the safe default for anything public.
+
+### Paint
+
+`paint` colours the built-in EV render and a `body` layer set; it has no effect
+on a custom `image`, which can't be tinted. It accepts three forms:
+
+```yaml
+paint: '#2a4f93'          # 1. any CSS colour (hex, rgb(), hsl(), named…)
+paint: Deep Blue          # 2. a Tesla colour name or option code (PPSB, PMNG…)
+paint:                    # 3. read the colour live from an entity
+  entity: sensor.my_tesla_exterior_color
+  attribute: null         # optional: read this attribute instead of the state
+  map:                    # optional: extra name→colour entries (override the map)
+    My Custom Wrap: '#114b3a'
+  default: '#9aa3ad'      # used when the entity yields nothing usable
+```
+
+Recognised Tesla names include *Pearl White*, *Solid Black*, *Obsidian Black*,
+*Midnight Silver*, *Stealth Grey*, *Silver*, *Quicksilver*, *Deep Blue*, *Red
+Multi-Coat*, *Ultra Red* and *Midnight Cherry Red* (matching is
+case/space-insensitive; option codes like `PPSW`/`PBSB`/`PPSB` also work).
+
+> **Heads-up:** the official `tesla_fleet` integration does **not** expose an
+> exterior-colour entity. The entity form (3) is for a template/helper sensor
+> you create, or a colour-aware integration. With plain Tesla Fleet, just set a
+> literal colour or name.
+
+## Energy panel
+
+If you run a **Tesla Powerwall** and/or **Wall Connector**, the card adds an
+**Energy** tab with a live power-flow diagram and status tiles. Everything is
+**auto-detected** from the `tesla_fleet` / `powerwall` integration — there's
+nothing to configure in the common case; the tab simply appears when an energy
+site is found and stays hidden otherwise.
+
+To override a specific entity, or to hide the panel even when a site is detected:
+
+```yaml
+type: custom:tesla-card
+energy:
+  hide: false             # set true to suppress the Energy tab entirely
+  entities:               # override only what auto-detection gets wrong
+    solar_power: sensor.my_home_solar_power
+    battery_power: sensor.my_home_battery_power      # −charging / +discharging
+    load_power: sensor.my_home_load_power
+    grid_power: sensor.my_home_grid_power            # +import / −export
+    powerwall_level: sensor.my_home_percentage_charged
+    grid_status: sensor.my_home_grid_status
+    backup_reserve: number.my_home_backup_reserve
+    operation_mode: select.my_home_operation_mode
+    wc_power: sensor.tesla_wall_connector_power
+    wc_session: sensor.tesla_wall_connector_session_energy
+    wc_connected: binary_sensor.tesla_wall_connector_vehicle_connected
+    wc_status: sensor.tesla_wall_connector_status
+```
+
+Any key you omit is auto-resolved; any hardware you don't have is simply left
+out of the diagram.
+
 ## Development
 
 ```bash
@@ -138,8 +258,17 @@ npm run demo       # static server → http://localhost:8080/demo/
 
 The `demo/` harness renders the card against a mock `hass` object (awake /
 charging and asleep scenarios) with no Home Assistant required — handy for
-visual work. Append `?panel=climate` or `?scenario=asleep` to jump straight to
-a state.
+visual work. URL params:
+
+- `?panel=energy` (or `climate`, `closures`, …) — open a panel directly.
+- `?scenario=asleep` — the offline/dimmed state.
+- `?env=renamed` — re-prefix the vehicle entities (`my_tesla_*`) to prove
+  name-based resolution.
+- `?paint=Deep%20Blue` (or `%232f6ab0`) — tint the built-in EV render live.
+- `?image=1` — show a custom flat `<img>` instead of the built-in render.
+- `?recolor=1&paint=Deep%20Blue` — exercise the photoreal recolorable body
+  (needs your own layers in `demo/local/`, which is gitignored).
+- `?colorentity=Deep%20Blue` — drive the paint from a mock colour entity.
 
 ## License
 

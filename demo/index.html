@@ -190,6 +190,27 @@
           'button.garage_model_y_homelink': s('2026-06-14T10:00:00+00:00'),
           'button.garage_model_y_keyless_driving': s('2026-06-14T10:00:00+00:00'),
           'button.garage_model_y_play_fart': s('2026-06-14T10:00:00+00:00'),
+          // ── Tesla energy site (Powerwall "My Home") + Wall Connector ──
+          // Independent of the vehicle; not vehicle-prefixed (reprefix skips
+          // them). Scenario: car charging off solar + a little grid + battery.
+          'sensor.my_home_solar_power_2': s('6.0', { unit_of_measurement: 'kW', device_class: 'power' }),
+          'sensor.my_home_battery_power_2': s('1.5', { unit_of_measurement: 'kW', device_class: 'power' }),
+          'sensor.my_home_load_power_2': s('1.0', { unit_of_measurement: 'kW', device_class: 'power' }),
+          'sensor.my_home_grid_power_2': s('0.9', { unit_of_measurement: 'kW', device_class: 'power' }),
+          'sensor.my_home_percentage_charged_2': s('44', { unit_of_measurement: '%', device_class: 'battery' }),
+          'sensor.my_home_grid_status': s('on_grid'),
+          'number.my_home_backup_reserve_2': s('20', { min: 0, max: 100, step: 1, unit_of_measurement: '%' }),
+          'select.my_home_operation_mode_2': s('self_consumption', {
+            options: ['self_consumption', 'autonomous', 'backup'],
+          }),
+          'sensor.tesla_wall_connector_total_power': s('7.4', { unit_of_measurement: 'kW', device_class: 'power' }),
+          'sensor.tesla_wall_connector_session_energy': s('12.5', { unit_of_measurement: 'kWh', device_class: 'energy' }),
+          'binary_sensor.tesla_wall_connector_vehicle_connected': s('on'),
+          'sensor.tesla_wall_connector_status': s('charging'),
+          // Optional exterior-colour helper sensor for entity-driven paint
+          // (?colorentity=…). The official tesla_fleet does NOT expose this; it
+          // stands in for a user template/helper or a colour-aware integration.
+          'sensor.tesla_exterior_color': s(colorEntity || 'unknown'),
         };
       }
 
@@ -266,6 +287,8 @@
       let asleep = params.get('scenario') === 'asleep';
       let envKey = params.get('env') === 'renamed' ? 'renamed' : 'default';
       const startPanel = params.get('panel') || 'charging';
+      // ?colorentity=Deep%20Blue (or PPSB, #hex…) drives paint from an entity.
+      const colorEntity = params.get('colorentity');
 
       let states = {};
       let registry = { entities: {}, devices: {} };
@@ -276,13 +299,40 @@
       }
       rebuild();
 
+      // Hero render modes:
+      //   default          → bundled generic-EV silhouette (recolours via ?paint=)
+      //   ?image=1         → a custom flat <img> (the legacy ./car.svg fallback)
+      //   ?recolor=1 / ?colorentity=… → photoreal recolor stack from ./local/
+      //                       (gitignored, bring-your-own art)
+      const recolor = params.get('recolor') === '1' || !!colorEntity;
+      const wantImage = params.get('image') === '1';
+      const paint = params.get('paint');
+
       const card = document.createElement('tesla-card');
-      card.setConfig({
+      const cardConfig = {
         type: 'custom:tesla-card',
         name: 'Model Y',
-        image: './car.svg',
         default_panel: startPanel,
-      });
+      };
+      if (recolor) {
+        // colorentity → PaintSource (read live from an entity, mapped via the
+        // built-in Tesla colour map); otherwise a literal colour string.
+        cardConfig.paint = colorEntity
+          ? { entity: 'sensor.tesla_exterior_color', default: '#9aa3ad' }
+          : paint || '#23519e';
+        cardConfig.body = {
+          color: './local/color.webp',
+          shade: './local/shade.webp',
+          highlight: './local/highlight.webp',
+          mask: './local/paintmask.png',
+        };
+      } else if (wantImage) {
+        cardConfig.image = './car.svg';
+      } else if (paint) {
+        // generic-EV default, tinted live (no per-colour assets needed)
+        cardConfig.paint = paint;
+      }
+      card.setConfig(cardConfig);
       document.getElementById('stage').appendChild(card);
 
       function push() {

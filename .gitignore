@@ -3,3 +3,6 @@ dist/
 *.tsbuildinfo
 .DS_Store
 .rollup.cache/
+
+# Local-only recolor test art (bring-your-own; Tesla trade-dress stays out of the repo)
+demo/local/

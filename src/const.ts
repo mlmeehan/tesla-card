@@ -1,7 +1,5 @@
 export const CARD_VERSION = '0.1.0';
 
-export const DEFAULT_IMAGE = '/local/model_y.png';
-
 /**
  * Complete default entity map for a Tesla Fleet "Model Y".
  *

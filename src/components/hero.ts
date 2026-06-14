@@ -4,7 +4,8 @@ import { mdiLock, mdiLockOpenVariant, mdiFlash } from '@mdi/js';
 import { TcBase } from '../base';
 import { sharedStyles } from '../styles';
 import { icon, batteryGauge } from '../ui';
-import { DEFAULT_IMAGE } from '../const';
+import { carView, carStyles } from './car';
+import { resolvePaint } from '../paint';
 import {
   num,
   rawState,
@@ -73,7 +74,7 @@ export class TcHero extends TcBase {
     const cfg = this.config;
     const asleep = isAsleep(this.hass, cfg);
     const name = cfg.name ?? 'Model Y';
-    const image = cfg.image ?? DEFAULT_IMAGE;
+    const image = cfg.image;
     const status = this._status(asleep);
 
     const battery = asleep ? undefined : num(this.hass, cfg, 'battery_level');
@@ -97,7 +98,13 @@ export class TcHero extends TcBase {
         </div>
 
         <div class="car-stage ${asleep ? 'asleep' : ''}">
-          <img class="car-img" src=${image} alt=${name} draggable="false" />
+          ${carView({
+            image,
+            name,
+            body: cfg.body,
+            paint: resolvePaint(this.hass, cfg),
+            charging,
+          })}
         </div>
 
         <button
@@ -122,6 +129,7 @@ export class TcHero extends TcBase {
 
   static override styles = [
     sharedStyles,
+    carStyles,
     css`
       .hero {
         padding: 18px 20px 20px;

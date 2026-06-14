@@ -68,7 +68,7 @@ export class TeslaCardEditor extends LitElement implements LovelaceCardEditor {
           <input
             type="text"
             .value=${c.image ?? ''}
-            placeholder="/local/model_y.png"
+            placeholder="Leave empty for built-in car"
             @change=${(e: Event) => this._text(e, 'image')}
           />
         </label>

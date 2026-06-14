@@ -10,6 +10,7 @@ import { customElement, property, state } from 'lit/decorators.js';
 import {
   mdiThermometer,
   mdiEvStation,
+  mdiSolarPower,
   mdiCarDoor,
   mdiCarTireAlert,
   mdiMapMarkerRadius,
@@ -17,6 +18,7 @@ import {
 } from '@mdi/js';
 import { CARD_VERSION } from './const';
 import { resolveEntities } from './resolve';
+import { resolveEnergyEntities, hasEnergySite, type EnergyEntities } from './energy';
 import { tokens, sharedStyles } from './styles';
 import { icon } from './ui';
 import type {
@@ -32,12 +34,15 @@ import './components/quick-actions';
 import './components/commands';
 import './components/panel-climate';
 import './components/panel-charging';
+import './components/panel-energy';
 import './components/panel-closures';
 import './components/panel-tyres';
 import './components/panel-location';
 import './components/panel-media';
 
-const PANELS: { id: PanelId; name: string; icon: string }[] = [
+type Tab = { id: PanelId; name: string; icon: string };
+
+const PANELS: Tab[] = [
   { id: 'climate', name: 'Climate', icon: mdiThermometer },
   { id: 'charging', name: 'Charging', icon: mdiEvStation },
   { id: 'closures', name: 'Closures', icon: mdiCarDoor },
@@ -45,6 +50,9 @@ const PANELS: { id: PanelId; name: string; icon: string }[] = [
   { id: 'location', name: 'Location', icon: mdiMapMarkerRadius },
   { id: 'media', name: 'Media', icon: mdiPlayCircleOutline },
 ];
+
+/** Energy tab, shown only when an energy site is detected (after Charging). */
+const ENERGY_TAB: Tab = { id: 'energy', name: 'Energy', icon: mdiSolarPower };
 
 @customElement('tesla-card')
 export class TeslaCard extends LitElement implements LovelaceCard {
@@ -54,6 +62,8 @@ export class TeslaCard extends LitElement implements LovelaceCard {
 
   /** `_config` with `entities` filled in by auto-resolution; passed to children. */
   private _resolvedConfig?: TeslaCardConfig;
+  /** Auto-detected Tesla energy-site + Wall-Connector entities. */
+  private _energy?: EnergyEntities;
   /** Inputs the cached resolution was computed from, to skip redundant work. */
   private _resolveCache?: {
     entities: unknown;
@@ -89,7 +99,17 @@ export class TeslaCard extends LitElement implements LovelaceCard {
       ...this._config,
       entities: resolveEntities(this.hass, this._config),
     };
+    this._energy = resolveEnergyEntities(this.hass, this._config);
     this._resolveCache = { entities, devices, config: this._config };
+  }
+
+  /** Visible tabs: base set, with Energy inserted after Charging when present. */
+  private _panels(): Tab[] {
+    const showEnergy = !this._config.energy?.hide && hasEnergySite(this._energy);
+    if (!showEnergy) return PANELS;
+    const out = [...PANELS];
+    out.splice(2, 0, ENERGY_TAB);
+    return out;
   }
 
   public getCardSize(): number {
@@ -112,6 +132,8 @@ export class TeslaCard extends LitElement implements LovelaceCard {
   protected override render(): TemplateResult | typeof nothing {
     if (!this._config || !this.hass) return nothing;
     const cfg = this._resolvedConfig ?? this._config;
+    const panels = this._panels();
+    const current = panels.some((p) => p.id === this._panel) ? this._panel : 'charging';
     return html`
       <div class="root">
         <tc-hero
@@ -132,12 +154,12 @@ export class TeslaCard extends LitElement implements LovelaceCard {
           ? nothing
           : html`
               <div class="tabs" role="tablist">
-                ${PANELS.map(
+                ${panels.map(
                   (p) => html`
                     <button
-                      class="tab ${this._panel === p.id ? 'active' : ''}"
+                      class="tab ${current === p.id ? 'active' : ''}"
                       role="tab"
-                      aria-selected=${this._panel === p.id}
+                      aria-selected=${current === p.id}
                       @click=${() => (this._panel = p.id)}
                     >
                       ${icon(p.icon, { size: 18 })}<span>${p.name}</span>
@@ -145,7 +167,7 @@ export class TeslaCard extends LitElement implements LovelaceCard {
                   `
                 )}
               </div>
-              <div class="panel">${this._renderPanel(cfg)}</div>
+              <div class="panel">${this._renderPanel(cfg, current)}</div>
             `}
 
         ${cfg.hide_commands
@@ -158,12 +180,18 @@ export class TeslaCard extends LitElement implements LovelaceCard {
     `;
   }
 
-  private _renderPanel(cfg: TeslaCardConfig): TemplateResult {
-    switch (this._panel) {
+  private _renderPanel(cfg: TeslaCardConfig, panel: PanelId): TemplateResult {
+    switch (panel) {
       case 'climate':
         return html`<tc-panel-climate .hass=${this.hass} .config=${cfg}></tc-panel-climate>`;
       case 'charging':
         return html`<tc-panel-charging .hass=${this.hass} .config=${cfg}></tc-panel-charging>`;
+      case 'energy':
+        return html`<tc-panel-energy
+          .hass=${this.hass}
+          .config=${cfg}
+          .entities=${this._energy ?? {}}
+        ></tc-panel-energy>`;
       case 'closures':
         return html`<tc-panel-closures .hass=${this.hass} .config=${cfg}></tc-panel-closures>`;
       case 'tyres':
