@@ -1,0 +1,118 @@
+import { html, css, type TemplateResult } from 'lit';
+import { customElement } from 'lit/decorators.js';
+import {
+  mdiPower,
+  mdiBullhorn,
+  mdiCarLightHigh,
+  mdiGarage,
+  mdiKey,
+  mdiSpeaker,
+} from '@mdi/js';
+import { TcBase } from '../base';
+import { sharedStyles } from '../styles';
+import { icon } from '../ui';
+import type { EntityKey } from '../const';
+import { entityId, rawState, isUnavailable, pressButton } from '../helpers';
+
+interface Command {
+  key: EntityKey;
+  label: string;
+  icon: string;
+}
+
+const COMMANDS: Command[] = [
+  { key: 'wake', label: 'Wake', icon: mdiPower },
+  { key: 'honk', label: 'Honk', icon: mdiBullhorn },
+  { key: 'flash', label: 'Flash', icon: mdiCarLightHigh },
+  { key: 'homelink', label: 'HomeLink', icon: mdiGarage },
+  { key: 'keyless', label: 'Keyless', icon: mdiKey },
+  { key: 'boombox', label: 'Boombox', icon: mdiSpeaker },
+];
+
+@customElement('tc-commands')
+export class TcCommands extends TcBase {
+  private _press(key: EntityKey): void {
+    if (!this.hass) return;
+    pressButton(this.hass, entityId(this.config, key));
+  }
+
+  protected override render(): TemplateResult {
+    return html`
+      <section class="block">
+        <span class="label">Commands</span>
+        <div class="row">
+          ${COMMANDS.map((c) => {
+            const unavailable = isUnavailable(rawState(this.hass, this.config, c.key));
+            return html`
+              <button
+                class="cmd"
+                ?disabled=${unavailable}
+                @click=${() => this._press(c.key)}
+              >
+                ${icon(c.icon, { size: 20 })}
+                <span>${c.label}</span>
+              </button>
+            `;
+          })}
+        </div>
+      </section>
+    `;
+  }
+
+  static override styles = [
+    sharedStyles,
+    css`
+      .block {
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+      }
+      .row {
+        display: grid;
+        grid-template-columns: repeat(6, 1fr);
+        gap: 8px;
+      }
+      .cmd {
+        appearance: none;
+        font-family: inherit;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 7px;
+        padding: 13px 6px;
+        border-radius: var(--tc-radius-md);
+        border: 1px solid var(--tc-border);
+        background: var(--tc-surface-2);
+        color: var(--tc-text-dim);
+        font-size: 11.5px;
+        font-weight: 650;
+        cursor: pointer;
+        transition: background 0.16s var(--tc-ease), color 0.16s var(--tc-ease),
+          border-color 0.16s var(--tc-ease), transform 0.12s var(--tc-ease);
+      }
+      .cmd:hover {
+        color: var(--tc-text);
+        border-color: var(--tc-border-strong);
+        background: var(--tc-surface-3);
+      }
+      .cmd:active {
+        transform: scale(0.95);
+      }
+      .cmd[disabled] {
+        opacity: 0.4;
+        pointer-events: none;
+      }
+      @media (max-width: 540px) {
+        .row {
+          grid-template-columns: repeat(3, 1fr);
+        }
+      }
+    `,
+  ];
+}
+
+declare global {
+  interface HTMLElementTagNameMap {
+    'tc-commands': TcCommands;
+  }
+}

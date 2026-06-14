@@ -1,0 +1,64 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 520 260" fill="none">
+  <defs>
+    <linearGradient id="body" x1="0" y1="40" x2="0" y2="210" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#e9eef5"/>
+      <stop offset="0.5" stop-color="#aab4c2"/>
+      <stop offset="1" stop-color="#5d6775"/>
+    </linearGradient>
+    <linearGradient id="glass" x1="0" y1="60" x2="0" y2="120" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#2a3543"/>
+      <stop offset="1" stop-color="#0e151e"/>
+    </linearGradient>
+    <radialGradient id="rim" cx="0.5" cy="0.5" r="0.5">
+      <stop offset="0" stop-color="#c6ced9"/>
+      <stop offset="0.62" stop-color="#79828f"/>
+      <stop offset="0.66" stop-color="#3a414b"/>
+      <stop offset="1" stop-color="#1b2027"/>
+    </radialGradient>
+  </defs>
+
+  <!-- ground shadow -->
+  <ellipse cx="262" cy="226" rx="210" ry="16" fill="#000" opacity="0.38"/>
+
+  <!-- body -->
+  <path d="M44 188
+           C40 150 58 138 92 132
+           C120 100 150 86 196 82
+           L300 80
+           C352 80 392 96 430 130
+           C462 134 482 150 480 184
+           C480 196 472 202 460 202
+           L70 202
+           C54 202 45 198 44 188 Z"
+        fill="url(#body)" stroke="#39414c" stroke-width="2"/>
+
+  <!-- greenhouse / windows -->
+  <path d="M150 96
+           C176 92 210 90 252 90
+           L296 91
+           C330 92 356 102 380 122
+           L168 124
+           C150 124 142 110 150 96 Z"
+        fill="url(#glass)"/>
+  <!-- window pillar -->
+  <path d="M258 90 L262 124" stroke="#39414c" stroke-width="3"/>
+
+  <!-- door seam + handle -->
+  <path d="M236 132 L236 188" stroke="#5b6573" stroke-width="1.5" opacity="0.5"/>
+  <rect x="214" y="142" width="20" height="5" rx="2.5" fill="#39414c"/>
+
+  <!-- rim light -->
+  <path d="M196 82 L300 80 C352 80 392 96 430 130"
+        stroke="#7fd0ff" stroke-width="2" opacity="0.5" stroke-linecap="round"/>
+
+  <!-- wheels -->
+  <circle cx="150" cy="202" r="40" fill="#11161d"/>
+  <circle cx="150" cy="202" r="24" fill="url(#rim)"/>
+  <circle cx="150" cy="202" r="6" fill="#20262e"/>
+  <circle cx="386" cy="202" r="40" fill="#11161d"/>
+  <circle cx="386" cy="202" r="24" fill="url(#rim)"/>
+  <circle cx="386" cy="202" r="6" fill="#20262e"/>
+
+  <!-- headlight -->
+  <path d="M462 156 q14 2 16 16 l-18 0 z" fill="#cdd6e2"/>
+</svg>

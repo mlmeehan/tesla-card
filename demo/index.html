@@ -1,0 +1,365 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Tesla Card — demo</title>
+    <style>
+      :root {
+        color-scheme: dark;
+      }
+      body {
+        margin: 0;
+        min-height: 100vh;
+        background: radial-gradient(1200px 800px at 70% -10%, #16202c, #0b1118 60%, #070b10);
+        font-family: ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+        color: #e6edf5;
+        padding: 28px 16px 80px;
+        box-sizing: border-box;
+      }
+      .bar {
+        max-width: 520px;
+        margin: 0 auto 22px;
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        flex-wrap: wrap;
+      }
+      .bar h1 {
+        font-size: 15px;
+        font-weight: 700;
+        margin: 0 auto 0 0;
+        letter-spacing: 0.01em;
+      }
+      .bar button {
+        font: inherit;
+        font-size: 13px;
+        font-weight: 650;
+        padding: 8px 14px;
+        border-radius: 999px;
+        border: 1px solid rgba(255, 255, 255, 0.16);
+        background: rgba(255, 255, 255, 0.06);
+        color: #e6edf5;
+        cursor: pointer;
+      }
+      .bar button.active {
+        background: #e82127;
+        border-color: #e82127;
+        color: #fff;
+      }
+      .bar .sep {
+        width: 1px;
+        align-self: stretch;
+        background: rgba(255, 255, 255, 0.16);
+        margin: 2px 4px;
+      }
+      #stage {
+        max-width: 520px;
+        margin: 0 auto;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="bar">
+      <h1>Tesla Card · live demo</h1>
+      <button id="b-awake" class="active">Awake / Charging</button>
+      <button id="b-asleep">Asleep</button>
+      <span class="sep"></span>
+      <button id="b-default" class="active" title="Device named “Garage Model Y”, garage_model_y_* entities">
+        garage_model_y_*
+      </button>
+      <button id="b-renamed" title="Device named “My Tesla”, my_tesla_* entities — proves name-based resolution">
+        my_tesla_*
+      </button>
+    </div>
+    <div id="stage"></div>
+
+    <script type="module">
+      import '../dist/tesla-card.js';
+
+      const SEAT_OPTS = ['Off', 'Low', 'Medium', 'High'];
+      const WHEEL_OPTS = ['Off', 'Low', 'High'];
+      const s = (state, attributes = {}) => ({ state, attributes });
+
+      function awakeStates() {
+        return {
+          // summary / battery
+          'sensor.garage_model_y_battery_level': s('72', { unit_of_measurement: '%' }),
+          'sensor.garage_model_y_battery_range': s('235', { unit_of_measurement: 'mi' }),
+          'sensor.usable_battery_level': s('71', { unit_of_measurement: '%' }),
+          'sensor.ideal_battery_range': s('250', { unit_of_measurement: 'mi' }),
+          'sensor.estimate_battery_range': s('230', { unit_of_measurement: 'mi' }),
+          'sensor.odometer': s('12345', { unit_of_measurement: 'mi' }),
+          'sensor.shift_state': s('P'),
+          'update.garage_model_y_update': s('off'),
+          'binary_sensor.garage_model_y_status': s('on'),
+          'binary_sensor.garage_model_y_user_present': s('off'),
+          // lock + closures
+          'lock.garage_model_y_lock': s('locked'),
+          'cover.garage_model_y_frunk': s('closed'),
+          'cover.garage_model_y_trunk': s('closed'),
+          'cover.garage_model_y_windows': s('closed'),
+          'cover.sunroof': s('unavailable'),
+          'binary_sensor.garage_model_y_front_driver_door': s('on'),
+          'binary_sensor.garage_model_y_front_passenger_door': s('off'),
+          'binary_sensor.garage_model_y_rear_driver_door': s('off'),
+          'binary_sensor.garage_model_y_rear_passenger_door': s('off'),
+          'binary_sensor.garage_model_y_front_driver_window': s('off'),
+          'binary_sensor.garage_model_y_front_passenger_window': s('off'),
+          'binary_sensor.garage_model_y_rear_driver_window': s('off'),
+          'binary_sensor.garage_model_y_rear_passenger_window': s('off'),
+          // climate
+          'climate.garage_model_y_climate': s('heat_cool', {
+            temperature: 21,
+            current_temperature: 19,
+            min_temp: 15,
+            max_temp: 28,
+            target_temp_step: 0.5,
+          }),
+          'sensor.garage_model_y_inside_temperature': s('19', { unit_of_measurement: '°C' }),
+          'sensor.garage_model_y_outside_temperature': s('12', { unit_of_measurement: '°C' }),
+          'sensor.driver_temperature_setting': s('21'),
+          'sensor.passenger_temperature_setting': s('21'),
+          'binary_sensor.preconditioning': s('off'),
+          'binary_sensor.preconditioning_enabled': s('on'),
+          'switch.garage_model_y_defrost': s('off'),
+          'climate.cabin_overheat_protection': s('off', { min_temp: 30, max_temp: 40 }),
+          'binary_sensor.cabin_overheat_protection_actively_cooling': s('off'),
+          'select.garage_model_y_seat_heater_front_left': s('High', { options: SEAT_OPTS }),
+          'select.garage_model_y_seat_heater_front_right': s('Off', { options: SEAT_OPTS }),
+          'select.seat_heater_rear_left': s('Low', { options: SEAT_OPTS }),
+          'select.seat_heater_rear_center': s('Off', { options: SEAT_OPTS }),
+          'select.seat_heater_rear_right': s('Off', { options: SEAT_OPTS }),
+          'select.garage_model_y_steering_wheel_heater': s('Low', { options: WHEEL_OPTS }),
+          'switch.garage_model_y_auto_seat_climate_left': s('on'),
+          'switch.garage_model_y_auto_seat_climate_right': s('off'),
+          'switch.garage_model_y_auto_steering_wheel_heater': s('on'),
+          // charging
+          'switch.garage_model_y_charge': s('on'),
+          'number.garage_model_y_charge_limit': s('80', { min: 50, max: 100, step: 1, unit_of_measurement: '%' }),
+          'number.garage_model_y_charge_current': s('16', { min: 0, max: 48, step: 1, unit_of_measurement: 'A' }),
+          'sensor.garage_model_y_charger_voltage': s('240', { unit_of_measurement: 'V' }),
+          'sensor.garage_model_y_charger_current': s('16', { unit_of_measurement: 'A' }),
+          'sensor.garage_model_y_charger_power': s('11.5', { unit_of_measurement: 'kW' }),
+          'sensor.garage_model_y_charge_rate': s('32', { unit_of_measurement: 'mph' }),
+          'sensor.garage_model_y_charge_energy_added': s('24.6', { unit_of_measurement: 'kWh' }),
+          'sensor.garage_model_y_time_to_full_charge': s('1.5', { unit_of_measurement: 'h' }),
+          'sensor.garage_model_y_charging': s('Charging'),
+          'cover.garage_model_y_charge_port_door': s('open'),
+          'binary_sensor.garage_model_y_charge_cable': s('on'),
+          'lock.garage_model_y_charge_cable_lock': s('locked'),
+          'binary_sensor.scheduled_charging_pending': s('off'),
+          'binary_sensor.trip_charging': s('off'),
+          'binary_sensor.charger_has_multiple_phases': s('off'),
+          'binary_sensor.battery_heater': s('off'),
+          'sensor.state_of_charge_at_arrival': s('unknown'),
+          // security
+          'switch.garage_model_y_sentry_mode': s('off'),
+          'binary_sensor.dashcam': s('on'),
+          // tyres (bar)
+          'sensor.tire_pressure_front_left': s('2.9', { unit_of_measurement: 'bar' }),
+          'sensor.tire_pressure_front_right': s('2.6', { unit_of_measurement: 'bar' }),
+          'sensor.tire_pressure_rear_left': s('2.9', { unit_of_measurement: 'bar' }),
+          'sensor.tire_pressure_rear_right': s('2.9', { unit_of_measurement: 'bar' }),
+          'binary_sensor.tire_pressure_warning_front_left': s('off'),
+          'binary_sensor.tire_pressure_warning_front_right': s('on'),
+          'binary_sensor.tire_pressure_warning_rear_left': s('off'),
+          'binary_sensor.tire_pressure_warning_rear_right': s('off'),
+          // location / drive
+          'device_tracker.garage_model_y_location': s('home', {
+            latitude: 37.7749,
+            longitude: -122.4194,
+          }),
+          'device_tracker.garage_model_y_route': s('unknown'),
+          'sensor.speed': s('0', { unit_of_measurement: 'mph' }),
+          'sensor.power': s('0', { unit_of_measurement: 'kW' }),
+          'sensor.traffic_delay': s('unavailable'),
+          'sensor.garage_model_y_distance_to_arrival': s('unavailable'),
+          'sensor.garage_model_y_time_to_arrival': s('unavailable'),
+          // media
+          'media_player.garage_model_y_media_player': s('playing', {
+            media_title: 'Bohemian Rhapsody',
+            media_artist: 'Queen',
+            volume_level: 0.4,
+            is_volume_muted: false,
+          }),
+          // commands
+          'button.garage_model_y_wake': s('2026-06-14T10:00:00+00:00'),
+          'button.garage_model_y_honk_horn': s('2026-06-14T10:00:00+00:00'),
+          'button.garage_model_y_flash_lights': s('2026-06-14T10:00:00+00:00'),
+          'button.garage_model_y_homelink': s('2026-06-14T10:00:00+00:00'),
+          'button.garage_model_y_keyless_driving': s('2026-06-14T10:00:00+00:00'),
+          'button.garage_model_y_play_fart': s('2026-06-14T10:00:00+00:00'),
+        };
+      }
+
+      function asleepStates() {
+        const st = awakeStates();
+        st['binary_sensor.garage_model_y_status'] = s('off');
+        st['sensor.garage_model_y_battery_level'] = s('unavailable');
+        st['sensor.garage_model_y_battery_range'] = s('unavailable');
+        st['climate.garage_model_y_climate'] = s('off', { min_temp: 15, max_temp: 28, target_temp_step: 0.5 });
+        st['sensor.garage_model_y_charging'] = s('unavailable');
+        st['switch.garage_model_y_charge'] = s('unavailable');
+        // Charging telemetry also drops out when the car sleeps.
+        st['sensor.garage_model_y_charger_power'] = s('unavailable');
+        st['sensor.garage_model_y_charge_rate'] = s('unavailable');
+        st['sensor.garage_model_y_charge_energy_added'] = s('unavailable');
+        st['sensor.garage_model_y_time_to_full_charge'] = s('unavailable');
+        st['sensor.garage_model_y_charger_voltage'] = s('unavailable');
+        st['cover.garage_model_y_charge_port_door'] = s('unavailable');
+        st['media_player.garage_model_y_media_player'] = s('off');
+        return st;
+      }
+
+      // Two installs, same vehicle: the bundled "garage_model_y_*" prefix vs a
+      // differently-named device "my_tesla_*". The card ships configured only
+      // with name:"Model Y" — switching env proves it resolves entities by
+      // function-name against whatever the device is actually called.
+      const ENVIRONMENTS = {
+        default: { prefix: 'garage_model_y', deviceName: 'Garage Model Y', platform: 'teslemetry' },
+        renamed: { prefix: 'my_tesla', deviceName: 'My Tesla', platform: 'tesla_fleet' },
+      };
+
+      function reprefix(src, prefix) {
+        if (prefix === 'garage_model_y') return src;
+        const out = {};
+        for (const [id, val] of Object.entries(src)) {
+          const dot = id.indexOf('.');
+          const domain = id.slice(0, dot);
+          let obj = id.slice(dot + 1);
+          if (obj.startsWith('garage_model_y_')) {
+            obj = prefix + '_' + obj.slice('garage_model_y_'.length);
+          }
+          out[domain + '.' + obj] = val;
+        }
+        return out;
+      }
+
+      // Mock the HA entity/device registry (hass.entities + hass.devices) so the
+      // resolver has the same signals it has in a real install.
+      function buildRegistry(st, env) {
+        const deviceId = 'tesla_vehicle';
+        const entities = {};
+        for (const id of Object.keys(st)) {
+          entities[id] = {
+            entity_id: id,
+            device_id: deviceId,
+            platform: env.platform,
+            has_entity_name: true,
+            area_id: null,
+          };
+        }
+        const devices = {
+          [deviceId]: {
+            id: deviceId,
+            name: env.deviceName,
+            name_by_user: null,
+            manufacturer: 'Tesla',
+            model: 'Model Y',
+          },
+        };
+        return { entities, devices };
+      }
+
+      const params = new URLSearchParams(location.search);
+      let asleep = params.get('scenario') === 'asleep';
+      let envKey = params.get('env') === 'renamed' ? 'renamed' : 'default';
+      const startPanel = params.get('panel') || 'charging';
+
+      let states = {};
+      let registry = { entities: {}, devices: {} };
+      function rebuild() {
+        const env = ENVIRONMENTS[envKey];
+        states = reprefix(asleep ? asleepStates() : awakeStates(), env.prefix);
+        registry = buildRegistry(states, env);
+      }
+      rebuild();
+
+      const card = document.createElement('tesla-card');
+      card.setConfig({
+        type: 'custom:tesla-card',
+        name: 'Model Y',
+        image: './car.svg',
+        default_panel: startPanel,
+      });
+      document.getElementById('stage').appendChild(card);
+
+      function push() {
+        card.hass = {
+          states,
+          entities: registry.entities,
+          devices: registry.devices,
+          locale: { language: 'en' },
+          config: { unit_system: { temperature: '°C' } },
+          callService,
+        };
+      }
+
+      // optimistic service handler so the demo is interactive
+      function callService(domain, service, data = {}) {
+        const id = data.entity_id;
+        const cur = states[id];
+        const set = (state, attrs) =>
+          (states[id] = { state, attributes: { ...(cur?.attributes ?? {}), ...(attrs ?? {}) } });
+        if (id && cur) {
+          if (service === 'lock') set('locked');
+          else if (service === 'unlock') set('unlocked');
+          else if (service === 'open_cover') set('open');
+          else if (service === 'close_cover') set('closed');
+          else if (service === 'turn_on') set('on');
+          else if (service === 'turn_off') set('off');
+          else if (service === 'toggle')
+            set(['on', 'open', 'locked', 'heat_cool', 'playing'].includes(cur.state) ? 'off' : 'on');
+          else if (service === 'set_value') set(String(data.value));
+          else if (service === 'select_option') set(data.option);
+          else if (service === 'set_temperature') set(cur.state, { temperature: data.temperature });
+          else if (service === 'volume_set') set(cur.state, { volume_level: data.volume_level });
+          else if (service === 'volume_mute') set(cur.state, { is_volume_muted: data.is_volume_muted });
+          else if (service === 'media_play_pause') set(cur.state === 'playing' ? 'paused' : 'playing');
+        }
+        console.log('callService', domain, service, data);
+        push();
+        return Promise.resolve();
+      }
+
+      const bAwake = document.getElementById('b-awake');
+      const bAsleep = document.getElementById('b-asleep');
+      const bDefault = document.getElementById('b-default');
+      const bRenamed = document.getElementById('b-renamed');
+
+      function syncButtons() {
+        bAwake.classList.toggle('active', !asleep);
+        bAsleep.classList.toggle('active', asleep);
+        bDefault.classList.toggle('active', envKey === 'default');
+        bRenamed.classList.toggle('active', envKey === 'renamed');
+      }
+
+      function apply() {
+        rebuild();
+        push();
+        syncButtons();
+      }
+
+      bAwake.addEventListener('click', () => {
+        asleep = false;
+        apply();
+      });
+      bAsleep.addEventListener('click', () => {
+        asleep = true;
+        apply();
+      });
+      bDefault.addEventListener('click', () => {
+        envKey = 'default';
+        apply();
+      });
+      bRenamed.addEventListener('click', () => {
+        envKey = 'renamed';
+        apply();
+      });
+
+      syncButtons();
+      push();
+    </script>
+  </body>
+</html>
