@@ -1,6 +1,7 @@
 import type { EntityKey } from './const';
 import type { PaintSource } from './paint';
 import type { EnergyEntities } from './energy';
+import type { Integration } from './data/dialect';
 
 export interface HassEntity {
   entity_id: string;
@@ -110,6 +111,8 @@ export interface TeslaCardConfig {
   prefix?: string;
   /** Per-key entity overrides; anything omitted is auto-resolved, then falls back to DEFAULT_ENTITIES. */
   entities?: Partial<Record<EntityKey, string>>;
+  /** Force the integration dialect; auto-detected from the Tesla integration when omitted. */
+  integration?: Integration;
   /** Which detail panel is open initially (default "charging"). */
   default_panel?: PanelId;
   /** Hide the detail tabs entirely (hero + quick actions only). */

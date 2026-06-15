@@ -18,7 +18,7 @@ import { DEFAULT_ENTITIES, type EntityKey } from '../const';
 const REFERENCE_SLUG = 'garage_model_y';
 
 /** Integration platforms whose entities identify a Tesla vehicle device. */
-const TESLA_PLATFORMS = new Set([
+export const TESLA_PLATFORMS = new Set([
   'tesla_fleet',
   'teslemetry',
   'tessie',
