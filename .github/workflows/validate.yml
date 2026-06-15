@@ -35,3 +35,18 @@ jobs:
       - run: npm run build
       - name: Verify bundle was produced
         run: test -s dist/tesla-card.js
+
+  # Structural CI gates (Story 1.7): the data-access boundary lint suite —
+  # no-bare-hass.states + no-cycle. Merge-blocking, same tier as type-check/build.
+  # Dep-light AST scripts (scripts/lint/*.mjs); no ESLint, no new deps.
+  lint:
+    name: Structural gates (lint)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - run: npm run lint

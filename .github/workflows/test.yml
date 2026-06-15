@@ -24,8 +24,10 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  # Type gate — this project's "lint" is strict tsc (no ESLint). Covers both the
-  # bundle (tsconfig.json) and the E2E suite (tests/tsconfig.json).
+  # Type gate — this project's type "lint" is strict tsc (no ESLint). Covers both
+  # the bundle (tsconfig.json) and the E2E suite (tests/tsconfig.json). The
+  # STRUCTURAL gates (no-bare-hass.states + no-cycle, `npm run lint`) live in
+  # validate.yml's `lint` job — kept there to avoid double-running them per push.
   lint:
     name: Type-check
     runs-on: ubuntu-latest

@@ -16,6 +16,9 @@ npm run typecheck
 echo "==> typecheck:e2e"
 npm run typecheck:e2e
 
+echo "==> lint (structural gates: no-bare-hass.states + no-cycle)"
+npm run lint
+
 echo "==> build + bundle-exists check"
 npm run build
 test -s dist/tesla-card.js
