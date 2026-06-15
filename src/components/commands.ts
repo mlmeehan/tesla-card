@@ -102,6 +102,7 @@ export class TcCommands extends TcBase {
         opacity: 0.4;
         pointer-events: none;
       }
+      /* 540 = BREAKPOINTS.compact (styles.ts) — canonical source of truth. */
       @media (max-width: 540px) {
         .row {
           grid-template-columns: repeat(3, 1fr);

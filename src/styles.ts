@@ -18,6 +18,33 @@ export const ACCENT_SEMANTICS = {
 } as const;
 
 /**
+ * Interaction vocabulary (UX-DR23) — the suite's four interaction primitives,
+ * each tied to its EXISTING implementation. This is codification, not a rewrite:
+ * the behaviours already ship; this map makes the contract discoverable from one
+ * place (the machine-checkable half; the comments at each call site are the
+ * human half — keep them in sync, like ACCENT_SEMANTICS).
+ */
+export const INTERACTION_PRIMITIVES = {
+  tap: { meaning: 'universal act — toggles flip, commands fire, hero deep-links', impl: 'all controls' },
+  drag: { meaning: 'commit-on-release — display updates continuously, service fires once on pointer-up', impl: 'tc-slider' },
+  toggle: { meaning: 'optimistic-then-reconcile — flip on tap, settle to real state on next hass (reconcile IS the feedback)', impl: 'quick-actions' },
+  crossfade: { meaning: 'layer swaps cross-fade, never page-reload; --tc-ease is the timing base', impl: '--tc-ease' },
+} as const;
+
+/**
+ * The five bans (UX-DR23). The motion/data-citizenship budget is spent ENTIRELY
+ * on conveying live state. `gated: true` = statically checkable (a test backs
+ * it); `gated: false` = review-enforced (documented, caught at code review).
+ */
+export const INTERACTION_BANS = {
+  'no-background-polling': { gated: true, note: 'zero setInterval/polling timers; rAF is the only sanctioned loop (none today)' },
+  'no-auto-wake': { gated: false, note: 'wake is user-initiated only — the card never spends Tesla’s server budget on its own initiative' },
+  'no-mid-drag-commits': { gated: true, note: 'tc-slider commits only on pointerup/pointercancel, never pointermove' },
+  'no-decorative-motion': { gated: false, note: 'every animation encodes data — backed by the reduced-motion gate' },
+  'no-gamification': { gated: false, note: 'no streaks / badges / celebratory toasts' },
+} as const;
+
+/**
  * Design tokens. Set on the main card host; CSS custom properties inherit
  * through shadow-DOM boundaries, so every child component can use them.
  * Literal values double as defaults when rendered outside Home Assistant
@@ -57,6 +84,10 @@ export const tokens = css`
     --tc-fw-display: 780;
 
     --tc-text: #f1f5f9;
+    /* text-dim (4.5:1) is the floor for LOAD-BEARING copy. Convention (UX-DR21):
+       staleness / last-updated copy resolves to --tc-text-dim, NEVER the dimmer
+       --tc-text-mute (3:1 only — decorative/non-essential captions only). Story
+       2.4's freshness visual model APPLIES this; 2.3 only pins the rule. */
     --tc-text-dim: #9aa7b8;
     --tc-text-mute: #64748b;
 
@@ -98,8 +129,30 @@ export const tokens = css`
     --tc-space-4: 16px;
     --tc-gap: 16px;
     --tc-ease: cubic-bezier(0.22, 1, 0.36, 1);
+
+    /* ── a11y: focus ring (UX-DR21 / NFR-6) ──────────────────────────────
+       A 2px outline in the blue accent. --tc-blue clears 3:1 over both bg and
+       surface (DESIGN.md says text OR blue qualifies). Applied
+       exactly ONCE via the shared :focus-visible rule below so every focusable
+       control inherits it through shadow DOM — never redefine per-component.
+       This is the contract, NOT the --tc-border-strong hairline. */
+    --tc-focus: 2px solid var(--tc-blue, #38bdf8);
+    --tc-focus-offset: 2px;
   }
 `;
+
+/**
+ * Responsive breakpoints (UX-DR22) — the single source of truth for the
+ * suite's two width thresholds. CSS `@media` conditions CANNOT read CSS custom
+ * properties (a `var(--tc-*)` read in an @media condition silently never
+ * matches), so a
+ * breakpoint is a build-time *constant*, not a runtime token: the `@media`
+ * literals in `sharedStyles` / `tesla-card.ts` must equal these numbers, and
+ * this export is the machine-checkable anchor a gate pins them to.
+ *   compact (≤540px) → g4/g3 grids collapse to 2-col; tab bar icon-first.
+ *   full    (≥760px) → every tab label shows (tab bar stops being icon-first).
+ */
+export const BREAKPOINTS = { compact: 540, full: 760 } as const;
 
 export const sharedStyles = css`
   * {
@@ -108,6 +161,28 @@ export const sharedStyles = css`
   :host {
     font-family: var(--tc-font, ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif);
     color: var(--tc-text, #f1f5f9);
+  }
+
+  /* ── a11y: keyboard focus ring (UX-DR21 / NFR-6) ───────────────────────
+     ONE shared rule that applies --tc-focus to anything focused by keyboard;
+     inherits through shadow DOM so every focusable control gets it for free —
+     do NOT duplicate per-component. :focus-visible (not :focus) keeps mouse
+     clicks ringless; the explicit :focus:not(:focus-visible) suppression makes
+     that intent gate-checkable and robust where the UA default leaks an outline. */
+  :focus-visible {
+    outline: var(--tc-focus, 2px solid var(--tc-blue, #38bdf8));
+    outline-offset: var(--tc-focus-offset, 2px);
+  }
+  :focus:not(:focus-visible) {
+    outline: none;
+  }
+
+  /* ── a11y: ≥44×44 tap-target floor (UX-DR21) ───────────────────────────
+     A reusable FLOOR (not a fixed size): controls already larger keep their
+     size. Kiosk-distance hard minimum for every interactive primitive. */
+  .tc-tap {
+    min-height: 44px;
+    min-width: 44px;
   }
 
   /* ── inline SVG icon ───────────────────────────────────────────────── */
@@ -399,12 +474,38 @@ export const sharedStyles = css`
     }
   }
 
+  /* compact breakpoint — literal MUST equal BREAKPOINTS.compact (540); CSS
+     @media cannot read the TS constant, so the gate pins the two together. */
   @media (max-width: 540px) {
     .g4 {
       grid-template-columns: repeat(2, minmax(0, 1fr));
     }
     .g3 {
       grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+  }
+
+  /* ── honest-motion: shared reduced-motion guard (UX-DR21 / A8) ──────────
+     Covers ONLY the motion primitives that live in this shared block — the
+     battery charging shimmer (tc-shimmer) and ring charging pulse (tc-pulse)
+     HALT entirely (not slow), and the two data-bearing gauge sweeps SNAP to
+     their value (kill the width / stroke-dashoffset transitions). Per-component
+     motion (car.ts .tc-car.charging, panel-energy.ts line.flow) keeps its own
+     reduced-motion block — this guard is additive, it does not reach those.
+     Interaction-feedback transitions on .stat/.ctrl (hover/press) are NOT data
+     motion and deliberately stay. */
+  @media (prefers-reduced-motion: reduce) {
+    .tc-bat.charging .tc-bat-fill::after {
+      animation: none;
+    }
+    .tc-ring svg.charging .prog {
+      animation: none;
+    }
+    .tc-bat-fill {
+      transition: none;
+    }
+    .tc-ring .prog {
+      transition: none;
     }
   }
 `;

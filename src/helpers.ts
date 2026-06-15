@@ -204,3 +204,24 @@ export function selectOption(
 export function clamp(v: number, lo: number, hi: number): number {
   return Math.min(hi, Math.max(lo, v));
 }
+
+/**
+ * State-bearing screen-reader label (UX-DR21 a11y floor / NFR-6).
+ *
+ * Composes an icon-only control's name with its CURRENT, settled state into one
+ * SR string: `srState('Lock', 'locked')` → `"Lock, locked"`,
+ * `srState('Charge port', 'open')` → `"Charge port, open"`. For availability
+ * phrasing pass the whole state (`srState('Wake', 'available in 2m')`).
+ *
+ * This is the single discoverable home for the convention; it does NOT force
+ * churn on controls already carrying correct `aria-label`s (hero battery row,
+ * quick-actions, media, climate, closures). It is adopted going forward and
+ * applied per-epic via the Definition of Done.
+ *
+ * CRITICAL for optimistic toggles (quick-actions): announce the SETTLED state
+ * (the reconciled `hass` value), never the in-flight optimistic guess — the
+ * label must match reality, not the request.
+ */
+export function srState(label: string, state: string): string {
+  return `${label}, ${state}`;
+}

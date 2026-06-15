@@ -251,6 +251,12 @@ export class TeslaCard extends LitElement implements LovelaceCard {
         justify-content: center;
         gap: 7px;
         padding: 10px 13px;
+        /* ≥44×44 tap-target floor (UX-DR21) — kiosk-distance hard minimum,
+           held in BOTH the compact icon-only state and the labelled state.
+           Was ≈38px tall (padding + 13px text); the floor is the shared
+           contract (.tc-tap) restated locally because the tab owns its box. */
+        min-height: 44px;
+        min-width: 44px;
         border: 0;
         background: transparent;
         color: var(--tc-text-dim, #9aa7b8);
@@ -276,7 +282,9 @@ export class TeslaCard extends LitElement implements LovelaceCard {
         opacity: 0.95;
       }
       /* Compact bars: only the active tab shows its label; the rest are
-         icon-only. Above 760px every label is shown. */
+         icon-only. Above 760px every label is shown. The 760 literal MUST equal
+         BREAKPOINTS.full (styles.ts) — CSS @media can't read the TS constant, so
+         a gate pins them together. */
       .tab span {
         display: none;
       }

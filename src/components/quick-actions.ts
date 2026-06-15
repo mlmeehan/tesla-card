@@ -125,6 +125,7 @@ export class TcQuickActions extends TcBase {
         cursor: default;
         pointer-events: none;
       }
+      /* 540 = BREAKPOINTS.compact (styles.ts) — canonical source of truth. */
       @media (max-width: 540px) {
         .row {
           grid-template-columns: repeat(3, 1fr);
