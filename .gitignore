@@ -6,3 +6,10 @@ dist/
 
 # Local-only recolor test art (bring-your-own; Tesla trade-dress stays out of the repo)
 demo/local/
+
+# Playwright E2E artifacts (reports/results are regenerated; baselines under
+# tests/**/-snapshots/ ARE committed and must not be ignored)
+/test-results/
+/playwright-report/
+/playwright/.cache/
+/blob-report/

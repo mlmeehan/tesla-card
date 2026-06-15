@@ -1,0 +1,14 @@
+{
+  // Typecheck the E2E suite separately from the card bundle. The root tsconfig
+  // (include: src/**/*.ts) stays focused on the shipped bundle; this config adds
+  // Node globals + Playwright types and covers tests + playwright.config.ts.
+  // Run via: npm run typecheck:e2e
+  "extends": "../tsconfig.json",
+  "compilerOptions": {
+    "rootDir": "..",
+    "noEmit": true,
+    "types": ["node"],
+    "skipLibCheck": true
+  },
+  "include": ["**/*.ts", "../playwright.config.ts"]
+}
