@@ -1,0 +1,74 @@
+{
+  "provenance": {
+    "captured_at": "2026-06-15T14:41:00Z",
+    "source_integration": "none",
+    "model": "n/a",
+    "scenario": "all-unresolved",
+    "ha_version": "2026.6",
+    "synthesized": true,
+    "capture_method": "SYNTHESIZED (not a live capture): a foreign / unconfigured install — a handful of unrelated, non-Tesla entities and NO entity/device registry (states-only, like model-y-awake.json). None of the object-ids match any Tesla function-key (nor any bare DEFAULT_ENTITIES id), so resolveEntities() resolves every key to the bundled default, which is absent from these states.",
+    "entity_count": 6,
+    "notes": "The corpus's designed-empty-state member (architecture D2): on this install nothing Tesla resolves, so every vehicle read is neutral/undefined and the card must render a calm, uninstalled empty state — never crash, blank, or show a false reading (FR-24 / NFR-4). Pairs with model-y-awake.json (resolves) and model-y-asleep.json (unavailable). Deliberately minimal."
+  },
+  "states": {
+    "light.living_room": {
+      "entity_id": "light.living_room",
+      "state": "on",
+      "attributes": {
+        "brightness": 180,
+        "friendly_name": "Living Room"
+      },
+      "last_changed": "2026-06-15T14:41:00Z",
+      "last_updated": "2026-06-15T14:41:00Z"
+    },
+    "light.kitchen": {
+      "entity_id": "light.kitchen",
+      "state": "off",
+      "attributes": {
+        "friendly_name": "Kitchen"
+      },
+      "last_changed": "2026-06-15T14:41:00Z",
+      "last_updated": "2026-06-15T14:41:00Z"
+    },
+    "switch.coffee_maker": {
+      "entity_id": "switch.coffee_maker",
+      "state": "off",
+      "attributes": {
+        "friendly_name": "Coffee Maker"
+      },
+      "last_changed": "2026-06-15T14:41:00Z",
+      "last_updated": "2026-06-15T14:41:00Z"
+    },
+    "sensor.living_room_temperature": {
+      "entity_id": "sensor.living_room_temperature",
+      "state": "21.4",
+      "attributes": {
+        "unit_of_measurement": "°C",
+        "device_class": "temperature",
+        "friendly_name": "Living Room Temperature"
+      },
+      "last_changed": "2026-06-15T14:41:00Z",
+      "last_updated": "2026-06-15T14:41:00Z"
+    },
+    "binary_sensor.front_door": {
+      "entity_id": "binary_sensor.front_door",
+      "state": "off",
+      "attributes": {
+        "device_class": "door",
+        "friendly_name": "Front Door"
+      },
+      "last_changed": "2026-06-15T14:41:00Z",
+      "last_updated": "2026-06-15T14:41:00Z"
+    },
+    "weather.home": {
+      "entity_id": "weather.home",
+      "state": "partlycloudy",
+      "attributes": {
+        "temperature": 18,
+        "friendly_name": "Home"
+      },
+      "last_changed": "2026-06-15T14:41:00Z",
+      "last_updated": "2026-06-15T14:41:00Z"
+    }
+  }
+}

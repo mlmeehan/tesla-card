@@ -64,6 +64,9 @@
       <h1>Tesla Card · live demo</h1>
       <button id="b-awake" class="active">Awake / Charging</button>
       <button id="b-asleep">Asleep</button>
+      <button id="b-unresolved" title="Foreign / unconfigured install — no Tesla entities resolve (designed empty state)">
+        Unresolved
+      </button>
       <span class="sep"></span>
       <button id="b-default" class="active" title="Device named “Garage Model Y”, garage_model_y_* entities">
         garage_model_y_*
@@ -115,6 +118,22 @@
         st['cover.garage_model_y_charge_port_door'] = s('unavailable');
         st['media_player.garage_model_y_media_player'] = s('off');
         return st;
+      }
+
+      function unresolvedStates() {
+        // Foreign / unconfigured install (Story 1.6 designed-empty-state): a few
+        // unrelated, non-Tesla entities and NO Tesla registry. Nothing Tesla
+        // resolves, so every vehicle read is neutral and the card renders a calm,
+        // uninstalled empty state — never a crash, blank, or false reading. The
+        // committed analogue is src/fixtures/all-unresolved.json.
+        return {
+          'light.living_room': s('on', { brightness: 180, friendly_name: 'Living Room' }),
+          'light.kitchen': s('off', { friendly_name: 'Kitchen' }),
+          'switch.coffee_maker': s('off', { friendly_name: 'Coffee Maker' }),
+          'sensor.living_room_temperature': s('21.4', { unit_of_measurement: '°C', friendly_name: 'Living Room Temperature' }),
+          'binary_sensor.front_door': s('off', { device_class: 'door', friendly_name: 'Front Door' }),
+          'weather.home': s('partlycloudy', { temperature: 18, friendly_name: 'Home' }),
+        };
       }
 
       // Two installs, same vehicle: the bundled "garage_model_y_*" prefix vs a
@@ -169,6 +188,7 @@
 
       const params = new URLSearchParams(location.search);
       let asleep = params.get('scenario') === 'asleep';
+      let unresolved = params.get('scenario') === 'unresolved';
       let envKey = params.get('env') === 'renamed' ? 'renamed' : 'default';
       const startPanel = params.get('panel') || 'charging';
       // ?colorentity=Deep%20Blue (or PPSB, #hex…) drives paint from an entity.
@@ -177,6 +197,13 @@
       let states = {};
       let registry = { entities: {}, devices: {} };
       function rebuild() {
+        if (unresolved) {
+          // No Tesla entities, no registry → resolution falls back to bundled
+          // defaults, which are absent from these states (the empty-state path).
+          states = unresolvedStates();
+          registry = { entities: {}, devices: {} };
+          return;
+        }
         const env = ENVIRONMENTS[envKey];
         states = reprefix(asleep ? asleepStates() : awakeStates(), env.prefix);
         registry = buildRegistry(states, env);
@@ -259,12 +286,14 @@
 
       const bAwake = document.getElementById('b-awake');
       const bAsleep = document.getElementById('b-asleep');
+      const bUnresolved = document.getElementById('b-unresolved');
       const bDefault = document.getElementById('b-default');
       const bRenamed = document.getElementById('b-renamed');
 
       function syncButtons() {
-        bAwake.classList.toggle('active', !asleep);
+        bAwake.classList.toggle('active', !asleep && !unresolved);
         bAsleep.classList.toggle('active', asleep);
+        bUnresolved.classList.toggle('active', unresolved);
         bDefault.classList.toggle('active', envKey === 'default');
         bRenamed.classList.toggle('active', envKey === 'renamed');
       }
@@ -277,10 +306,17 @@
 
       bAwake.addEventListener('click', () => {
         asleep = false;
+        unresolved = false;
         apply();
       });
       bAsleep.addEventListener('click', () => {
         asleep = true;
+        unresolved = false;
+        apply();
+      });
+      bUnresolved.addEventListener('click', () => {
+        unresolved = true;
+        asleep = false;
         apply();
       });
       bDefault.addEventListener('click', () => {

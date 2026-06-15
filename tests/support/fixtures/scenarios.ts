@@ -33,6 +33,21 @@ export const ASLEEP: CardExpectation = {
   absent: ['72%'],
 };
 
+// Foreign / unconfigured install (Story 1.6 designed-empty-state): no Tesla
+// entities resolve and no registry is present. The card must still upgrade and
+// render — vehicle name + neutral em-dash placeholders, never a false reading —
+// and emit ZERO console/page errors (the consoleGuard is the "never crash"
+// assertion). The committed analogue is src/fixtures/all-unresolved.json.
+export const UNRESOLVED: CardExpectation = {
+  open: { scenario: 'unresolved' },
+  label: 'unresolved / foreign install',
+  // The vehicle name comes from config and always renders; live values collapse
+  // to an em-dash. The card frame (tab strip) still paints.
+  visible: [CARD_NAME, '—'],
+  // No false/overstated reading — the awake battery figure must NOT appear.
+  absent: ['72%', '235 mi'],
+};
+
 // Same vehicle, differently-named device (my_tesla_* instead of garage_model_y_*).
 // Proves the resolver matches entities by function-name, not a hard-coded prefix.
 export const AWAKE_RENAMED: CardExpectation = {
