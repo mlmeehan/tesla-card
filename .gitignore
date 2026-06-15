@@ -7,6 +7,15 @@ dist/
 # Local-only recolor test art (bring-your-own; Tesla trade-dress stays out of the repo)
 demo/local/
 
+# Tesla trade-dress source art — never commit/redistribute Tesla renders or vectorizations
+# of them (CLAUDE.md [card]: "No vehicle artwork ships — bring your own"). These are the
+# source Tesla Model Y renders, the tracing workshop, and the photo-traced SVGs/docs derived
+# from them. Generic bring-your-own recolor sources can be re-included later if needed.
+docs/Tesla1.png
+docs/Tesla2.png
+docs/tesla1-svg/
+assets/
+
 # Playwright E2E artifacts (reports/results are regenerated; baselines under
 # tests/**/-snapshots/ ARE committed and must not be ignored)
 /test-results/
