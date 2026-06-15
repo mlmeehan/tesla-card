@@ -17,7 +17,7 @@ export class TcSlider extends LitElement {
   @property({ type: Boolean }) public disabled = false;
   @property({ type: Number }) public decimals?: number;
   @property() public unit = '';
-  @property() public accent = 'var(--tc-blue)';
+  @property() public accent = 'var(--tc-blue, #38bdf8)';
 
   @state() private _drag?: number;
 
@@ -108,9 +108,9 @@ export class TcSlider extends LitElement {
       .track {
         position: relative;
         height: 46px;
-        border-radius: var(--tc-radius-md);
-        background: var(--tc-surface-2);
-        border: 1px solid var(--tc-border);
+        border-radius: var(--tc-radius-md, 16px);
+        background: var(--tc-surface-2, rgba(255, 255, 255, 0.07));
+        border: 1px solid var(--tc-border, rgba(255, 255, 255, 0.09));
         overflow: hidden;
         cursor: pointer;
         user-select: none;
@@ -156,7 +156,7 @@ export class TcSlider extends LitElement {
         place-items: center;
         font-size: 15px;
         font-weight: 700;
-        color: var(--tc-text);
+        color: var(--tc-text, #f1f5f9);
         text-shadow: 0 1px 4px rgba(0, 0, 0, 0.55);
         pointer-events: none;
       }

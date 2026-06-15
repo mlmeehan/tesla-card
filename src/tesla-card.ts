@@ -235,9 +235,9 @@ export class TeslaCard extends LitElement implements LovelaceCard {
         display: flex;
         gap: 6px;
         padding: 6px;
-        background: var(--tc-surface);
-        border: 1px solid var(--tc-border);
-        border-radius: var(--tc-pill);
+        background: var(--tc-surface, rgba(255, 255, 255, 0.045));
+        border: 1px solid var(--tc-border, rgba(255, 255, 255, 0.09));
+        border-radius: var(--tc-pill, 999px);
         overflow-x: auto;
         scrollbar-width: none;
       }
@@ -253,24 +253,24 @@ export class TeslaCard extends LitElement implements LovelaceCard {
         padding: 10px 13px;
         border: 0;
         background: transparent;
-        color: var(--tc-text-dim);
-        border-radius: var(--tc-pill);
+        color: var(--tc-text-dim, #9aa7b8);
+        border-radius: var(--tc-pill, 999px);
         font-family: inherit;
         font-size: 13px;
         font-weight: 650;
         cursor: pointer;
         white-space: nowrap;
-        transition: color 0.16s var(--tc-ease), background 0.16s var(--tc-ease),
-          flex-grow 0.16s var(--tc-ease);
+        transition: color 0.16s var(--tc-ease, cubic-bezier(0.22, 1, 0.36, 1)), background 0.16s var(--tc-ease, cubic-bezier(0.22, 1, 0.36, 1)),
+          flex-grow 0.16s var(--tc-ease, cubic-bezier(0.22, 1, 0.36, 1));
       }
       .tab:hover:not(.active) {
-        color: var(--tc-text);
+        color: var(--tc-text, #f1f5f9);
       }
       .tab.active {
         flex: 1 1 auto;
-        background: var(--tc-surface-3);
-        color: var(--tc-text);
-        box-shadow: var(--tc-shadow-sm);
+        background: var(--tc-surface-3, rgba(255, 255, 255, 0.1));
+        color: var(--tc-text, #f1f5f9);
+        box-shadow: var(--tc-shadow-sm, 0 6px 18px -8px rgba(0, 0, 0, 0.5));
       }
       .tab .tc-ico {
         opacity: 0.95;

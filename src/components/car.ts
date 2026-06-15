@@ -68,7 +68,7 @@ export function carView(opts: CarViewOpts): TemplateResult {
         <image href=${body.color} x="0" y="0" width=${w} height=${h} />
 
         <g mask="url(#tc-paintmask)" style="isolation:isolate">
-          <rect x="0" y="0" width=${w} height=${h} fill="var(--tc-paint)" />
+          <rect x="0" y="0" width=${w} height=${h} fill="var(--tc-paint, #c6c8c9)" />
           <image
             href=${body.shade}
             x="0"
@@ -156,7 +156,7 @@ function genericCar(
       </defs>
 
       <ellipse cx="520" cy="450" rx="440" ry="22" fill="#000000" opacity="0.2" />
-      <use href="#tc-ev-body" fill="var(--tc-paint)" />
+      <use href="#tc-ev-body" fill="var(--tc-paint, #c6c8c9)" />
 
       <path d="M 400 196 L 462 108 L 634 108 L 810 196 Z" fill="url(#tc-ev-glass)" />
       <path d="M 546 109 L 558 109 L 558 195 L 546 195 Z" fill="#10141a" opacity="0.55" />
@@ -212,10 +212,10 @@ export const carStyles = css`
     height: auto;
   }
   .tc-car .tc-car-paint {
-    fill: var(--tc-paint);
+    fill: var(--tc-paint, #c6c8c9);
   }
   .tc-car.charging {
-    animation: tc-car-charge 2.4s var(--tc-ease) infinite;
+    animation: tc-car-charge 2.4s var(--tc-ease, cubic-bezier(0.22, 1, 0.36, 1)) infinite;
   }
   @keyframes tc-car-charge {
     0%,
@@ -223,7 +223,7 @@ export const carStyles = css`
       filter: drop-shadow(0 22px 30px rgba(0, 0, 0, 0.45));
     }
     50% {
-      filter: drop-shadow(0 0 16px var(--tc-green))
+      filter: drop-shadow(0 0 16px var(--tc-green, #34d399))
         drop-shadow(0 22px 30px rgba(0, 0, 0, 0.45));
     }
   }

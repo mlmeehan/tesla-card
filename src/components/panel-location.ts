@@ -78,13 +78,13 @@ export class TcPanelLocation extends TcBase {
                 icon: mdiMapMarkerDistance,
                 label: 'To arrival',
                 value: display(this.hass, cfg, 'distance_to_arrival'),
-                color: 'var(--tc-blue)',
+                color: 'var(--tc-blue, #38bdf8)',
               })}
               ${statTile({
                 icon: mdiClockOutline,
                 label: 'ETA',
                 value: eta !== undefined ? formatMinutesToHM(eta) : '—',
-                color: 'var(--tc-green)',
+                color: 'var(--tc-green, #34d399)',
               })}
               ${statTile({
                 icon: mdiCarBrakeAlert,
@@ -93,7 +93,7 @@ export class TcPanelLocation extends TcBase {
                   trafficRaw && !isUnavailable(trafficRaw)
                     ? `${formatNumber(Number(trafficRaw))} min`
                     : 'None',
-                color: 'var(--tc-amber)',
+                color: 'var(--tc-amber, #fbbf24)',
               })}
             </div>`
           : nothing}
@@ -103,19 +103,19 @@ export class TcPanelLocation extends TcBase {
             icon: mdiCounter,
             label: 'Odometer',
             value: display(this.hass, cfg, 'odometer'),
-            color: 'var(--tc-purple)',
+            color: 'var(--tc-purple, #a78bfa)',
           })}
           ${statTile({
             icon: mdiSpeedometer,
             label: 'Speed',
             value: display(this.hass, cfg, 'speed'),
-            color: 'var(--tc-blue)',
+            color: 'var(--tc-blue, #38bdf8)',
           })}
           ${statTile({
             icon: mdiLightningBolt,
             label: 'Power',
             value: display(this.hass, cfg, 'power'),
-            color: 'var(--tc-green)',
+            color: 'var(--tc-green, #34d399)',
           })}
         </div>
       </div>
@@ -133,7 +133,7 @@ export class TcPanelLocation extends TcBase {
       .map-card {
         padding: 0;
         overflow: hidden;
-        border-radius: var(--tc-radius-lg);
+        border-radius: var(--tc-radius-lg, 22px);
       }
       .map {
         position: relative;
@@ -156,7 +156,7 @@ export class TcPanelLocation extends TcBase {
         align-items: center;
         justify-content: center;
         gap: 8px;
-        color: var(--tc-text-mute);
+        color: var(--tc-text-mute, #64748b);
         font-size: 13px;
         font-weight: 600;
       }
@@ -172,7 +172,7 @@ export class TcPanelLocation extends TcBase {
         gap: 5px;
         font-size: 12.5px;
         font-weight: 600;
-        color: var(--tc-text-dim);
+        color: var(--tc-text-dim, #9aa7b8);
       }
       .maplink {
         display: inline-flex;
@@ -180,7 +180,7 @@ export class TcPanelLocation extends TcBase {
         gap: 4px;
         font-size: 12.5px;
         font-weight: 650;
-        color: var(--tc-blue);
+        color: var(--tc-blue, #38bdf8);
         text-decoration: none;
       }
       .maplink:hover {

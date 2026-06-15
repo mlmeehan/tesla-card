@@ -96,7 +96,7 @@ export const ring = (
   const circ = 2 * Math.PI * r;
   const p = clamp(percent ?? 0, 0, 100);
   const off = circ * (1 - p / 100);
-  const color = opts.color ?? 'var(--tc-green)';
+  const color = opts.color ?? 'var(--tc-green, #34d399)';
   return html`
     <div class="tc-ring" style="width:${size}px;height:${size}px">
       <svg viewBox="0 0 ${size} ${size}" class=${opts.charging ? 'charging' : ''}>
@@ -105,7 +105,7 @@ export const ring = (
           cy=${size / 2}
           r=${r}
           fill="none"
-          stroke=${opts.track ?? 'var(--tc-border)'}
+          stroke=${opts.track ?? 'var(--tc-border, rgba(255, 255, 255, 0.09))'}
           stroke-width=${stroke}
         ></circle>
         <circle

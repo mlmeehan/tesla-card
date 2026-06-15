@@ -79,7 +79,7 @@ export class TcPanelTyres extends TcBase {
     css`
       .block {
         padding: 18px;
-        border-radius: var(--tc-radius-lg);
+        border-radius: var(--tc-radius-lg, 22px);
         display: flex;
         flex-direction: column;
         gap: 16px;
@@ -92,13 +92,13 @@ export class TcPanelTyres extends TcBase {
       .summary {
         font-size: 12.5px;
         font-weight: 650;
-        color: var(--tc-text-dim);
+        color: var(--tc-text-dim, #9aa7b8);
       }
       .summary.good {
-        color: var(--tc-green);
+        color: var(--tc-green, #34d399);
       }
       .summary.warn {
-        color: var(--tc-red);
+        color: var(--tc-red, #f87171);
       }
 
       .layout {
@@ -120,16 +120,16 @@ export class TcPanelTyres extends TcBase {
         display: block;
       }
       .car rect {
-        fill: var(--tc-surface-2);
-        stroke: var(--tc-border-strong);
+        fill: var(--tc-surface-2, rgba(255, 255, 255, 0.07));
+        stroke: var(--tc-border-strong, rgba(255, 255, 255, 0.16));
         stroke-width: 1.5;
       }
       .car polygon,
       .car rect:not(:first-child) {
-        fill: var(--tc-surface-3);
+        fill: var(--tc-surface-3, rgba(255, 255, 255, 0.1));
       }
       .car polygon {
-        stroke: var(--tc-border);
+        stroke: var(--tc-border, rgba(255, 255, 255, 0.09));
         stroke-width: 1;
       }
 
@@ -139,11 +139,11 @@ export class TcPanelTyres extends TcBase {
         align-items: center;
         gap: 3px;
         padding: 12px 18px;
-        border-radius: var(--tc-radius-md);
-        background: var(--tc-surface);
-        border: 1px solid var(--tc-border);
+        border-radius: var(--tc-radius-md, 16px);
+        background: var(--tc-surface, rgba(255, 255, 255, 0.045));
+        border: 1px solid var(--tc-border, rgba(255, 255, 255, 0.09));
         min-width: 92px;
-        transition: border-color 0.18s var(--tc-ease), background 0.18s var(--tc-ease);
+        transition: border-color 0.18s var(--tc-ease, cubic-bezier(0.22, 1, 0.36, 1)), background 0.18s var(--tc-ease, cubic-bezier(0.22, 1, 0.36, 1));
       }
       .corner.fl {
         grid-column: 1;
@@ -162,21 +162,21 @@ export class TcPanelTyres extends TcBase {
         grid-row: 2;
       }
       .corner.warn {
-        border-color: color-mix(in srgb, var(--tc-red) 55%, transparent);
-        background: color-mix(in srgb, var(--tc-red) 12%, transparent);
+        border-color: color-mix(in srgb, var(--tc-red, #f87171) 55%, transparent);
+        background: color-mix(in srgb, var(--tc-red, #f87171) 12%, transparent);
       }
       .c-label {
         font-size: 11px;
         font-weight: 600;
         letter-spacing: 0.06em;
         text-transform: uppercase;
-        color: var(--tc-text-mute);
+        color: var(--tc-text-mute, #64748b);
       }
       .c-val {
         font-size: 24px;
         font-weight: 750;
         letter-spacing: -0.02em;
-        color: var(--tc-text);
+        color: var(--tc-text, #f1f5f9);
         display: inline-flex;
         align-items: baseline;
         gap: 3px;
@@ -184,7 +184,7 @@ export class TcPanelTyres extends TcBase {
       .c-unit {
         font-size: 12px;
         font-weight: 600;
-        color: var(--tc-text-dim);
+        color: var(--tc-text-dim, #9aa7b8);
       }
       .c-warn {
         display: inline-flex;
@@ -192,7 +192,7 @@ export class TcPanelTyres extends TcBase {
         gap: 3px;
         font-size: 11px;
         font-weight: 700;
-        color: var(--tc-red);
+        color: var(--tc-red, #f87171);
       }
     `,
   ];

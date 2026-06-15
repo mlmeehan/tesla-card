@@ -78,11 +78,11 @@ export class TcPanelClimate extends TcBase {
         class="seat ${active ? 'on' : ''}"
         ?disabled=${unavailable}
         style=${active
-          ? `--lvl:${intensity};background:color-mix(in srgb, var(--tc-orange) ${8 + intensity * 26}%, transparent);border-color:color-mix(in srgb, var(--tc-orange) ${40 + intensity * 30}%, transparent)`
+          ? `--lvl:${intensity};background:color-mix(in srgb, var(--tc-orange, #fb923c) ${8 + intensity * 26}%, transparent);border-color:color-mix(in srgb, var(--tc-orange, #fb923c) ${40 + intensity * 30}%, transparent)`
           : nothing}
         @click=${() => this._cycleSeat(key)}
       >
-        ${icon(glyph, { size: 22, color: active ? 'var(--tc-orange)' : undefined })}
+        ${icon(glyph, { size: 22, color: active ? 'var(--tc-orange, #fb923c)' : undefined })}
         <span class="seat-name">${label}</span>
         <span class="bars">
           ${[0, 1, 2].map(
@@ -115,13 +115,13 @@ export class TcPanelClimate extends TcBase {
               icon: mdiThermometer,
               label: 'Inside',
               value: display(this.hass, cfg, 'inside_temp', { decimals: 0 }),
-              color: 'var(--tc-amber)',
+              color: 'var(--tc-amber, #fbbf24)',
             })}
             ${statTile({
               icon: mdiThermometerLow,
               label: 'Outside',
               value: display(this.hass, cfg, 'outside_temp', { decimals: 0 }),
-              color: 'var(--tc-blue)',
+              color: 'var(--tc-blue, #38bdf8)',
             })}
           </div>
 
@@ -175,7 +175,7 @@ export class TcPanelClimate extends TcBase {
         <div class="grid g2">
           <button
             class="toggle-tile ${defrostOn ? 'on' : ''}"
-            style="--accent:var(--tc-blue)"
+            style="--accent:var(--tc-blue, #38bdf8)"
             ?disabled=${isUnavailable(rawState(this.hass, cfg, 'defrost'))}
             @click=${() => this._toggle('defrost')}
           >
@@ -184,7 +184,7 @@ export class TcPanelClimate extends TcBase {
           </button>
           <button
             class="toggle-tile ${copOn ? 'on' : ''}"
-            style="--accent:var(--tc-teal)"
+            style="--accent:var(--tc-teal, #2dd4bf)"
             ?disabled=${isUnavailable(rawState(this.hass, cfg, 'cabin_overheat_protection'))}
             @click=${() => this._toggle('cabin_overheat_protection')}
           >
@@ -211,7 +211,7 @@ export class TcPanelClimate extends TcBase {
       }
       .temp-card {
         padding: 16px;
-        border-radius: var(--tc-radius-lg);
+        border-radius: var(--tc-radius-lg, 22px);
         display: flex;
         flex-direction: column;
         gap: 16px;
@@ -234,16 +234,16 @@ export class TcPanelClimate extends TcBase {
         width: 56px;
         height: 56px;
         border-radius: 50%;
-        border: 1px solid var(--tc-border-strong);
-        background: var(--tc-surface-2);
-        color: var(--tc-text);
+        border: 1px solid var(--tc-border-strong, rgba(255, 255, 255, 0.16));
+        background: var(--tc-surface-2, rgba(255, 255, 255, 0.07));
+        color: var(--tc-text, #f1f5f9);
         display: grid;
         place-items: center;
         cursor: pointer;
-        transition: background 0.16s var(--tc-ease), transform 0.12s var(--tc-ease);
+        transition: background 0.16s var(--tc-ease, cubic-bezier(0.22, 1, 0.36, 1)), transform 0.12s var(--tc-ease, cubic-bezier(0.22, 1, 0.36, 1));
       }
       .step:hover {
-        background: var(--tc-surface-3);
+        background: var(--tc-surface-3, rgba(255, 255, 255, 0.1));
       }
       .step:active {
         transform: scale(0.92);
@@ -259,20 +259,20 @@ export class TcPanelClimate extends TcBase {
         flex: 1 1 auto;
       }
       .readout .t {
-        font-size: 56px;
-        font-weight: 760;
+        font-size: var(--tc-fs-climate-readout, 56px);
+        font-weight: var(--tc-fw-climate-readout, 760);
         letter-spacing: -0.03em;
         line-height: 1;
-        color: var(--tc-text);
+        color: var(--tc-text, #f1f5f9);
       }
       .readout .deg {
         font-size: 26px;
         font-weight: 700;
-        color: var(--tc-text-dim);
+        color: var(--tc-text-dim, #9aa7b8);
       }
       .readout.off .t,
       .readout.off .deg {
-        color: var(--tc-text-mute);
+        color: var(--tc-text-mute, #64748b);
       }
 
       .seats {
@@ -286,22 +286,22 @@ export class TcPanelClimate extends TcBase {
         align-items: center;
         gap: 6px;
         padding: 12px 6px 10px;
-        border-radius: var(--tc-radius-md);
-        border: 1px solid var(--tc-border);
-        background: var(--tc-surface);
-        color: var(--tc-text-dim);
+        border-radius: var(--tc-radius-md, 16px);
+        border: 1px solid var(--tc-border, rgba(255, 255, 255, 0.09));
+        background: var(--tc-surface, rgba(255, 255, 255, 0.045));
+        color: var(--tc-text-dim, #9aa7b8);
         cursor: pointer;
-        transition: background 0.18s var(--tc-ease), border-color 0.18s var(--tc-ease),
-          transform 0.12s var(--tc-ease), color 0.18s var(--tc-ease);
+        transition: background 0.18s var(--tc-ease, cubic-bezier(0.22, 1, 0.36, 1)), border-color 0.18s var(--tc-ease, cubic-bezier(0.22, 1, 0.36, 1)),
+          transform 0.12s var(--tc-ease, cubic-bezier(0.22, 1, 0.36, 1)), color 0.18s var(--tc-ease, cubic-bezier(0.22, 1, 0.36, 1));
       }
       .seat:hover {
-        border-color: var(--tc-border-strong);
+        border-color: var(--tc-border-strong, rgba(255, 255, 255, 0.16));
       }
       .seat:active {
         transform: scale(0.97);
       }
       .seat.on {
-        color: var(--tc-text);
+        color: var(--tc-text, #f1f5f9);
       }
       .seat[disabled] {
         opacity: 0.4;
@@ -319,10 +319,10 @@ export class TcPanelClimate extends TcBase {
         width: 13px;
         height: 4px;
         border-radius: 2px;
-        background: var(--tc-surface-3);
+        background: var(--tc-surface-3, rgba(255, 255, 255, 0.1));
       }
       .bar.fill {
-        background: var(--tc-orange);
+        background: var(--tc-orange, #fb923c);
       }
 
       .toggle-tile {
@@ -333,18 +333,18 @@ export class TcPanelClimate extends TcBase {
         justify-content: center;
         gap: 9px;
         padding: 15px;
-        border-radius: var(--tc-radius-md);
-        border: 1px solid var(--tc-border);
-        background: var(--tc-surface-2);
-        color: var(--tc-text-dim);
+        border-radius: var(--tc-radius-md, 16px);
+        border: 1px solid var(--tc-border, rgba(255, 255, 255, 0.09));
+        background: var(--tc-surface-2, rgba(255, 255, 255, 0.07));
+        color: var(--tc-text-dim, #9aa7b8);
         font-size: 14px;
         font-weight: 650;
         cursor: pointer;
-        transition: background 0.16s var(--tc-ease), border-color 0.16s var(--tc-ease),
-          color 0.16s var(--tc-ease), transform 0.12s var(--tc-ease);
+        transition: background 0.16s var(--tc-ease, cubic-bezier(0.22, 1, 0.36, 1)), border-color 0.16s var(--tc-ease, cubic-bezier(0.22, 1, 0.36, 1)),
+          color 0.16s var(--tc-ease, cubic-bezier(0.22, 1, 0.36, 1)), transform 0.12s var(--tc-ease, cubic-bezier(0.22, 1, 0.36, 1));
       }
       .toggle-tile:hover {
-        border-color: var(--tc-border-strong);
+        border-color: var(--tc-border-strong, rgba(255, 255, 255, 0.16));
       }
       .toggle-tile:active {
         transform: scale(0.98);
@@ -354,9 +354,9 @@ export class TcPanelClimate extends TcBase {
         pointer-events: none;
       }
       .toggle-tile.on {
-        color: var(--accent, var(--tc-blue));
-        border-color: color-mix(in srgb, var(--accent, var(--tc-blue)) 45%, transparent);
-        background: color-mix(in srgb, var(--accent, var(--tc-blue)) 14%, transparent);
+        color: var(--accent, var(--tc-blue, #38bdf8));
+        border-color: color-mix(in srgb, var(--accent, var(--tc-blue, #38bdf8)) 45%, transparent);
+        background: color-mix(in srgb, var(--accent, var(--tc-blue, #38bdf8)) 14%, transparent);
       }
 
       .bigpill {
@@ -368,17 +368,17 @@ export class TcPanelClimate extends TcBase {
         gap: 9px;
         width: 100%;
         padding: 14px;
-        border-radius: var(--tc-radius-md);
-        border: 1px solid var(--tc-border-strong);
-        background: var(--tc-surface-2);
-        color: var(--tc-text);
+        border-radius: var(--tc-radius-md, 16px);
+        border: 1px solid var(--tc-border-strong, rgba(255, 255, 255, 0.16));
+        background: var(--tc-surface-2, rgba(255, 255, 255, 0.07));
+        color: var(--tc-text, #f1f5f9);
         font-size: 15px;
         font-weight: 700;
         cursor: pointer;
-        transition: background 0.16s var(--tc-ease), transform 0.12s var(--tc-ease);
+        transition: background 0.16s var(--tc-ease, cubic-bezier(0.22, 1, 0.36, 1)), transform 0.12s var(--tc-ease, cubic-bezier(0.22, 1, 0.36, 1));
       }
       .bigpill:hover {
-        background: var(--tc-surface-3);
+        background: var(--tc-surface-3, rgba(255, 255, 255, 0.1));
       }
       .bigpill:active {
         transform: scale(0.99);
@@ -388,9 +388,9 @@ export class TcPanelClimate extends TcBase {
         pointer-events: none;
       }
       .bigpill.on {
-        color: var(--tc-teal);
-        border-color: color-mix(in srgb, var(--tc-teal) 45%, transparent);
-        background: color-mix(in srgb, var(--tc-teal) 14%, transparent);
+        color: var(--tc-teal, #2dd4bf);
+        border-color: color-mix(in srgb, var(--tc-teal, #2dd4bf) 45%, transparent);
+        background: color-mix(in srgb, var(--tc-teal, #2dd4bf) 14%, transparent);
       }
     `,
   ];

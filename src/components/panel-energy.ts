@@ -34,11 +34,11 @@ interface Node {
  * Coordinates are in the 100×102 viewBox.
  */
 const N: Record<'home' | 'solar' | 'grid' | 'powerwall' | 'car', Node> = {
-  home: { x: 50, y: 50, r: 15, color: 'var(--tc-blue)', icon: mdiHomeLightningBolt },
-  solar: { x: 50, y: 15, r: 13, color: 'var(--tc-amber)', icon: mdiSolarPower },
-  grid: { x: 15, y: 50, r: 13, color: 'var(--tc-text-dim)', icon: mdiTransmissionTower },
-  powerwall: { x: 85, y: 50, r: 13, color: 'var(--tc-green)', icon: mdiHomeBattery },
-  car: { x: 50, y: 85, r: 13, color: 'var(--tc-teal)', icon: mdiCarElectric },
+  home: { x: 50, y: 50, r: 15, color: 'var(--tc-blue, #38bdf8)', icon: mdiHomeLightningBolt },
+  solar: { x: 50, y: 15, r: 13, color: 'var(--tc-amber, #fbbf24)', icon: mdiSolarPower },
+  grid: { x: 15, y: 50, r: 13, color: 'var(--tc-text-dim, #9aa7b8)', icon: mdiTransmissionTower },
+  powerwall: { x: 85, y: 50, r: 13, color: 'var(--tc-green, #34d399)', icon: mdiHomeBattery },
+  car: { x: 50, y: 85, r: 13, color: 'var(--tc-teal, #2dd4bf)', icon: mdiCarElectric },
 };
 
 interface Geom {
@@ -215,7 +215,7 @@ export class TcPanelEnergy extends TcBase {
           icon: mdiBatteryLock,
           label: 'Reserve',
           value: `${formatNumber(reserve)}%`,
-          color: 'var(--tc-green)',
+          color: 'var(--tc-green, #34d399)',
         })
       );
     }
@@ -227,7 +227,7 @@ export class TcPanelEnergy extends TcBase {
           icon: mdiCogOutline,
           label: 'Mode',
           value: prettyText(mode),
-          color: 'var(--tc-purple)',
+          color: 'var(--tc-purple, #a78bfa)',
         })
       );
     }
@@ -239,7 +239,7 @@ export class TcPanelEnergy extends TcBase {
           icon: mdiCounter,
           label: 'Session',
           value: `${formatNumber(session, 1)} kWh`,
-          color: 'var(--tc-teal)',
+          color: 'var(--tc-teal, #2dd4bf)',
         })
       );
     }
@@ -252,7 +252,7 @@ export class TcPanelEnergy extends TcBase {
           icon: mdiPowerPlug,
           label: 'Connector',
           value: prettyText(wcStatus),
-          color: 'var(--tc-blue)',
+          color: 'var(--tc-blue, #38bdf8)',
         })
       );
     } else if (wcConnected && !isUnavailable(wcConnected)) {
@@ -261,7 +261,7 @@ export class TcPanelEnergy extends TcBase {
           icon: mdiPowerPlug,
           label: 'Connector',
           value: wcConnected === 'on' ? 'Connected' : 'Unplugged',
-          color: wcConnected === 'on' ? 'var(--tc-blue)' : 'var(--tc-text-dim)',
+          color: wcConnected === 'on' ? 'var(--tc-blue, #38bdf8)' : 'var(--tc-text-dim, #9aa7b8)',
         })
       );
     }
@@ -280,7 +280,7 @@ export class TcPanelEnergy extends TcBase {
       }
       .flow-card {
         padding: 14px 16px 16px;
-        border-radius: var(--tc-radius-lg);
+        border-radius: var(--tc-radius-lg, 22px);
       }
       .flow-head {
         display: flex;
@@ -290,39 +290,39 @@ export class TcPanelEnergy extends TcBase {
         margin-bottom: 4px;
       }
       .ftitle {
-        font-size: 11.5px;
-        font-weight: 700;
+        font-size: var(--tc-fs-label, 11.5px);
+        font-weight: var(--tc-fw-label, 700);
         letter-spacing: 0.1em;
         text-transform: uppercase;
-        color: var(--tc-text-dim);
+        color: var(--tc-text-dim, #9aa7b8);
       }
       .gchip {
         display: inline-flex;
         align-items: center;
         gap: 6px;
         padding: 4px 10px;
-        border-radius: var(--tc-pill);
-        background: var(--tc-surface-2);
-        border: 1px solid var(--tc-border);
+        border-radius: var(--tc-pill, 999px);
+        background: var(--tc-surface-2, rgba(255, 255, 255, 0.07));
+        border: 1px solid var(--tc-border, rgba(255, 255, 255, 0.09));
         font-size: 12px;
         font-weight: 650;
-        color: var(--tc-text-dim);
+        color: var(--tc-text-dim, #9aa7b8);
         white-space: nowrap;
       }
       .gdot {
         width: 7px;
         height: 7px;
         border-radius: 50%;
-        background: var(--tc-text-mute);
+        background: var(--tc-text-mute, #64748b);
         box-shadow: 0 0 7px currentColor;
       }
       .gchip.ok .gdot {
-        background: var(--tc-green);
-        color: var(--tc-green);
+        background: var(--tc-green, #34d399);
+        color: var(--tc-green, #34d399);
       }
       .gchip.warn .gdot {
-        background: var(--tc-amber);
-        color: var(--tc-amber);
+        background: var(--tc-amber, #fbbf24);
+        color: var(--tc-amber, #fbbf24);
       }
 
       /* ── flow diagram ──────────────────────────────────────────────── */
@@ -333,7 +333,7 @@ export class TcPanelEnergy extends TcBase {
         overflow: visible;
       }
       .track {
-        stroke: var(--tc-border-strong);
+        stroke: var(--tc-border-strong, rgba(255, 255, 255, 0.16));
         stroke-width: 1;
         stroke-linecap: round;
       }
@@ -356,32 +356,32 @@ export class TcPanelEnergy extends TcBase {
       }
 
       .node .ring {
-        fill: var(--tc-surface-2);
-        stroke: var(--tc-border);
+        fill: var(--tc-surface-2, rgba(255, 255, 255, 0.07));
+        stroke: var(--tc-border, rgba(255, 255, 255, 0.09));
         stroke-width: 1;
-        transition: stroke 0.3s var(--tc-ease), fill 0.3s var(--tc-ease);
+        transition: stroke 0.3s var(--tc-ease, cubic-bezier(0.22, 1, 0.36, 1)), fill 0.3s var(--tc-ease, cubic-bezier(0.22, 1, 0.36, 1));
       }
       .node.on .ring {
         stroke: var(--c);
-        fill: color-mix(in srgb, var(--c) 16%, var(--tc-surface-2));
+        fill: color-mix(in srgb, var(--c) 16%, var(--tc-surface-2, rgba(255, 255, 255, 0.07)));
         filter: drop-shadow(0 0 2.5px color-mix(in srgb, var(--c) 55%, transparent));
       }
       .node .ico path {
-        fill: var(--tc-text-mute);
-        transition: fill 0.3s var(--tc-ease);
+        fill: var(--tc-text-mute, #64748b);
+        transition: fill 0.3s var(--tc-ease, cubic-bezier(0.22, 1, 0.36, 1));
       }
       .node.on .ico path {
         fill: var(--c);
       }
       .node .val {
-        fill: var(--tc-text);
-        font-family: var(--tc-font);
+        fill: var(--tc-text, #f1f5f9);
+        font-family: var(--tc-font, ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif);
         font-size: 7px;
         font-weight: 760;
         letter-spacing: -0.02em;
       }
       .node .val .u {
-        fill: var(--tc-text-dim);
+        fill: var(--tc-text-dim, #9aa7b8);
         font-size: 4.2px;
         font-weight: 650;
       }

@@ -97,7 +97,7 @@ export class TcPanelMedia extends TcBase {
             .max=${100}
             .step=${1}
             unit="%"
-            accent="var(--tc-purple)"
+            accent="var(--tc-purple, #a78bfa)"
             ?disabled=${off || vol === undefined}
             @value-changed=${(e: CustomEvent<{ value: number }>) =>
               this._call('volume_set', { volume_level: e.detail.value / 100 })}
@@ -112,7 +112,7 @@ export class TcPanelMedia extends TcBase {
     css`
       .media {
         padding: 18px;
-        border-radius: var(--tc-radius-lg);
+        border-radius: var(--tc-radius-lg, 22px);
         display: flex;
         flex-direction: column;
         gap: 18px;
@@ -127,11 +127,11 @@ export class TcPanelMedia extends TcBase {
         flex: 0 0 auto;
         width: 64px;
         height: 64px;
-        border-radius: var(--tc-radius-md);
-        background: var(--tc-surface-3);
+        border-radius: var(--tc-radius-md, 16px);
+        background: var(--tc-surface-3, rgba(255, 255, 255, 0.1));
         display: grid;
         place-items: center;
-        color: var(--tc-text-dim);
+        color: var(--tc-text-dim, #9aa7b8);
         overflow: hidden;
       }
       .art img {
@@ -151,14 +151,14 @@ export class TcPanelMedia extends TcBase {
       .title {
         font-size: 16px;
         font-weight: 700;
-        color: var(--tc-text);
+        color: var(--tc-text, #f1f5f9);
         white-space: nowrap;
         overflow: hidden;
         text-overflow: ellipsis;
       }
       .artist {
         font-size: 13px;
-        color: var(--tc-text-dim);
+        color: var(--tc-text-dim, #9aa7b8);
         white-space: nowrap;
         overflow: hidden;
         text-overflow: ellipsis;
@@ -174,16 +174,16 @@ export class TcPanelMedia extends TcBase {
         appearance: none;
         border: 0;
         background: transparent;
-        color: var(--tc-text);
+        color: var(--tc-text, #f1f5f9);
         cursor: pointer;
         display: grid;
         place-items: center;
         padding: 6px;
         border-radius: 50%;
-        transition: transform 0.12s var(--tc-ease), color 0.16s var(--tc-ease);
+        transition: transform 0.12s var(--tc-ease, cubic-bezier(0.22, 1, 0.36, 1)), color 0.16s var(--tc-ease, cubic-bezier(0.22, 1, 0.36, 1));
       }
       .tbtn:hover {
-        color: var(--tc-text);
+        color: var(--tc-text, #f1f5f9);
       }
       .tbtn:active {
         transform: scale(0.9);
@@ -195,11 +195,11 @@ export class TcPanelMedia extends TcBase {
       .tbtn.play {
         width: 64px;
         height: 64px;
-        background: var(--tc-surface-3);
-        border: 1px solid var(--tc-border-strong);
+        background: var(--tc-surface-3, rgba(255, 255, 255, 0.1));
+        border: 1px solid var(--tc-border-strong, rgba(255, 255, 255, 0.16));
       }
       .tbtn.play:hover {
-        background: var(--tc-surface-2);
+        background: var(--tc-surface-2, rgba(255, 255, 255, 0.07));
       }
 
       .volume {
@@ -216,17 +216,17 @@ export class TcPanelMedia extends TcBase {
         width: 46px;
         height: 46px;
         border-radius: 50%;
-        border: 1px solid var(--tc-border);
-        background: var(--tc-surface-2);
-        color: var(--tc-text-dim);
+        border: 1px solid var(--tc-border, rgba(255, 255, 255, 0.09));
+        background: var(--tc-surface-2, rgba(255, 255, 255, 0.07));
+        color: var(--tc-text-dim, #9aa7b8);
         display: grid;
         place-items: center;
         cursor: pointer;
-        transition: color 0.16s var(--tc-ease), border-color 0.16s var(--tc-ease);
+        transition: color 0.16s var(--tc-ease, cubic-bezier(0.22, 1, 0.36, 1)), border-color 0.16s var(--tc-ease, cubic-bezier(0.22, 1, 0.36, 1));
       }
       .mute.on {
-        color: var(--tc-red);
-        border-color: color-mix(in srgb, var(--tc-red) 45%, transparent);
+        color: var(--tc-red, #f87171);
+        border-color: color-mix(in srgb, var(--tc-red, #f87171) 45%, transparent);
       }
       .mute[disabled] {
         opacity: 0.35;

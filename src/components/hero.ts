@@ -36,7 +36,7 @@ export class TcHero extends TcBase {
 
   private _status(asleep: boolean): HeroStatus {
     if (asleep) {
-      return { dot: 'var(--tc-text-mute)', label: 'Asleep', sub: 'Tap a command to wake' };
+      return { dot: 'var(--tc-text-mute, #64748b)', label: 'Asleep', sub: 'Tap a command to wake' };
     }
     const shift = rawState(this.hass, this.config, 'shift_state');
     const charging = this._isCharging();
@@ -49,7 +49,7 @@ export class TcHero extends TcBase {
         ttf && ttf > 0
           ? `Charging · ${formatHoursToHM(ttf)}${limit ? ` to ${formatNumber(limit)}%` : ''}`
           : 'Charging';
-      return { dot: 'var(--tc-green)', label: 'Charging', sub };
+      return { dot: 'var(--tc-green, #34d399)', label: 'Charging', sub };
     }
     if (shift && !isUnavailable(shift) && shift !== 'P') {
       const speed = num(this.hass, this.config, 'speed');
@@ -58,10 +58,10 @@ export class TcHero extends TcBase {
         speed !== undefined
           ? `${formatNumber(speed)} ${unit(this.hass, this.config, 'speed') || 'mph'}`
           : 'In motion';
-      return { dot: 'var(--tc-blue)', label: map[shift] ?? 'Driving', sub };
+      return { dot: 'var(--tc-blue, #38bdf8)', label: map[shift] ?? 'Driving', sub };
     }
     return {
-      dot: locked ? 'var(--tc-green)' : 'var(--tc-amber)',
+      dot: locked ? 'var(--tc-green, #34d399)' : 'var(--tc-amber, #fbbf24)',
       label: 'Parked',
       sub: html`<span class="lockline">
         ${icon(locked ? mdiLock : mdiLockOpenVariant, { size: 14 })}
@@ -114,7 +114,7 @@ export class TcHero extends TcBase {
         >
           <div class="bat-top">
             <span class="bat-pct">
-              ${charging ? icon(mdiFlash, { size: 22, color: 'var(--tc-green)' }) : nothing}
+              ${charging ? icon(mdiFlash, { size: 22, color: 'var(--tc-green, #34d399)' }) : nothing}
               ${battery !== undefined ? `${formatNumber(battery)}%` : '—'}
             </span>
             <span class="bat-range">
@@ -149,17 +149,17 @@ export class TcHero extends TcBase {
         min-width: 0;
       }
       .name {
-        font-size: 21px;
-        font-weight: 750;
+        font-size: var(--tc-fs-name, 21px);
+        font-weight: var(--tc-fw-name, 750);
         letter-spacing: -0.01em;
-        color: var(--tc-text);
+        color: var(--tc-text, #f1f5f9);
       }
       .status {
         display: inline-flex;
         align-items: center;
         gap: 6px;
         font-size: 13px;
-        color: var(--tc-text-dim);
+        color: var(--tc-text-dim, #9aa7b8);
         flex-wrap: wrap;
       }
       .dot {
@@ -171,7 +171,7 @@ export class TcHero extends TcBase {
       }
       .st-label {
         font-weight: 650;
-        color: var(--tc-text);
+        color: var(--tc-text, #f1f5f9);
       }
       .st-sep {
         opacity: 0.5;
@@ -216,7 +216,7 @@ export class TcHero extends TcBase {
         width: 100%;
         object-fit: contain;
         filter: drop-shadow(0 22px 30px rgba(0, 0, 0, 0.45));
-        transition: opacity 0.4s var(--tc-ease), filter 0.4s var(--tc-ease);
+        transition: opacity 0.4s var(--tc-ease, cubic-bezier(0.22, 1, 0.36, 1)), filter 0.4s var(--tc-ease, cubic-bezier(0.22, 1, 0.36, 1));
       }
       .car-stage.asleep .car-img {
         opacity: 0.5;
@@ -237,11 +237,11 @@ export class TcHero extends TcBase {
         gap: 8px;
         padding: 6px;
         margin: -6px;
-        border-radius: var(--tc-radius-md);
-        transition: background 0.16s var(--tc-ease);
+        border-radius: var(--tc-radius-md, 16px);
+        transition: background 0.16s var(--tc-ease, cubic-bezier(0.22, 1, 0.36, 1));
       }
       .battery:hover {
-        background: var(--tc-surface);
+        background: var(--tc-surface, rgba(255, 255, 255, 0.045));
       }
       .bat-top {
         display: flex;
@@ -253,10 +253,10 @@ export class TcHero extends TcBase {
         display: inline-flex;
         align-items: center;
         gap: 4px;
-        font-size: 26px;
-        font-weight: 760;
+        font-size: var(--tc-fs-battery, 26px);
+        font-weight: var(--tc-fw-battery, 760);
         letter-spacing: -0.02em;
-        color: var(--tc-text);
+        color: var(--tc-text, #f1f5f9);
         line-height: 1;
       }
       .bat-pct .tc-ico {
@@ -265,7 +265,7 @@ export class TcHero extends TcBase {
       .bat-range {
         font-size: 15px;
         font-weight: 650;
-        color: var(--tc-text-dim);
+        color: var(--tc-text-dim, #9aa7b8);
       }
     `,
   ];

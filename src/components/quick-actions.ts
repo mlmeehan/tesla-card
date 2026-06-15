@@ -30,7 +30,7 @@ const ACTIONS: QuickAction[] = [
   {
     key: 'lock',
     label: 'Lock',
-    accent: 'var(--tc-green)',
+    accent: 'var(--tc-green, #34d399)',
     iconOn: mdiLock,
     iconOff: mdiLockOpenVariant,
     on: (s) => s === 'locked',
@@ -38,7 +38,7 @@ const ACTIONS: QuickAction[] = [
   {
     key: 'climate',
     label: 'Climate',
-    accent: 'var(--tc-teal)',
+    accent: 'var(--tc-teal, #2dd4bf)',
     iconOn: mdiAirConditioner,
     iconOff: mdiAirConditioner,
     on: (s) => s !== undefined && s !== 'off' && !isUnavailable(s),
@@ -46,7 +46,7 @@ const ACTIONS: QuickAction[] = [
   {
     key: 'charge_port',
     label: 'Port',
-    accent: 'var(--tc-blue)',
+    accent: 'var(--tc-blue, #38bdf8)',
     iconOn: mdiEvStation,
     iconOff: mdiEvStation,
     on: (s) => s === 'open',
@@ -54,7 +54,7 @@ const ACTIONS: QuickAction[] = [
   {
     key: 'frunk',
     label: 'Frunk',
-    accent: 'var(--tc-amber)',
+    accent: 'var(--tc-amber, #fbbf24)',
     iconOn: mdiCar,
     iconOff: mdiCar,
     on: (s) => s === 'open',
@@ -62,7 +62,7 @@ const ACTIONS: QuickAction[] = [
   {
     key: 'trunk',
     label: 'Trunk',
-    accent: 'var(--tc-amber)',
+    accent: 'var(--tc-amber, #fbbf24)',
     iconOn: mdiCarBack,
     iconOff: mdiCarBack,
     on: (s) => s === 'open',
@@ -70,7 +70,7 @@ const ACTIONS: QuickAction[] = [
   {
     key: 'sentry',
     label: 'Sentry',
-    accent: 'var(--tc-red)',
+    accent: 'var(--tc-red, #f87171)',
     iconOn: mdiShieldCar,
     iconOff: mdiShieldCar,
     on: (s) => s === 'on',

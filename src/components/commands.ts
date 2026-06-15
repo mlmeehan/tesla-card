@@ -80,20 +80,20 @@ export class TcCommands extends TcBase {
         align-items: center;
         gap: 7px;
         padding: 13px 6px;
-        border-radius: var(--tc-radius-md);
-        border: 1px solid var(--tc-border);
-        background: var(--tc-surface-2);
-        color: var(--tc-text-dim);
+        border-radius: var(--tc-radius-md, 16px);
+        border: 1px solid var(--tc-border, rgba(255, 255, 255, 0.09));
+        background: var(--tc-surface-2, rgba(255, 255, 255, 0.07));
+        color: var(--tc-text-dim, #9aa7b8);
         font-size: 11.5px;
         font-weight: 650;
         cursor: pointer;
-        transition: background 0.16s var(--tc-ease), color 0.16s var(--tc-ease),
-          border-color 0.16s var(--tc-ease), transform 0.12s var(--tc-ease);
+        transition: background 0.16s var(--tc-ease, cubic-bezier(0.22, 1, 0.36, 1)), color 0.16s var(--tc-ease, cubic-bezier(0.22, 1, 0.36, 1)),
+          border-color 0.16s var(--tc-ease, cubic-bezier(0.22, 1, 0.36, 1)), transform 0.12s var(--tc-ease, cubic-bezier(0.22, 1, 0.36, 1));
       }
       .cmd:hover {
-        color: var(--tc-text);
-        border-color: var(--tc-border-strong);
-        background: var(--tc-surface-3);
+        color: var(--tc-text, #f1f5f9);
+        border-color: var(--tc-border-strong, rgba(255, 255, 255, 0.16));
+        background: var(--tc-surface-3, rgba(255, 255, 255, 0.1));
       }
       .cmd:active {
         transform: scale(0.95);

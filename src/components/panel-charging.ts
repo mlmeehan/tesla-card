@@ -119,7 +119,7 @@ export class TcPanelCharging extends TcBase {
             .max=${limitMax}
             .step=${limitStep}
             unit="%"
-            accent="var(--tc-blue)"
+            accent="var(--tc-blue, #38bdf8)"
             ?disabled=${limit === undefined}
             @value-changed=${(e: CustomEvent<{ value: number }>) =>
               this._setNumber('charge_limit', e.detail.value)}
@@ -138,7 +138,7 @@ export class TcPanelCharging extends TcBase {
             .max=${ampMax}
             .step=${ampStep}
             unit=" A"
-            accent="var(--tc-green)"
+            accent="var(--tc-green, #34d399)"
             ?disabled=${amps === undefined}
             @value-changed=${(e: CustomEvent<{ value: number }>) =>
               this._setNumber('charge_current', e.detail.value)}
@@ -151,37 +151,37 @@ export class TcPanelCharging extends TcBase {
             icon: mdiLightningBolt,
             label: 'Power',
             value: display(this.hass, cfg, 'charger_power', { decimals: 1 }),
-            color: 'var(--tc-green)',
+            color: 'var(--tc-green, #34d399)',
           })}
           ${statTile({
             icon: mdiSpeedometer,
             label: 'Rate',
             value: display(this.hass, cfg, 'charge_rate'),
-            color: 'var(--tc-blue)',
+            color: 'var(--tc-blue, #38bdf8)',
           })}
           ${statTile({
             icon: mdiBatteryCharging,
             label: 'Added',
             value: display(this.hass, cfg, 'charge_energy_added', { decimals: 1 }),
-            color: 'var(--tc-teal)',
+            color: 'var(--tc-teal, #2dd4bf)',
           })}
           ${statTile({
             icon: mdiClockOutline,
             label: 'Time to full',
             value: this._timeToFull(),
-            color: 'var(--tc-amber)',
+            color: 'var(--tc-amber, #fbbf24)',
           })}
           ${statTile({
             icon: mdiFlashOutline,
             label: 'Voltage',
             value: display(this.hass, cfg, 'charger_voltage'),
-            color: 'var(--tc-purple)',
+            color: 'var(--tc-purple, #a78bfa)',
           })}
           ${statTile({
             icon: mdiEvStation,
             label: 'Charge port',
             value: portState && !isUnavailable(portState) ? prettyText(portState) : '—',
-            color: portState === 'open' ? 'var(--tc-amber)' : 'var(--tc-text-dim)',
+            color: portState === 'open' ? 'var(--tc-amber, #fbbf24)' : 'var(--tc-text-dim, #9aa7b8)',
           })}
         </div>
       </div>
@@ -203,7 +203,7 @@ export class TcPanelCharging extends TcBase {
       }
       section.surface.block {
         padding: 16px;
-        border-radius: var(--tc-radius-lg);
+        border-radius: var(--tc-radius-lg, 22px);
       }
       .bsum {
         display: flex;
@@ -217,15 +217,15 @@ export class TcPanelCharging extends TcBase {
         gap: 2px;
       }
       .bnum .big {
-        font-size: 40px;
-        font-weight: 780;
+        font-size: var(--tc-fs-charging-display, 40px);
+        font-weight: var(--tc-fw-charging-display, 780);
         line-height: 1;
         letter-spacing: -0.02em;
       }
       .bnum .pct {
         font-size: 18px;
         font-weight: 700;
-        color: var(--tc-text-dim);
+        color: var(--tc-text-dim, #9aa7b8);
       }
       .bmeta {
         display: flex;
@@ -236,7 +236,7 @@ export class TcPanelCharging extends TcBase {
       .range {
         font-size: 15px;
         font-weight: 650;
-        color: var(--tc-text);
+        color: var(--tc-text, #f1f5f9);
       }
       .cstatus {
         display: inline-flex;
@@ -244,18 +244,18 @@ export class TcPanelCharging extends TcBase {
         gap: 4px;
         font-size: 12.5px;
         font-weight: 600;
-        color: var(--tc-text-dim);
+        color: var(--tc-text-dim, #9aa7b8);
       }
       .cstatus.live {
-        color: var(--tc-green);
+        color: var(--tc-green, #34d399);
       }
       .limit-note {
         margin-top: 10px;
         font-size: 12.5px;
-        color: var(--tc-text-dim);
+        color: var(--tc-text-dim, #9aa7b8);
       }
       .limit-note strong {
-        color: var(--tc-text);
+        color: var(--tc-text, #f1f5f9);
       }
       .lbl-row {
         display: flex;
@@ -265,7 +265,7 @@ export class TcPanelCharging extends TcBase {
       .lbl-row .val {
         font-size: 14px;
         font-weight: 700;
-        color: var(--tc-text);
+        color: var(--tc-text, #f1f5f9);
       }
       .bigpill {
         appearance: none;
@@ -276,18 +276,18 @@ export class TcPanelCharging extends TcBase {
         gap: 9px;
         width: 100%;
         padding: 15px;
-        border-radius: var(--tc-radius-md);
-        border: 1px solid var(--tc-border-strong);
-        background: var(--tc-surface-2);
-        color: var(--tc-text);
+        border-radius: var(--tc-radius-md, 16px);
+        border: 1px solid var(--tc-border-strong, rgba(255, 255, 255, 0.16));
+        background: var(--tc-surface-2, rgba(255, 255, 255, 0.07));
+        color: var(--tc-text, #f1f5f9);
         font-size: 15px;
         font-weight: 700;
         cursor: pointer;
-        transition: background 0.16s var(--tc-ease), border-color 0.16s var(--tc-ease),
-          transform 0.12s var(--tc-ease);
+        transition: background 0.16s var(--tc-ease, cubic-bezier(0.22, 1, 0.36, 1)), border-color 0.16s var(--tc-ease, cubic-bezier(0.22, 1, 0.36, 1)),
+          transform 0.12s var(--tc-ease, cubic-bezier(0.22, 1, 0.36, 1));
       }
       .bigpill:hover {
-        background: var(--tc-surface-3);
+        background: var(--tc-surface-3, rgba(255, 255, 255, 0.1));
       }
       .bigpill:active {
         transform: scale(0.99);
@@ -297,9 +297,9 @@ export class TcPanelCharging extends TcBase {
         pointer-events: none;
       }
       .bigpill.on {
-        color: var(--tc-green);
-        border-color: color-mix(in srgb, var(--tc-green) 45%, transparent);
-        background: color-mix(in srgb, var(--tc-green) 14%, transparent);
+        color: var(--tc-green, #34d399);
+        border-color: color-mix(in srgb, var(--tc-green, #34d399) 45%, transparent);
+        background: color-mix(in srgb, var(--tc-green, #34d399) 14%, transparent);
       }
     `,
   ];

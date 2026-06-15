@@ -13,9 +13,9 @@ import {
 } from '../helpers';
 import type { EntityKey } from '../const';
 
-const DOOR = 'var(--tc-red)';
-const CARGO = 'var(--tc-amber)';
-const GLASS = 'var(--tc-blue)';
+const DOOR = 'var(--tc-red, #f87171)';
+const CARGO = 'var(--tc-amber, #fbbf24)';
+const GLASS = 'var(--tc-blue, #38bdf8)';
 
 @customElement('tc-panel-closures')
 export class TcPanelClosures extends TcBase {
@@ -38,10 +38,10 @@ export class TcPanelClosures extends TcBase {
   }
 
   private _fill(open: boolean, color: string): string {
-    return open ? `color-mix(in srgb, ${color} 34%, transparent)` : 'var(--tc-surface-2)';
+    return open ? `color-mix(in srgb, ${color} 34%, transparent)` : 'var(--tc-surface-2, rgba(255, 255, 255, 0.07))';
   }
   private _stroke(open: boolean, color: string): string {
-    return open ? color : 'var(--tc-border-strong)';
+    return open ? color : 'var(--tc-border-strong, rgba(255, 255, 255, 0.16))';
   }
 
   /** A tappable cover zone (frunk / trunk / windows / charge port). */
@@ -204,15 +204,15 @@ export class TcPanelClosures extends TcBase {
               <circle
                 cx="110" cy="182" r="22"
                 style="fill:${locked
-                  ? 'color-mix(in srgb, var(--tc-green) 22%, transparent)'
-                  : 'color-mix(in srgb, var(--tc-amber) 22%, transparent)'};stroke:${locked
-                  ? 'var(--tc-green)'
-                  : 'var(--tc-amber)'}"
+                  ? 'color-mix(in srgb, var(--tc-green, #34d399) 22%, transparent)'
+                  : 'color-mix(in srgb, var(--tc-amber, #fbbf24) 22%, transparent)'};stroke:${locked
+                  ? 'var(--tc-green, #34d399)'
+                  : 'var(--tc-amber, #fbbf24)'}"
               ></circle>
               <path
                 transform="translate(98 170) scale(1)"
                 d=${locked ? mdiLock : mdiLockOpenVariant}
-                style="fill:${locked ? 'var(--tc-green)' : 'var(--tc-amber)'}"
+                style="fill:${locked ? 'var(--tc-green, #34d399)' : 'var(--tc-amber, #fbbf24)'}"
               ></path>
             </g>
           </svg>
@@ -254,7 +254,7 @@ export class TcPanelClosures extends TcBase {
       }
       .diagram {
         padding: 16px 16px 12px;
-        border-radius: var(--tc-radius-lg);
+        border-radius: var(--tc-radius-lg, 22px);
         display: flex;
         flex-direction: column;
         align-items: center;
@@ -267,19 +267,19 @@ export class TcPanelClosures extends TcBase {
         display: block;
       }
       .body {
-        fill: var(--tc-surface);
-        stroke: var(--tc-border-strong);
+        fill: var(--tc-surface, rgba(255, 255, 255, 0.045));
+        stroke: var(--tc-border-strong, rgba(255, 255, 255, 0.16));
         stroke-width: 1.5;
       }
       .wheels rect {
         fill: rgba(0, 0, 0, 0.45);
       }
       .mirror rect {
-        fill: var(--tc-surface-3);
+        fill: var(--tc-surface-3, rgba(255, 255, 255, 0.1));
       }
       .glasspane {
-        fill: var(--tc-surface-2);
-        stroke: var(--tc-border);
+        fill: var(--tc-surface-2, rgba(255, 255, 255, 0.07));
+        stroke: var(--tc-border, rgba(255, 255, 255, 0.09));
         stroke-width: 1;
       }
       .zone {
@@ -294,7 +294,7 @@ export class TcPanelClosures extends TcBase {
       .zone circle,
       .zone polygon {
         stroke-width: 1.6;
-        transition: fill 0.2s var(--tc-ease), stroke 0.2s var(--tc-ease);
+        transition: fill 0.2s var(--tc-ease, cubic-bezier(0.22, 1, 0.36, 1)), stroke 0.2s var(--tc-ease, cubic-bezier(0.22, 1, 0.36, 1));
       }
       .zone:hover :is(rect, path, circle, polygon) {
         filter: brightness(1.35);
@@ -316,10 +316,10 @@ export class TcPanelClosures extends TcBase {
         font-weight: 650;
       }
       .status.good {
-        color: var(--tc-green);
+        color: var(--tc-green, #34d399);
       }
       .status.warn {
-        color: var(--tc-amber);
+        color: var(--tc-amber, #fbbf24);
       }
 
       .bigpill {
@@ -331,17 +331,17 @@ export class TcPanelClosures extends TcBase {
         gap: 9px;
         width: 100%;
         padding: 14px;
-        border-radius: var(--tc-radius-md);
-        border: 1px solid var(--tc-border-strong);
-        background: var(--tc-surface-2);
-        color: var(--tc-text);
+        border-radius: var(--tc-radius-md, 16px);
+        border: 1px solid var(--tc-border-strong, rgba(255, 255, 255, 0.16));
+        background: var(--tc-surface-2, rgba(255, 255, 255, 0.07));
+        color: var(--tc-text, #f1f5f9);
         font-size: 14.5px;
         font-weight: 700;
         cursor: pointer;
-        transition: background 0.16s var(--tc-ease), transform 0.12s var(--tc-ease);
+        transition: background 0.16s var(--tc-ease, cubic-bezier(0.22, 1, 0.36, 1)), transform 0.12s var(--tc-ease, cubic-bezier(0.22, 1, 0.36, 1));
       }
       .bigpill:hover {
-        background: var(--tc-surface-3);
+        background: var(--tc-surface-3, rgba(255, 255, 255, 0.1));
       }
       .bigpill:active {
         transform: scale(0.99);
@@ -351,24 +351,24 @@ export class TcPanelClosures extends TcBase {
         pointer-events: none;
       }
       .bigpill.locked {
-        color: var(--tc-green);
-        border-color: color-mix(in srgb, var(--tc-green) 45%, transparent);
-        background: color-mix(in srgb, var(--tc-green) 14%, transparent);
+        color: var(--tc-green, #34d399);
+        border-color: color-mix(in srgb, var(--tc-green, #34d399) 45%, transparent);
+        background: color-mix(in srgb, var(--tc-green, #34d399) 14%, transparent);
       }
       .bigpill.unlocked {
-        color: var(--tc-amber);
-        border-color: color-mix(in srgb, var(--tc-amber) 45%, transparent);
-        background: color-mix(in srgb, var(--tc-amber) 14%, transparent);
+        color: var(--tc-amber, #fbbf24);
+        border-color: color-mix(in srgb, var(--tc-amber, #fbbf24) 45%, transparent);
+        background: color-mix(in srgb, var(--tc-amber, #fbbf24) 14%, transparent);
       }
       .bigpill.subtle {
         font-weight: 650;
-        color: var(--tc-text-dim);
+        color: var(--tc-text-dim, #9aa7b8);
       }
       .hint {
         margin: 2px 2px 0;
         font-size: 11.5px;
         line-height: 1.4;
-        color: var(--tc-text-mute);
+        color: var(--tc-text-mute, #64748b);
         text-align: center;
       }
     `,
