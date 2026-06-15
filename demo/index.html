@@ -76,142 +76,26 @@
 
     <script type="module">
       import '../dist/tesla-card.js';
+      // Shared fixture corpus (Story 1.1, F5): ONE environment-agnostic JSON feeds
+      // BOTH Vitest (node) and this browser demo — no second copy. Under `npm run
+      // dev` (Vite) the import is transformed; under plain http-server (Playwright)
+      // the browser's native JSON module handles `with { type: 'json' }`.
+      import awakeFixture from '../src/fixtures/model-y-awake.json' with { type: 'json' };
 
-      const SEAT_OPTS = ['Off', 'Low', 'Medium', 'High'];
-      const WHEEL_OPTS = ['Off', 'Low', 'High'];
       const s = (state, attributes = {}) => ({ state, attributes });
 
       function awakeStates() {
-        return {
-          // summary / battery
-          'sensor.garage_model_y_battery_level': s('72', { unit_of_measurement: '%' }),
-          'sensor.garage_model_y_battery_range': s('235', { unit_of_measurement: 'mi' }),
-          'sensor.usable_battery_level': s('71', { unit_of_measurement: '%' }),
-          'sensor.ideal_battery_range': s('250', { unit_of_measurement: 'mi' }),
-          'sensor.estimate_battery_range': s('230', { unit_of_measurement: 'mi' }),
-          'sensor.odometer': s('12345', { unit_of_measurement: 'mi' }),
-          'sensor.shift_state': s('P'),
-          'update.garage_model_y_update': s('off'),
-          'binary_sensor.garage_model_y_status': s('on'),
-          'binary_sensor.garage_model_y_user_present': s('off'),
-          // lock + closures
-          'lock.garage_model_y_lock': s('locked'),
-          'cover.garage_model_y_frunk': s('closed'),
-          'cover.garage_model_y_trunk': s('closed'),
-          'cover.garage_model_y_windows': s('closed'),
-          'cover.sunroof': s('unavailable'),
-          'binary_sensor.garage_model_y_front_driver_door': s('on'),
-          'binary_sensor.garage_model_y_front_passenger_door': s('off'),
-          'binary_sensor.garage_model_y_rear_driver_door': s('off'),
-          'binary_sensor.garage_model_y_rear_passenger_door': s('off'),
-          'binary_sensor.garage_model_y_front_driver_window': s('off'),
-          'binary_sensor.garage_model_y_front_passenger_window': s('off'),
-          'binary_sensor.garage_model_y_rear_driver_window': s('off'),
-          'binary_sensor.garage_model_y_rear_passenger_window': s('off'),
-          // climate
-          'climate.garage_model_y_climate': s('heat_cool', {
-            temperature: 21,
-            current_temperature: 19,
-            min_temp: 15,
-            max_temp: 28,
-            target_temp_step: 0.5,
-          }),
-          'sensor.garage_model_y_inside_temperature': s('19', { unit_of_measurement: '°C' }),
-          'sensor.garage_model_y_outside_temperature': s('12', { unit_of_measurement: '°C' }),
-          'sensor.driver_temperature_setting': s('21'),
-          'sensor.passenger_temperature_setting': s('21'),
-          'binary_sensor.preconditioning': s('off'),
-          'binary_sensor.preconditioning_enabled': s('on'),
-          'switch.garage_model_y_defrost': s('off'),
-          'climate.cabin_overheat_protection': s('off', { min_temp: 30, max_temp: 40 }),
-          'binary_sensor.cabin_overheat_protection_actively_cooling': s('off'),
-          'select.garage_model_y_seat_heater_front_left': s('High', { options: SEAT_OPTS }),
-          'select.garage_model_y_seat_heater_front_right': s('Off', { options: SEAT_OPTS }),
-          'select.seat_heater_rear_left': s('Low', { options: SEAT_OPTS }),
-          'select.seat_heater_rear_center': s('Off', { options: SEAT_OPTS }),
-          'select.seat_heater_rear_right': s('Off', { options: SEAT_OPTS }),
-          'select.garage_model_y_steering_wheel_heater': s('Low', { options: WHEEL_OPTS }),
-          'switch.garage_model_y_auto_seat_climate_left': s('on'),
-          'switch.garage_model_y_auto_seat_climate_right': s('off'),
-          'switch.garage_model_y_auto_steering_wheel_heater': s('on'),
-          // charging
-          'switch.garage_model_y_charge': s('on'),
-          'number.garage_model_y_charge_limit': s('80', { min: 50, max: 100, step: 1, unit_of_measurement: '%' }),
-          'number.garage_model_y_charge_current': s('16', { min: 0, max: 48, step: 1, unit_of_measurement: 'A' }),
-          'sensor.garage_model_y_charger_voltage': s('240', { unit_of_measurement: 'V' }),
-          'sensor.garage_model_y_charger_current': s('16', { unit_of_measurement: 'A' }),
-          'sensor.garage_model_y_charger_power': s('11.5', { unit_of_measurement: 'kW' }),
-          'sensor.garage_model_y_charge_rate': s('32', { unit_of_measurement: 'mph' }),
-          'sensor.garage_model_y_charge_energy_added': s('24.6', { unit_of_measurement: 'kWh' }),
-          'sensor.garage_model_y_time_to_full_charge': s('1.5', { unit_of_measurement: 'h' }),
-          'sensor.garage_model_y_charging': s('Charging'),
-          'cover.garage_model_y_charge_port_door': s('open'),
-          'binary_sensor.garage_model_y_charge_cable': s('on'),
-          'lock.garage_model_y_charge_cable_lock': s('locked'),
-          'binary_sensor.scheduled_charging_pending': s('off'),
-          'binary_sensor.trip_charging': s('off'),
-          'binary_sensor.charger_has_multiple_phases': s('off'),
-          'binary_sensor.battery_heater': s('off'),
-          'sensor.state_of_charge_at_arrival': s('unknown'),
-          // security
-          'switch.garage_model_y_sentry_mode': s('off'),
-          'binary_sensor.dashcam': s('on'),
-          // tyres (bar)
-          'sensor.tire_pressure_front_left': s('2.9', { unit_of_measurement: 'bar' }),
-          'sensor.tire_pressure_front_right': s('2.6', { unit_of_measurement: 'bar' }),
-          'sensor.tire_pressure_rear_left': s('2.9', { unit_of_measurement: 'bar' }),
-          'sensor.tire_pressure_rear_right': s('2.9', { unit_of_measurement: 'bar' }),
-          'binary_sensor.tire_pressure_warning_front_left': s('off'),
-          'binary_sensor.tire_pressure_warning_front_right': s('on'),
-          'binary_sensor.tire_pressure_warning_rear_left': s('off'),
-          'binary_sensor.tire_pressure_warning_rear_right': s('off'),
-          // location / drive
-          'device_tracker.garage_model_y_location': s('home', {
-            latitude: 37.7749,
-            longitude: -122.4194,
-          }),
-          'device_tracker.garage_model_y_route': s('unknown'),
-          'sensor.speed': s('0', { unit_of_measurement: 'mph' }),
-          'sensor.power': s('0', { unit_of_measurement: 'kW' }),
-          'sensor.traffic_delay': s('unavailable'),
-          'sensor.garage_model_y_distance_to_arrival': s('unavailable'),
-          'sensor.garage_model_y_time_to_arrival': s('unavailable'),
-          // media
-          'media_player.garage_model_y_media_player': s('playing', {
-            media_title: 'Bohemian Rhapsody',
-            media_artist: 'Queen',
-            volume_level: 0.4,
-            is_volume_muted: false,
-          }),
-          // commands
-          'button.garage_model_y_wake': s('2026-06-14T10:00:00+00:00'),
-          'button.garage_model_y_honk_horn': s('2026-06-14T10:00:00+00:00'),
-          'button.garage_model_y_flash_lights': s('2026-06-14T10:00:00+00:00'),
-          'button.garage_model_y_homelink': s('2026-06-14T10:00:00+00:00'),
-          'button.garage_model_y_keyless_driving': s('2026-06-14T10:00:00+00:00'),
-          'button.garage_model_y_play_fart': s('2026-06-14T10:00:00+00:00'),
-          // ── Tesla energy site (Powerwall "My Home") + Wall Connector ──
-          // Independent of the vehicle; not vehicle-prefixed (reprefix skips
-          // them). Scenario: car charging off solar + a little grid + battery.
-          'sensor.my_home_solar_power_2': s('6.0', { unit_of_measurement: 'kW', device_class: 'power' }),
-          'sensor.my_home_battery_power_2': s('1.5', { unit_of_measurement: 'kW', device_class: 'power' }),
-          'sensor.my_home_load_power_2': s('1.0', { unit_of_measurement: 'kW', device_class: 'power' }),
-          'sensor.my_home_grid_power_2': s('0.9', { unit_of_measurement: 'kW', device_class: 'power' }),
-          'sensor.my_home_percentage_charged_2': s('44', { unit_of_measurement: '%', device_class: 'battery' }),
-          'sensor.my_home_grid_status': s('on_grid'),
-          'number.my_home_backup_reserve_2': s('20', { min: 0, max: 100, step: 1, unit_of_measurement: '%' }),
-          'select.my_home_operation_mode_2': s('self_consumption', {
-            options: ['self_consumption', 'autonomous', 'backup'],
-          }),
-          'sensor.tesla_wall_connector_total_power': s('7.4', { unit_of_measurement: 'kW', device_class: 'power' }),
-          'sensor.tesla_wall_connector_session_energy': s('12.5', { unit_of_measurement: 'kWh', device_class: 'energy' }),
-          'binary_sensor.tesla_wall_connector_vehicle_connected': s('on'),
-          'sensor.tesla_wall_connector_status': s('charging'),
-          // Optional exterior-colour helper sensor for entity-driven paint
-          // (?colorentity=…). The official tesla_fleet does NOT expose this; it
-          // stands in for a user template/helper or a colour-aware integration.
-          'sensor.tesla_exterior_color': s(colorEntity || 'unknown'),
-        };
+        // Promote the shared corpus to this demo's mutable state map. structuredClone
+        // so asleepStates()'s muters and the colour-entity inject below never scribble
+        // on the imported module object. The fixture carries the full HA state shape
+        // (entity_id/last_changed/last_updated); the card reads only .state/.attributes,
+        // so the richer shape is transparent here.
+        const st = structuredClone(awakeFixture.states);
+        // Synthetic exterior-colour helper for entity-driven paint (?colorentity=…).
+        // Demo-only: the official tesla_fleet exposes no such attribute, so it is
+        // intentionally absent from the captured fixture.
+        st['sensor.tesla_exterior_color'] = s(colorEntity || 'unknown');
+        return st;
       }
 
       function asleepStates() {

@@ -40,6 +40,24 @@ jobs:
       - run: npm run typecheck
       - run: npm run typecheck:e2e
 
+  # Unit — Vitest over pure src/ hubs (node env), fully offline: reads only the
+  # committed fixture corpus, no network, no live HA, no browser. Fast gate; runs
+  # after the type gate. The Rollup release path is NOT exercised here (Vite/Vitest
+  # and Rollup are decoupled — see vite.config.ts).
+  unit:
+    name: Unit (Vitest)
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    needs: lint
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm ci
+      - run: npm run test
+
   # E2E — Playwright drives the mock-hass demo harness (fully offline). On CI the
   # config auto-enables retries:2 / workers:2 / forbidOnly. webServer builds the
   # bundle then serves the repo root.
@@ -125,11 +143,12 @@ jobs:
   report:
     name: Report
     runs-on: ubuntu-latest
-    needs: [test, burn-in]
+    needs: [unit, test, burn-in]
     if: always()
     steps:
       - name: Write run summary
         run: |
+          UNIT_RESULT="${{ needs.unit.result }}"
           TEST_RESULT="${{ needs.test.result }}"
           BURN_RESULT="${{ needs.burn-in.result }}"
           {
@@ -137,10 +156,13 @@ jobs:
             echo ""
             echo "| Stage | Result |"
             echo "| --- | --- |"
+            echo "| Unit (Vitest) | ${UNIT_RESULT} |"
             echo "| E2E (Playwright) | ${TEST_RESULT} |"
             echo "| Burn-in | ${BURN_RESULT} |"
             echo ""
-            if [ "$TEST_RESULT" = "failure" ]; then
+            if [ "$UNIT_RESULT" = "failure" ]; then
+              echo "Unit (Vitest) failed — a pure-src/ hub regressed. Check the **Unit (Vitest)** job log."
+            elif [ "$TEST_RESULT" = "failure" ]; then
               echo "E2E failed — download the **playwright-report** artifact for traces/videos."
             elif [ "$TEST_RESULT" = "skipped" ]; then
               echo "E2E did not run — the upstream type-check gate failed."
