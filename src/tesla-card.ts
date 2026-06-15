@@ -18,6 +18,7 @@ import {
 } from '@mdi/js';
 import { CARD_VERSION } from './const';
 import { resolveEntities } from './data/resolve';
+import { detectDialect } from './data/dialect';
 import { resolveEnergyEntities, hasEnergySite, type EnergyEntities } from './energy';
 import { tokens, sharedStyles } from './styles';
 import { icon } from './ui';
@@ -116,8 +117,19 @@ export class TeslaCard extends LitElement implements LovelaceCard {
     return 16;
   }
 
-  public static getStubConfig(): TeslaCardConfig {
-    return { type: 'custom:tesla-card' };
+  public static getStubConfig(hass?: HomeAssistant): TeslaCardConfig {
+    const stub: TeslaCardConfig = { type: 'custom:tesla-card' };
+    // Exercise the data/ detection path so the "working default" claim is real
+    // and degradation is safe — but intentionally do NOT persist resolved IDs.
+    // Runtime re-resolves every render (survives device renames); baking
+    // install-specific IDs into the seed would defeat zero-YAML. These calls are
+    // a resolvability probe, not a config writer. All registry/state reads stay
+    // behind the data/ boundary (AR-1) — never read hass.* directly here.
+    if (hass) {
+      void detectDialect(hass, stub); // never throws; surfaces ambiguity to a future editor
+      void resolveEntities(hass, stub); // proves the vehicle is resolvable
+    }
+    return stub;
   }
 
   public static async getConfigElement(): Promise<HTMLElement> {

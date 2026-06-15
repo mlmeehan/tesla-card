@@ -135,6 +135,24 @@ export function hasEnergySite(e: EnergyEntities | undefined): boolean {
   return !!(e && (e.solar_power || e.battery_power || e.grid_power || e.wc_power));
 }
 
+/**
+ * The single composing entry point for "is there an energy site?" — the one
+ * predicate Story 5.1 (Energy tab) and Epic 6 (ecosystem cards + Scene presence)
+ * import so the predicate AND its input shape are specified exactly once. It runs
+ * the resolver then applies `hasEnergySite`, so callers that hold only `hass`+
+ * `config` never recombine `resolve + predicate` themselves (which would drift).
+ *
+ * Use `hasEnergySite` directly if you already hold a resolved `EnergyEntities`
+ * (e.g. the card's cached `_energy`) — it's the faster path. Use this when you
+ * only have `hass` + `config`.
+ */
+export function detectEnergySite(
+  hass: HomeAssistant | undefined,
+  config: TeslaCardConfig
+): boolean {
+  return hasEnergySite(resolveEnergyEntities(hass, config));
+}
+
 /** Numeric state by entity id (NaN-safe). */
 export function numById(
   hass: HomeAssistant | undefined,
