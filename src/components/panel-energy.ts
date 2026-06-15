@@ -290,6 +290,7 @@ export class TcPanelEnergy extends TcBase {
         margin-bottom: 4px;
       }
       .ftitle {
+        font-family: var(--tc-font-display, var(--tc-font, ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif));
         font-size: var(--tc-fs-label, 11.5px);
         font-weight: var(--tc-fw-label, 700);
         letter-spacing: 0.1em;

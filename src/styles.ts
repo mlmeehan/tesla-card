@@ -1,6 +1,23 @@
 import { css } from 'lit';
 
 /**
+ * Semantic accent contract (DESIGN.md §Colors). Each accent carries ONE
+ * suite-wide meaning and is never decorative; the hex must stay byte-identical
+ * to its `--tc-<name>` token in `tokens`. This map is the machine-checkable
+ * half of that contract (gated in styles.test.ts) — the comments next to the
+ * token declarations are the human-readable half. Keep the two in sync.
+ */
+export const ACCENT_SEMANTICS = {
+  blue: { hex: '#38bdf8', meaning: 'plugged / info' },
+  green: { hex: '#34d399', meaning: 'charging / OK / solar' },
+  amber: { hex: '#fbbf24', meaning: 'mid / caution' },
+  red: { hex: '#f87171', meaning: 'low / alert' },
+  purple: { hex: '#a78bfa', meaning: 'media' },
+  orange: { hex: '#fb923c', meaning: 'climate / heat' },
+  teal: { hex: '#2dd4bf', meaning: 'secondary / ecosystem' },
+} as const;
+
+/**
  * Design tokens. Set on the main card host; CSS custom properties inherit
  * through shadow-DOM boundaries, so every child component can use them.
  * Literal values double as defaults when rendered outside Home Assistant
@@ -49,13 +66,18 @@ export const tokens = css`
     --tc-border: rgba(255, 255, 255, 0.09);
     --tc-border-strong: rgba(255, 255, 255, 0.16);
 
-    --tc-blue: #38bdf8;
-    --tc-green: #34d399;
-    --tc-amber: #fbbf24;
-    --tc-red: #f87171;
-    --tc-purple: #a78bfa;
-    --tc-orange: #fb923c;
-    --tc-teal: #2dd4bf;
+    /* ── semantic accents (DESIGN.md §Colors) ────────────────────────────
+       Each accent owns ONE suite-wide meaning and is never decorative. The
+       meaning is the contract (gated in styles.test.ts via ACCENT_SEMANTICS);
+       the hexes are byte-identical to Story 2.1 — this is a meaning pin, not a
+       palette change. Active states express accent via color-mix (see .ctrl). */
+    --tc-blue: #38bdf8; /* plugged / info */
+    --tc-green: #34d399; /* charging / OK / solar */
+    --tc-amber: #fbbf24; /* mid / caution */
+    --tc-red: #f87171; /* low / alert */
+    --tc-purple: #a78bfa; /* media (isolated so it never competes with energy) */
+    --tc-orange: #fb923c; /* climate / heat */
+    --tc-teal: #2dd4bf; /* secondary / ecosystem (lone reserve accent) */
 
     --tc-radius-xl: 28px;
     --tc-radius-lg: 22px;
@@ -109,6 +131,9 @@ export const sharedStyles = css`
   }
 
   .label {
+    /* display-role: section labels render in the brand face (degrades to body
+       stack where Plus Jakarta Sans is absent — see --tc-font-display). */
+    font-family: var(--tc-font-display, var(--tc-font, ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif));
     font-size: var(--tc-fs-label, 11.5px);
     font-weight: var(--tc-fw-label, 700);
     letter-spacing: 0.1em;
@@ -160,8 +185,11 @@ export const sharedStyles = css`
     gap: 1px;
   }
   .stat .k {
-    font-size: 10.5px;
-    font-weight: 600;
+    /* stat-key role — reconciled to the DESIGN.md contract (Story 2.1 hand-off):
+       the token (11.5px/700) is now its own consumer, ending the 10.5/600 drift.
+       Deliberate one-role nudge; verified intentional in the demo harness. */
+    font-size: var(--tc-fs-stat-key, 11.5px);
+    font-weight: var(--tc-fw-stat-key, 700);
     letter-spacing: 0.06em;
     text-transform: uppercase;
     color: var(--tc-text-mute, #64748b);

@@ -259,6 +259,7 @@ export class TcPanelClimate extends TcBase {
         flex: 1 1 auto;
       }
       .readout .t {
+        font-family: var(--tc-font-display, var(--tc-font, ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif));
         font-size: var(--tc-fs-climate-readout, 56px);
         font-weight: var(--tc-fw-climate-readout, 760);
         letter-spacing: -0.03em;

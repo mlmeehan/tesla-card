@@ -149,6 +149,7 @@ export class TcHero extends TcBase {
         min-width: 0;
       }
       .name {
+        font-family: var(--tc-font-display, var(--tc-font, ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif));
         font-size: var(--tc-fs-name, 21px);
         font-weight: var(--tc-fw-name, 750);
         letter-spacing: -0.01em;
@@ -253,6 +254,7 @@ export class TcHero extends TcBase {
         display: inline-flex;
         align-items: center;
         gap: 4px;
+        font-family: var(--tc-font-display, var(--tc-font, ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif));
         font-size: var(--tc-fs-battery, 26px);
         font-weight: var(--tc-fw-battery, 760);
         letter-spacing: -0.02em;

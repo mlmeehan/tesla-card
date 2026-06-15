@@ -10,7 +10,7 @@ import { readFileSync, readdirSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import { describe, expect, test } from 'vitest';
-import { tokens } from './styles';
+import { tokens, sharedStyles, ACCENT_SEMANTICS } from './styles';
 
 const SRC_DIR = dirname(fileURLToPath(import.meta.url));
 
@@ -82,5 +82,220 @@ describe('--tc-* token contract (Story 2.1)', () => {
       return /var\(\s*--(ha|primary|paper|card|divider|accent)/.test(l);
     });
     expect(offenders, `tokens must be literal (HA-theme-independent):\n${offenders.join('\n')}`).toEqual([]);
+  });
+});
+
+// ── Story 2.2 gates ──────────────────────────────────────────────────────
+// Accents carry meaning (not decoration), `.surface` is the single elevation
+// recipe, and the brand display face is wired. Each is gate-shaped; corpus-wide
+// claims are backed by a real src/ scan (Epic-1 retro lesson).
+
+/** The 7 canonical accent hexes (lower-case), from the contract map. */
+const ACCENT_HEXES = Object.values(ACCENT_SEMANTICS).map((a) => a.hex.toLowerCase());
+
+describe('Semantic accent contract (Story 2.2 AC1)', () => {
+  const css = (tokens as unknown as { cssText: string }).cssText;
+
+  test('all 7 accents define their canonical hex token', () => {
+    for (const [name, { hex }] of Object.entries(ACCENT_SEMANTICS)) {
+      expect(css, `missing --tc-${name}: ${hex}`).toContain(`--tc-${name}: ${hex};`);
+    }
+    // Exactly these 7 — teal is the lone reserve accent; no new accents added.
+    expect(Object.keys(ACCENT_SEMANTICS)).toEqual([
+      'blue', 'green', 'amber', 'red', 'purple', 'orange', 'teal',
+    ]);
+  });
+
+  test('each accent has a non-empty suite-wide meaning (contract is checkable)', () => {
+    for (const [name, { meaning }] of Object.entries(ACCENT_SEMANTICS)) {
+      expect(meaning.length, `accent ${name} has no meaning`).toBeGreaterThan(0);
+    }
+    // Pin the meanings verbatim to the DESIGN.md §Colors contract so a silent
+    // re-purposing (e.g. purple → non-media) fails the gate, not just review.
+    expect(ACCENT_SEMANTICS.blue.meaning).toBe('plugged / info');
+    expect(ACCENT_SEMANTICS.green.meaning).toBe('charging / OK / solar');
+    expect(ACCENT_SEMANTICS.amber.meaning).toBe('mid / caution');
+    expect(ACCENT_SEMANTICS.red.meaning).toBe('low / alert');
+    expect(ACCENT_SEMANTICS.purple.meaning).toBe('media');
+    expect(ACCENT_SEMANTICS.orange.meaning).toBe('climate / heat');
+    expect(ACCENT_SEMANTICS.teal.meaning).toBe('secondary / ecosystem');
+  });
+
+  test('the human-readable meaning comment sits beside each accent declaration', () => {
+    // The token block carries a terse `/* meaning */` next to each accent; assert
+    // the comment half of the contract stays in sync with the map half.
+    expect(css).toContain('/* plugged / info */');
+    expect(css).toContain('/* charging / OK / solar */');
+    expect(css).toContain('/* mid / caution */');
+    expect(css).toContain('/* low / alert */');
+    expect(css).toContain('/* climate / heat */');
+  });
+
+  test('zero raw accent hexes in src/ outside token decls + var() fallbacks', () => {
+    // Allowed canonical homes for an accent hex: a `--tc-<accent>: #hex` token
+    // declaration, the ACCENT_SEMANTICS `hex: '#hex'` contract registry, and
+    // var(--tc-*, #hex) fallbacks. Strip those, then any remaining hex is a raw,
+    // decorative use — exactly what AC1 forbids.
+    const hexAlt = ACCENT_HEXES.map((h) => h.slice(1)).join('|');
+    const rawHex = new RegExp(`#(${hexAlt})\\b`, 'gi');
+    const offenders: string[] = [];
+    for (const file of srcFiles(SRC_DIR)) {
+      let text = readFileSync(file, 'utf8');
+      text = text.replace(/--tc-[a-z0-9-]+:\s*#[0-9a-f]{3,8}/gi, ''); // token decls
+      text = text.replace(/hex:\s*'#[0-9a-f]{3,8}'/gi, ''); // contract registry
+      // var(...) fallbacks (loop to unwrap nested var() chains)
+      let prev: string;
+      do {
+        prev = text;
+        text = text.replace(/var\([^()]*\)/gi, '');
+      } while (text !== prev);
+      for (const m of text.matchAll(rawHex)) offenders.push(`${file}: ${m[0]}`);
+    }
+    expect(offenders, `raw accent hexes (decorative use forbidden):\n${offenders.join('\n')}`).toEqual([]);
+  });
+});
+
+describe('.surface is the single elevation primitive (Story 2.2 AC2)', () => {
+  const shared = (sharedStyles as unknown as { cssText: string }).cssText;
+
+  test('.surface = 180° surface-2→surface gradient + 1px border hairline + shadow', () => {
+    const block = shared.match(/\.surface\s*\{[^}]*\}/);
+    expect(block, '.surface rule not found').not.toBeNull();
+    const rule = block![0];
+    expect(rule).toContain('linear-gradient(');
+    expect(rule).toContain('180deg');
+    expect(rule).toContain('--tc-surface-2');
+    expect(rule).toContain('--tc-surface,'); // the gradient bottom stop
+    expect(rule).toMatch(/border:\s*1px solid var\(--tc-border/);
+    expect(rule).toMatch(/box-shadow:\s*var\(--tc-shadow/);
+    // backdrop-filter is deliberately NOT baked in (host supplies blur).
+    expect(rule).not.toContain('backdrop-filter');
+  });
+
+  test('no backdrop-filter anywhere in src/', () => {
+    const offenders: string[] = [];
+    for (const file of srcFiles(SRC_DIR)) {
+      if (readFileSync(file, 'utf8').includes('backdrop-filter')) offenders.push(file);
+    }
+    expect(offenders, `backdrop-filter must not appear in src/:\n${offenders.join('\n')}`).toEqual([]);
+  });
+
+  test('no second 180° elevation gradient outside .surface', () => {
+    // The location-map background is linear-gradient(135deg, …) — the one
+    // sanctioned chromatic exception. It is 135°, not 180°, so a 180deg scan
+    // naturally excludes it; assert there is exactly ONE 180deg, in styles.ts.
+    const hits: string[] = [];
+    for (const file of srcFiles(SRC_DIR)) {
+      for (const _ of readFileSync(file, 'utf8').matchAll(/180deg/g)) hits.push(file);
+    }
+    expect(hits.length, `expected exactly one 180deg gradient (.surface), found:\n${hits.join('\n')}`).toBe(1);
+    expect(hits[0].endsWith('styles.ts')).toBe(true);
+  });
+
+  test('AC2 consumer side: all 7 panels + hero render class="surface …"', () => {
+    // The recipe being the single primitive only means something if the
+    // surfaces actually consume it. AC2: "All 7 panels + hero + ecosystem
+    // surfaces consume .surface". Gate the consumer side so a regression that
+    // swaps in a private elevation recipe (drops the class) fails here, not in
+    // a reviewer's eyes.
+    const consumers = [
+      'panel-tyres.ts', 'panel-climate.ts', 'panel-charging.ts', 'panel-closures.ts',
+      'panel-location.ts', 'panel-energy.ts', 'panel-media.ts', 'hero.ts',
+    ];
+    const missing: string[] = [];
+    for (const name of consumers) {
+      const text = readFileSync(join(SRC_DIR, 'components', name), 'utf8');
+      if (!/class="[^"]*\bsurface\b/.test(text)) missing.push(name);
+    }
+    expect(missing, `these surfaces must consume class="surface …":\n${missing.join('\n')}`).toEqual([]);
+  });
+});
+
+describe('Brand display face is wired (Story 2.2 AC3)', () => {
+  test('--tc-font-display is consumed by the display-role elements (with fallbacks)', () => {
+    // AC3 requires the display face be ACTUALLY consumed — not just defined.
+    // Every read must carry a fallback (Story 2.1 AC2 invariant), so we count
+    // only `var(--tc-font-display,` reads (comma ⇒ fallback present).
+    const read = /var\(\s*--tc-font-display\s*,/g;
+    const consumers = new Map<string, number>();
+    for (const file of srcFiles(SRC_DIR)) {
+      const n = [...readFileSync(file, 'utf8').matchAll(read)].length;
+      if (n > 0) consumers.set(file, n);
+    }
+    const total = [...consumers.values()].reduce((a, b) => a + b, 0);
+    // 6 display sites: .label (styles), .name + .bat-pct (hero), .bnum .big
+    // (charging), .readout .t (climate), .ftitle (energy).
+    expect(total, `expected ≥6 font-display reads, found ${total}`).toBeGreaterThanOrEqual(6);
+    const files = [...consumers.keys()].map((f) => f.split('/').pop());
+    for (const f of ['styles.ts', 'hero.ts', 'panel-charging.ts', 'panel-climate.ts', 'panel-energy.ts']) {
+      expect(files, `expected font-display consumer in ${f}`).toContain(f);
+    }
+  });
+
+  test('stat-key token, consumer, and contract agree at 11.5px / 700', () => {
+    const css = (tokens as unknown as { cssText: string }).cssText;
+    const shared = (sharedStyles as unknown as { cssText: string }).cssText;
+    // token (source of truth)
+    expect(css).toContain('--tc-fs-stat-key: 11.5px;');
+    expect(css).toContain('--tc-fw-stat-key: 700;');
+    // consumer (.stat .k) now reads the token, ending the 10.5/600 drift
+    const block = shared.match(/\.stat \.k\s*\{[^}]*\}/);
+    expect(block, '.stat .k rule not found').not.toBeNull();
+    expect(block![0]).toContain('var(--tc-fs-stat-key, 11.5px)');
+    expect(block![0]).toContain('var(--tc-fw-stat-key, 700)');
+    expect(block![0]).not.toContain('10.5px');
+  });
+
+  test('--tc-font-display is name-only Plus Jakarta Sans degrading to the body stack', () => {
+    // AC3 contract: the display face is referenced BY NAME ('Plus Jakarta Sans')
+    // with the --tc-font body stack as the documented fallback — no webfont
+    // package. Pin the token value so a future edit can't quietly swap the
+    // family or drop the body-stack degradation.
+    const css = (tokens as unknown as { cssText: string }).cssText;
+    const decl = css.match(/--tc-font-display:[^;]*;/s);
+    expect(decl, '--tc-font-display declaration not found').not.toBeNull();
+    expect(decl![0]).toContain("'Plus Jakarta Sans'");
+    expect(decl![0]).toMatch(/var\(\s*--tc-font\b/); // degrades to the body stack
+  });
+
+  test('AC3 per-element: every named display-role selector carries the display face', () => {
+    // Counting reads (≥6) can pass even if a read drifts off the intended
+    // element. Pin each named display-role selector to a font-display read so
+    // moving one (e.g. off .bat-pct) fails the gate. Selectors per the Story 2.2
+    // brand-face migration map.
+    const sites: Array<[string, string]> = [
+      ['styles.ts', '.label'],
+      ['components/hero.ts', '.name'],
+      ['components/hero.ts', '.bat-pct'],
+      ['components/panel-charging.ts', '.bnum .big'],
+      ['components/panel-climate.ts', '.readout .t'],
+      ['components/panel-energy.ts', '.ftitle'],
+    ];
+    const missing: string[] = [];
+    for (const [rel, selector] of sites) {
+      const text = readFileSync(join(SRC_DIR, rel), 'utf8');
+      const esc = selector.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      const block = text.match(new RegExp(`${esc}\\s*\\{[^}]*\\}`, 's'));
+      if (!block || !/var\(\s*--tc-font-display\s*,/.test(block[0])) {
+        missing.push(`${rel} → ${selector}`);
+      }
+    }
+    expect(missing, `these display-role selectors must read var(--tc-font-display, …):\n${missing.join('\n')}`).toEqual([]);
+  });
+});
+
+describe('Asset-light brand face — no bundled webfont (Story 2.2 AC3 / NFR-2)', () => {
+  test('no @font-face, @import url, or <link rel> webfont anywhere in src/', () => {
+    // NFR-2: the display face is name-only — bringing in a webfont via @import,
+    // @font-face, or a <link> tag is forbidden. Patterns match REAL usage so the
+    // styles.ts comment that merely mentions "@import/<link>" is not a false hit:
+    //   @font-face  ·  @import url(/'/"  ·  <link …rel=…>
+    const webfont = /@font-face\b|@import\s+(?:url|['"])|<link\b[^>]*\brel\b/i;
+    const offenders: string[] = [];
+    for (const file of srcFiles(SRC_DIR)) {
+      const m = readFileSync(file, 'utf8').match(webfont);
+      if (m) offenders.push(`${file}: ${m[0]}`);
+    }
+    expect(offenders, `asset-light NFR-2: no bundled webfont allowed:\n${offenders.join('\n')}`).toEqual([]);
   });
 });

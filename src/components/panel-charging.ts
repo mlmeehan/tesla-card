@@ -217,6 +217,7 @@ export class TcPanelCharging extends TcBase {
         gap: 2px;
       }
       .bnum .big {
+        font-family: var(--tc-font-display, var(--tc-font, ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif));
         font-size: var(--tc-fs-charging-display, 40px);
         font-weight: var(--tc-fw-charging-display, 780);
         line-height: 1;
