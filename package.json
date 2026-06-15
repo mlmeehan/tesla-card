@@ -16,7 +16,9 @@
     "test:e2e:ui": "playwright test --ui",
     "test:e2e:debug": "playwright test --debug",
     "test:e2e:report": "playwright show-report",
-    "test:e2e:visual": "VISUAL=1 playwright test --grep @visual"
+    "test:e2e:visual": "VISUAL=1 playwright test --grep @visual",
+    "test:e2e:burn-in": "bash scripts/burn-in.sh",
+    "ci:local": "bash scripts/ci-local.sh"
   },
   "keywords": [
     "home-assistant",

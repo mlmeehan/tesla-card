@@ -1,0 +1,154 @@
+name: Test Pipeline
+
+# Quality pipeline for the tesla-card bundle:
+#   type gate -> Playwright E2E (offline demo harness) -> burn-in -> report.
+# HACS packaging + bundle build live in validate.yml; E2E is owned HERE so it runs
+# once per push/PR. See playwright.config.ts for retries/workers (CI-gated).
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  schedule:
+    # Weekly burn-in — surfaces flakiness that only appears under repetition.
+    - cron: "0 2 * * 0"
+  workflow_dispatch:
+    inputs:
+      burn_in_iterations:
+        description: "Burn-in repeat count (flaky detection)"
+        type: string
+        default: "10"
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # Type gate — this project's "lint" is strict tsc (no ESLint). Covers both the
+  # bundle (tsconfig.json) and the E2E suite (tests/tsconfig.json).
+  lint:
+    name: Type-check
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm run typecheck:e2e
+
+  # E2E — Playwright drives the mock-hass demo harness (fully offline). On CI the
+  # config auto-enables retries:2 / workers:2 / forbidOnly. webServer builds the
+  # bundle then serves the repo root.
+  test:
+    name: E2E (Playwright)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    needs: lint
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - name: Cache Playwright browsers
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: ${{ runner.os }}-playwright-${{ hashFiles('**/package-lock.json') }}
+          restore-keys: |
+            ${{ runner.os }}-playwright-
+      - run: npm ci
+      - name: Install Playwright browser
+        run: npx playwright install --with-deps chromium
+      - name: Run E2E suite
+        run: npm run test:e2e
+      - name: Upload Playwright report + traces
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: |
+            playwright-report/
+            test-results/
+          retention-days: 7
+
+  # Burn-in — repeat the whole suite in ONE server session to surface flakiness.
+  # retries forced to 0 so a single non-deterministic failure is not masked.
+  # Gated to PR / schedule / manual to keep per-push CI fast.
+  burn-in:
+    name: Burn-In (flaky detection)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    needs: test
+    if: ${{ github.event_name == 'pull_request' || github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - name: Cache Playwright browsers
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: ${{ runner.os }}-playwright-${{ hashFiles('**/package-lock.json') }}
+          restore-keys: |
+            ${{ runner.os }}-playwright-
+      - run: npm ci
+      - name: Install Playwright browser
+        run: npx playwright install --with-deps chromium
+      - name: Burn-in loop
+        env:
+          # Security: workflow_dispatch input is passed through env: and never
+          # interpolated directly into the run block — prevents script injection.
+          BURN_IN_ITERATIONS: ${{ inputs.burn_in_iterations || '10' }}
+        run: |
+          COUNT="${BURN_IN_ITERATIONS:-10}"
+          case "$COUNT" in ''|*[!0-9]*) COUNT=10 ;; esac
+          echo "Burn-in: repeating every test ${COUNT}x with retries disabled"
+          npx playwright test --repeat-each="$COUNT" --retries=0
+      - name: Upload burn-in failure artifacts
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: burn-in-failures
+          path: |
+            playwright-report/
+            test-results/
+          retention-days: 7
+
+  # Report — aggregate stage results into the GitHub run summary.
+  report:
+    name: Report
+    runs-on: ubuntu-latest
+    needs: [test, burn-in]
+    if: always()
+    steps:
+      - name: Write run summary
+        run: |
+          TEST_RESULT="${{ needs.test.result }}"
+          BURN_RESULT="${{ needs.burn-in.result }}"
+          {
+            echo "## tesla-card — Test Pipeline"
+            echo ""
+            echo "| Stage | Result |"
+            echo "| --- | --- |"
+            echo "| E2E (Playwright) | ${TEST_RESULT} |"
+            echo "| Burn-in | ${BURN_RESULT} |"
+            echo ""
+            if [ "$TEST_RESULT" = "failure" ]; then
+              echo "E2E failed — download the **playwright-report** artifact for traces/videos."
+            elif [ "$TEST_RESULT" = "skipped" ]; then
+              echo "E2E did not run — the upstream type-check gate failed."
+            elif [ "$BURN_RESULT" = "failure" ]; then
+              echo "Flaky test(s) detected in burn-in — see the **burn-in-failures** artifact."
+            elif [ "$BURN_RESULT" = "skipped" ]; then
+              echo "E2E green. Burn-in runs on PRs, the weekly schedule, and manual dispatch."
+            else
+              echo "E2E green and burn-in clean."
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
