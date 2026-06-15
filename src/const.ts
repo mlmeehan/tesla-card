@@ -1,3 +1,5 @@
+import type { VehicleKey } from './data/registry';
+
 export const CARD_VERSION = '0.1.0';
 
 /**
@@ -102,6 +104,11 @@ export const DEFAULT_ENTITIES = {
   homelink: 'button.garage_model_y_homelink',
   keyless: 'button.garage_model_y_keyless_driving',
   boombox: 'button.garage_model_y_play_fart',
-} as const;
+} as const satisfies Record<VehicleKey, string>;
 
-export type EntityKey = keyof typeof DEFAULT_ENTITIES;
+// EntityKey is sourced from the canonical registry (Story 1.2): VehicleKey is the
+// registry's `vehicle` role. The `satisfies` above makes the typechecker fail if
+// DEFAULT_ENTITIES' keys ever diverge from the registry's vehicle vocabulary, so the
+// value table cannot drift from the names. (Values stay here — Story 1.3 owns the
+// resolver move.)
+export type EntityKey = VehicleKey;

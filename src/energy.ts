@@ -1,4 +1,16 @@
 import type { HomeAssistant, TeslaCardConfig } from './types';
+import type { EnergyKey } from './data/registry';
+
+// Story 1.2 drift guard: keep EnergyEntities' keys ≡ the registry's energy-role
+// vocabulary (the 12 energy function-keys). `Expect<Equal<…>>` resolves to a
+// non-`true` type — a compile error at `_EnergyKeysMatchRegistry` — the moment the
+// two diverge, so EnergyEntities (and RULES, keyed by `Key` below) cannot drift from
+// the canonical registry. Pure type-level: no runtime cost.
+type Equal<A, B> = (<T>() => T extends A ? 1 : 2) extends <T>() => T extends B ? 1 : 2
+  ? true
+  : false;
+type Expect<T extends true> = T;
+type _EnergyKeysMatchRegistry = Expect<Equal<keyof EnergyEntities, EnergyKey>>;
 
 /**
  * Resolved entity ids for the Tesla energy site + Wall Connector. Any may be
@@ -36,7 +48,9 @@ export interface EnergyEntities {
   wc_status?: string;
 }
 
-type Key = keyof EnergyEntities;
+// `Key` is gated on the drift guard so the guard is load-bearing, not decorative:
+// if EnergyEntities and the registry diverge, `Expect<…>` fails to compile here.
+type Key = _EnergyKeysMatchRegistry extends true ? keyof EnergyEntities : never;
 
 interface Rule {
   domain: string;
