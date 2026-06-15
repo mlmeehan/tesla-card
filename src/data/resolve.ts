@@ -1,5 +1,5 @@
-import type { HomeAssistant, TeslaCardConfig } from './types';
-import { DEFAULT_ENTITIES, type EntityKey } from './const';
+import type { HomeAssistant, TeslaCardConfig } from '../types';
+import { DEFAULT_ENTITIES, type EntityKey } from '../const';
 
 /**
  * Entity resolution by stable function-name, not hard-coded IDs.

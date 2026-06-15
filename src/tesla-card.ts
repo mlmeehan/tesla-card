@@ -17,7 +17,7 @@ import {
   mdiPlayCircleOutline,
 } from '@mdi/js';
 import { CARD_VERSION } from './const';
-import { resolveEntities } from './resolve';
+import { resolveEntities } from './data/resolve';
 import { resolveEnergyEntities, hasEnergySite, type EnergyEntities } from './energy';
 import { tokens, sharedStyles } from './styles';
 import { icon } from './ui';
