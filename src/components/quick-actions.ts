@@ -11,6 +11,7 @@ import {
 } from '@mdi/js';
 import { TcBase } from '../base';
 import { sharedStyles } from '../styles';
+import { STRINGS } from '../strings';
 import { icon } from '../ui';
 import type { EntityKey } from '../const';
 import { entityId, rawState, isUnavailable, toggleEntity } from '../helpers';
@@ -29,7 +30,7 @@ interface QuickAction {
 const ACTIONS: QuickAction[] = [
   {
     key: 'lock',
-    label: 'Lock',
+    label: STRINGS.quickActions.lock,
     accent: 'var(--tc-green, #34d399)',
     iconOn: mdiLock,
     iconOff: mdiLockOpenVariant,
@@ -37,7 +38,7 @@ const ACTIONS: QuickAction[] = [
   },
   {
     key: 'climate',
-    label: 'Climate',
+    label: STRINGS.quickActions.climate,
     accent: 'var(--tc-teal, #2dd4bf)',
     iconOn: mdiAirConditioner,
     iconOff: mdiAirConditioner,
@@ -45,7 +46,7 @@ const ACTIONS: QuickAction[] = [
   },
   {
     key: 'charge_port',
-    label: 'Port',
+    label: STRINGS.quickActions.port,
     accent: 'var(--tc-blue, #38bdf8)',
     iconOn: mdiEvStation,
     iconOff: mdiEvStation,
@@ -53,7 +54,7 @@ const ACTIONS: QuickAction[] = [
   },
   {
     key: 'frunk',
-    label: 'Frunk',
+    label: STRINGS.quickActions.frunk,
     accent: 'var(--tc-amber, #fbbf24)',
     iconOn: mdiCar,
     iconOff: mdiCar,
@@ -61,7 +62,7 @@ const ACTIONS: QuickAction[] = [
   },
   {
     key: 'trunk',
-    label: 'Trunk',
+    label: STRINGS.quickActions.trunk,
     accent: 'var(--tc-amber, #fbbf24)',
     iconOn: mdiCarBack,
     iconOff: mdiCarBack,
@@ -69,7 +70,7 @@ const ACTIONS: QuickAction[] = [
   },
   {
     key: 'sentry',
-    label: 'Sentry',
+    label: STRINGS.quickActions.sentry,
     accent: 'var(--tc-red, #f87171)',
     iconOn: mdiShieldCar,
     iconOff: mdiShieldCar,

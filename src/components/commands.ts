@@ -10,6 +10,7 @@ import {
 } from '@mdi/js';
 import { TcBase } from '../base';
 import { sharedStyles } from '../styles';
+import { STRINGS } from '../strings';
 import { icon } from '../ui';
 import type { EntityKey } from '../const';
 import { entityId, rawState, isUnavailable, pressButton } from '../helpers';
@@ -21,12 +22,12 @@ interface Command {
 }
 
 const COMMANDS: Command[] = [
-  { key: 'wake', label: 'Wake', icon: mdiPower },
-  { key: 'honk', label: 'Honk', icon: mdiBullhorn },
-  { key: 'flash', label: 'Flash', icon: mdiCarLightHigh },
-  { key: 'homelink', label: 'HomeLink', icon: mdiGarage },
-  { key: 'keyless', label: 'Keyless', icon: mdiKey },
-  { key: 'boombox', label: 'Boombox', icon: mdiSpeaker },
+  { key: 'wake', label: STRINGS.commands.wake, icon: mdiPower },
+  { key: 'honk', label: STRINGS.commands.honk, icon: mdiBullhorn },
+  { key: 'flash', label: STRINGS.commands.flash, icon: mdiCarLightHigh },
+  { key: 'homelink', label: STRINGS.commands.homelink, icon: mdiGarage },
+  { key: 'keyless', label: STRINGS.commands.keyless, icon: mdiKey },
+  { key: 'boombox', label: STRINGS.commands.boombox, icon: mdiSpeaker },
 ];
 
 @customElement('tc-commands')
@@ -39,7 +40,7 @@ export class TcCommands extends TcBase {
   protected override render(): TemplateResult {
     return html`
       <section class="block">
-        <span class="label">Commands</span>
+        <span class="label">${STRINGS.commands.title}</span>
         <div class="row">
           ${COMMANDS.map((c) => {
             const unavailable = isUnavailable(rawState(this.hass, this.config, c.key));

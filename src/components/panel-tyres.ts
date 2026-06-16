@@ -3,6 +3,7 @@ import { customElement } from 'lit/decorators.js';
 import { mdiAlertCircle } from '@mdi/js';
 import { TcBase } from '../base';
 import { sharedStyles } from '../styles';
+import { STRINGS } from '../strings';
 import { icon } from '../ui';
 import { num, attr, rawState, isOn, formatNumber } from '../helpers';
 import type { EntityKey } from '../const';
@@ -15,10 +16,10 @@ interface Corner {
 }
 
 const CORNERS: Corner[] = [
-  { key: 'tire_fl', warn: 'tire_warn_fl', label: 'Front L', pos: 'fl' },
-  { key: 'tire_fr', warn: 'tire_warn_fr', label: 'Front R', pos: 'fr' },
-  { key: 'tire_rl', warn: 'tire_warn_rl', label: 'Rear L', pos: 'rl' },
-  { key: 'tire_rr', warn: 'tire_warn_rr', label: 'Rear R', pos: 'rr' },
+  { key: 'tire_fl', warn: 'tire_warn_fl', label: STRINGS.tyres.corners.fl, pos: 'fl' },
+  { key: 'tire_fr', warn: 'tire_warn_fr', label: STRINGS.tyres.corners.fr, pos: 'fr' },
+  { key: 'tire_rl', warn: 'tire_warn_rl', label: STRINGS.tyres.corners.rl, pos: 'rl' },
+  { key: 'tire_rr', warn: 'tire_warn_rr', label: STRINGS.tyres.corners.rr, pos: 'rr' },
 ];
 
 @customElement('tc-panel-tyres')
@@ -37,7 +38,7 @@ export class TcPanelTyres extends TcBase {
           ${text}<span class="c-unit">${value !== undefined ? unit : ''}</span>
         </span>
         ${warn
-          ? html`<span class="c-warn">${icon(mdiAlertCircle, { size: 13 })} Low</span>`
+          ? html`<span class="c-warn">${icon(mdiAlertCircle, { size: 13 })} ${STRINGS.tyres.low}</span>`
           : nothing}
       </div>
     `;
@@ -52,9 +53,9 @@ export class TcPanelTyres extends TcBase {
     return html`
       <section class="surface block">
         <div class="head">
-          <span class="label">Tyre pressure</span>
+          <span class="label">${STRINGS.tyres.title}</span>
           <span class="summary ${anyWarn ? 'warn' : anyData ? 'good' : ''}">
-            ${anyWarn ? 'Check pressure' : anyData ? 'All normal' : 'No data'}
+            ${anyWarn ? STRINGS.tyres.checkPressure : anyData ? STRINGS.tyres.allNormal : STRINGS.tyres.noData}
           </span>
         </div>
 

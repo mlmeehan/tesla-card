@@ -6,14 +6,15 @@ import type {
   LovelaceCardEditor,
   PanelId,
 } from './types';
+import { STRINGS } from './strings';
 
 const PANELS: { id: PanelId; name: string }[] = [
-  { id: 'climate', name: 'Climate' },
-  { id: 'charging', name: 'Charging' },
-  { id: 'closures', name: 'Closures' },
-  { id: 'tyres', name: 'Tyres' },
-  { id: 'location', name: 'Location' },
-  { id: 'media', name: 'Media' },
+  { id: 'climate', name: STRINGS.tabs.climate },
+  { id: 'charging', name: STRINGS.tabs.charging },
+  { id: 'closures', name: STRINGS.tabs.closures },
+  { id: 'tyres', name: STRINGS.tabs.tyres },
+  { id: 'location', name: STRINGS.tabs.location },
+  { id: 'media', name: STRINGS.tabs.media },
 ];
 
 @customElement('tesla-card-editor')
@@ -54,27 +55,27 @@ export class TeslaCardEditor extends LitElement implements LovelaceCardEditor {
     return html`
       <div class="form">
         <label class="field">
-          <span>Vehicle name</span>
+          <span>${STRINGS.editor.vehicleName}</span>
           <input
             type="text"
             .value=${c.name ?? ''}
-            placeholder="Model Y"
+            placeholder=${STRINGS.editor.namePlaceholder}
             @change=${(e: Event) => this._text(e, 'name')}
           />
         </label>
 
         <label class="field">
-          <span>Car image URL</span>
+          <span>${STRINGS.editor.imageUrl}</span>
           <input
             type="text"
             .value=${c.image ?? ''}
-            placeholder="Leave empty for built-in car"
+            placeholder=${STRINGS.editor.imagePlaceholder}
             @change=${(e: Event) => this._text(e, 'image')}
           />
         </label>
 
         <label class="field">
-          <span>Default panel</span>
+          <span>${STRINGS.editor.defaultPanel}</span>
           <select
             .value=${c.default_panel ?? 'charging'}
             @change=${(e: Event) =>
@@ -90,7 +91,7 @@ export class TeslaCardEditor extends LitElement implements LovelaceCardEditor {
             .checked=${!!c.hide_quick_actions}
             @change=${(e: Event) => this._bool('hide_quick_actions', e)}
           />
-          <span>Hide quick actions</span>
+          <span>${STRINGS.editor.hideQuickActions}</span>
         </label>
         <label class="check">
           <input
@@ -98,7 +99,7 @@ export class TeslaCardEditor extends LitElement implements LovelaceCardEditor {
             .checked=${!!c.hide_panels}
             @change=${(e: Event) => this._bool('hide_panels', e)}
           />
-          <span>Hide detail panels</span>
+          <span>${STRINGS.editor.hidePanels}</span>
         </label>
         <label class="check">
           <input
@@ -106,13 +107,12 @@ export class TeslaCardEditor extends LitElement implements LovelaceCardEditor {
             .checked=${!!c.hide_commands}
             @change=${(e: Event) => this._bool('hide_commands', e)}
           />
-          <span>Hide commands</span>
+          <span>${STRINGS.editor.hideCommands}</span>
         </label>
 
         <p class="note">
-          Per-entity overrides are configured in YAML via the
-          <code>entities:</code> map. All keys default to the standard Tesla
-          Fleet / Teslemetry entity IDs.
+          ${STRINGS.editor.noteBefore}
+          <code>entities:</code> ${STRINGS.editor.noteAfter}
         </p>
       </div>
     `;

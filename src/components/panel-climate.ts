@@ -13,6 +13,7 @@ import {
 } from '@mdi/js';
 import { TcBase } from '../base';
 import { sharedStyles } from '../styles';
+import { STRINGS } from '../strings';
 import { icon, statTile } from '../ui';
 import {
   attr,
@@ -113,13 +114,13 @@ export class TcPanelClimate extends TcBase {
           <div class="ambient">
             ${statTile({
               icon: mdiThermometer,
-              label: 'Inside',
+              label: STRINGS.climate.inside,
               value: display(this.hass, cfg, 'inside_temp', { decimals: 0 }),
               color: 'var(--tc-amber, #fbbf24)',
             })}
             ${statTile({
               icon: mdiThermometerLow,
-              label: 'Outside',
+              label: STRINGS.climate.outside,
               value: display(this.hass, cfg, 'outside_temp', { decimals: 0 }),
               color: 'var(--tc-blue, #38bdf8)',
             })}
@@ -130,7 +131,7 @@ export class TcPanelClimate extends TcBase {
               class="step"
               ?disabled=${!on || targetTemp === undefined}
               @click=${() => targetTemp !== undefined && this._setTemp(targetTemp - step)}
-              aria-label="Lower temperature"
+              aria-label=${STRINGS.climate.lowerTemp}
             >
               ${icon(mdiMinus, { size: 26 })}
             </button>
@@ -142,7 +143,7 @@ export class TcPanelClimate extends TcBase {
               class="step"
               ?disabled=${!on || targetTemp === undefined}
               @click=${() => targetTemp !== undefined && this._setTemp(targetTemp + step)}
-              aria-label="Raise temperature"
+              aria-label=${STRINGS.climate.raiseTemp}
             >
               ${icon(mdiPlus, { size: 26 })}
             </button>
@@ -154,20 +155,20 @@ export class TcPanelClimate extends TcBase {
             @click=${this._toggleClimate}
           >
             ${icon(mdiPower, { size: 19 })}
-            <span>${on ? 'Climate on' : 'Climate off'}</span>
+            <span>${on ? STRINGS.climate.on : STRINGS.climate.off}</span>
           </button>
         </section>
 
         <!-- seats -->
         <section class="block">
-          <span class="label">Seat &amp; wheel heating</span>
+          <span class="label">${STRINGS.climate.seatHeating}</span>
           <div class="grid g3 seats">
-            ${this._seatTile('seat_fl', 'Front L')}
-            ${this._seatTile('seat_fr', 'Front R')}
-            ${this._seatTile('steering_wheel_heater', 'Wheel', mdiSteering)}
-            ${this._seatTile('seat_rl', 'Rear L')}
-            ${this._seatTile('seat_rc', 'Rear C')}
-            ${this._seatTile('seat_rr', 'Rear R')}
+            ${this._seatTile('seat_fl', STRINGS.climate.seats.fl)}
+            ${this._seatTile('seat_fr', STRINGS.climate.seats.fr)}
+            ${this._seatTile('steering_wheel_heater', STRINGS.climate.seats.wheel, mdiSteering)}
+            ${this._seatTile('seat_rl', STRINGS.climate.seats.rl)}
+            ${this._seatTile('seat_rc', STRINGS.climate.seats.rc)}
+            ${this._seatTile('seat_rr', STRINGS.climate.seats.rr)}
           </div>
         </section>
 
@@ -180,7 +181,7 @@ export class TcPanelClimate extends TcBase {
             @click=${() => this._toggle('defrost')}
           >
             ${icon(mdiCarDefrostFront, { size: 22 })}
-            <span>Defrost</span>
+            <span>${STRINGS.climate.defrost}</span>
           </button>
           <button
             class="toggle-tile ${copOn ? 'on' : ''}"
@@ -189,7 +190,7 @@ export class TcPanelClimate extends TcBase {
             @click=${() => this._toggle('cabin_overheat_protection')}
           >
             ${icon(mdiSnowflake, { size: 22 })}
-            <span>Cabin overheat</span>
+            <span>${STRINGS.climate.cabinOverheat}</span>
           </button>
         </div>
       </div>

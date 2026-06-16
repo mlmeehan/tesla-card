@@ -12,6 +12,7 @@ import {
 } from '@mdi/js';
 import { TcBase } from '../base';
 import { sharedStyles } from '../styles';
+import { STRINGS } from '../strings';
 import { icon, batteryGauge, statTile } from '../ui';
 import './slider';
 import {
@@ -85,14 +86,14 @@ export class TcPanelCharging extends TcBase {
               <span class="range">${rangeNum !== undefined ? `${formatNumber(rangeNum)} ${rangeUnit}` : '—'}</span>
               <span class="cstatus ${charging ? 'live' : ''}">
                 ${charging ? icon(mdiLightningBolt, { size: 14 }) : nothing}
-                ${status && !isUnavailable(status) ? prettyText(status) : 'Idle'}
+                ${status && !isUnavailable(status) ? prettyText(status) : STRINGS.charging.idle}
               </span>
             </div>
           </div>
           ${batteryGauge(battery, { limit, charging, height: 18 })}
           ${limit !== undefined
             ? html`<div class="limit-note">
-                Charge limit <strong>${formatNumber(limit)}%</strong>
+                ${STRINGS.charging.chargeLimit} <strong>${formatNumber(limit)}%</strong>
               </div>`
             : nothing}
         </section>
@@ -104,13 +105,13 @@ export class TcPanelCharging extends TcBase {
           @click=${this._toggleCharge}
         >
           ${icon(chargeOn ? mdiPowerPlugOff : mdiPowerPlug, { size: 20 })}
-          <span>${chargeOn ? 'Stop charging' : 'Start charging'}</span>
+          <span>${chargeOn ? STRINGS.charging.stop : STRINGS.charging.start}</span>
         </button>
 
         <!-- charge limit -->
         <section class="block">
           <div class="lbl-row">
-            <span class="label">Charge limit</span>
+            <span class="label">${STRINGS.charging.chargeLimit}</span>
             <span class="val">${limit !== undefined ? `${formatNumber(limit)}%` : '—'}</span>
           </div>
           <tc-slider
@@ -129,7 +130,7 @@ export class TcPanelCharging extends TcBase {
         <!-- charge current -->
         <section class="block">
           <div class="lbl-row">
-            <span class="label">Charge current</span>
+            <span class="label">${STRINGS.charging.chargeCurrent}</span>
             <span class="val">${amps !== undefined ? `${formatNumber(amps)} A` : '—'}</span>
           </div>
           <tc-slider
@@ -149,37 +150,37 @@ export class TcPanelCharging extends TcBase {
         <div class="grid g3">
           ${statTile({
             icon: mdiLightningBolt,
-            label: 'Power',
+            label: STRINGS.charging.power,
             value: display(this.hass, cfg, 'charger_power', { decimals: 1 }),
             color: 'var(--tc-green, #34d399)',
           })}
           ${statTile({
             icon: mdiSpeedometer,
-            label: 'Rate',
+            label: STRINGS.charging.rate,
             value: display(this.hass, cfg, 'charge_rate'),
             color: 'var(--tc-blue, #38bdf8)',
           })}
           ${statTile({
             icon: mdiBatteryCharging,
-            label: 'Added',
+            label: STRINGS.charging.added,
             value: display(this.hass, cfg, 'charge_energy_added', { decimals: 1 }),
             color: 'var(--tc-teal, #2dd4bf)',
           })}
           ${statTile({
             icon: mdiClockOutline,
-            label: 'Time to full',
+            label: STRINGS.charging.timeToFull,
             value: this._timeToFull(),
             color: 'var(--tc-amber, #fbbf24)',
           })}
           ${statTile({
             icon: mdiFlashOutline,
-            label: 'Voltage',
+            label: STRINGS.charging.voltage,
             value: display(this.hass, cfg, 'charger_voltage'),
             color: 'var(--tc-purple, #a78bfa)',
           })}
           ${statTile({
             icon: mdiEvStation,
-            label: 'Charge port',
+            label: STRINGS.charging.chargePort,
             value: portState && !isUnavailable(portState) ? prettyText(portState) : '—',
             color: portState === 'open' ? 'var(--tc-amber, #fbbf24)' : 'var(--tc-text-dim, #9aa7b8)',
           })}

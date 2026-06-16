@@ -13,6 +13,7 @@ import {
 } from '@mdi/js';
 import { TcBase } from '../base';
 import { sharedStyles } from '../styles';
+import { STRINGS } from '../strings';
 import { statTile } from '../ui';
 import { numById, stateById, type EnergyEntities } from '../energy';
 import { formatNumber, prettyText, isUnavailable } from '../helpers';
@@ -182,10 +183,10 @@ export class TcPanelEnergy extends TcBase {
       <div class="wrap">
         <section class="surface flow-card">
           <div class="flow-head">
-            <span class="ftitle">Power flow</span>
+            <span class="ftitle">${STRINGS.energy.title}</span>
             ${this._gridChip()}
           </div>
-          <svg class="flow" viewBox="0 0 100 102" role="img" aria-label="Energy power flow">
+          <svg class="flow" viewBox="0 0 100 102" role="img" aria-label=${STRINGS.energy.flowLabel}>
             ${edges} ${nodes}
           </svg>
         </section>
@@ -213,7 +214,7 @@ export class TcPanelEnergy extends TcBase {
       tiles.push(
         statTile({
           icon: mdiBatteryLock,
-          label: 'Reserve',
+          label: STRINGS.energy.reserve,
           value: `${formatNumber(reserve)}%`,
           color: 'var(--tc-green, #34d399)',
         })
@@ -225,7 +226,7 @@ export class TcPanelEnergy extends TcBase {
       tiles.push(
         statTile({
           icon: mdiCogOutline,
-          label: 'Mode',
+          label: STRINGS.energy.mode,
           value: prettyText(mode),
           color: 'var(--tc-purple, #a78bfa)',
         })
@@ -237,7 +238,7 @@ export class TcPanelEnergy extends TcBase {
       tiles.push(
         statTile({
           icon: mdiCounter,
-          label: 'Session',
+          label: STRINGS.energy.session,
           value: `${formatNumber(session, 1)} kWh`,
           color: 'var(--tc-teal, #2dd4bf)',
         })
@@ -250,7 +251,7 @@ export class TcPanelEnergy extends TcBase {
       tiles.push(
         statTile({
           icon: mdiPowerPlug,
-          label: 'Connector',
+          label: STRINGS.energy.connector,
           value: prettyText(wcStatus),
           color: 'var(--tc-blue, #38bdf8)',
         })
@@ -259,8 +260,8 @@ export class TcPanelEnergy extends TcBase {
       tiles.push(
         statTile({
           icon: mdiPowerPlug,
-          label: 'Connector',
-          value: wcConnected === 'on' ? 'Connected' : 'Unplugged',
+          label: STRINGS.energy.connector,
+          value: wcConnected === 'on' ? STRINGS.energy.connected : STRINGS.energy.unplugged,
           color: wcConnected === 'on' ? 'var(--tc-blue, #38bdf8)' : 'var(--tc-text-dim, #9aa7b8)',
         })
       );

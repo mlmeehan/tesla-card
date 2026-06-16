@@ -11,6 +11,7 @@ import {
 } from '@mdi/js';
 import { TcBase } from '../base';
 import { sharedStyles } from '../styles';
+import { STRINGS } from '../strings';
 import { icon } from '../ui';
 import './slider';
 import { stateObj, rawState, attr, isUnavailable, entityId } from '../helpers';
@@ -49,8 +50,8 @@ export class TcPanelMedia extends TcBase {
               : icon(mdiMusicNote, { size: 30 })}
           </div>
           <div class="meta">
-            <span class="title">${off ? 'Not playing' : title || 'Tesla audio'}</span>
-            <span class="artist">${off ? 'Media player idle' : artist || '—'}</span>
+            <span class="title">${off ? STRINGS.media.notPlaying : title || STRINGS.media.defaultTitle}</span>
+            <span class="artist">${off ? STRINGS.media.idle : artist || '—'}</span>
           </div>
         </div>
 
@@ -59,7 +60,7 @@ export class TcPanelMedia extends TcBase {
             class="tbtn"
             ?disabled=${off}
             @click=${() => this._call('media_previous_track')}
-            aria-label="Previous"
+            aria-label=${STRINGS.media.previous}
           >
             ${icon(mdiSkipPrevious, { size: 28 })}
           </button>
@@ -67,7 +68,7 @@ export class TcPanelMedia extends TcBase {
             class="tbtn play"
             ?disabled=${off}
             @click=${() => this._call('media_play_pause')}
-            aria-label=${playing ? 'Pause' : 'Play'}
+            aria-label=${playing ? STRINGS.media.pause : STRINGS.media.play}
           >
             ${icon(playing ? mdiPause : mdiPlay, { size: 32 })}
           </button>
@@ -75,7 +76,7 @@ export class TcPanelMedia extends TcBase {
             class="tbtn"
             ?disabled=${off}
             @click=${() => this._call('media_next_track')}
-            aria-label="Next"
+            aria-label=${STRINGS.media.next}
           >
             ${icon(mdiSkipNext, { size: 28 })}
           </button>
@@ -86,7 +87,7 @@ export class TcPanelMedia extends TcBase {
             class="mute ${muted ? 'on' : ''}"
             ?disabled=${off}
             @click=${() => this._call('volume_mute', { is_volume_muted: !muted })}
-            aria-label="Mute"
+            aria-label=${STRINGS.media.mute}
           >
             ${icon(muted ? mdiVolumeOff : mdiVolumeHigh, { size: 20 })}
           </button>

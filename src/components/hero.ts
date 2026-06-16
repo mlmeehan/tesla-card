@@ -3,6 +3,7 @@ import { customElement } from 'lit/decorators.js';
 import { mdiLock, mdiLockOpenVariant, mdiFlash } from '@mdi/js';
 import { TcBase } from '../base';
 import { sharedStyles } from '../styles';
+import { STRINGS } from '../strings';
 import { icon, batteryGauge } from '../ui';
 import { carView, carStyles } from './car';
 import { resolvePaint } from '../paint';
@@ -36,7 +37,7 @@ export class TcHero extends TcBase {
 
   private _status(asleep: boolean): HeroStatus {
     if (asleep) {
-      return { dot: 'var(--tc-text-mute, #64748b)', label: 'Asleep', sub: 'Tap a command to wake' };
+      return { dot: 'var(--tc-text-mute, #64748b)', label: STRINGS.status.asleep, sub: STRINGS.hero.tapToWake };
     }
     const shift = rawState(this.hass, this.config, 'shift_state');
     const charging = this._isCharging();
@@ -47,25 +48,29 @@ export class TcHero extends TcBase {
       const limit = num(this.hass, this.config, 'charge_limit');
       const sub =
         ttf && ttf > 0
-          ? `Charging · ${formatHoursToHM(ttf)}${limit ? ` to ${formatNumber(limit)}%` : ''}`
-          : 'Charging';
-      return { dot: 'var(--tc-green, #34d399)', label: 'Charging', sub };
+          ? `${STRINGS.status.charging} · ${formatHoursToHM(ttf)}${limit ? ` to ${formatNumber(limit)}%` : ''}`
+          : STRINGS.status.charging;
+      return { dot: 'var(--tc-green, #34d399)', label: STRINGS.status.charging, sub };
     }
     if (shift && !isUnavailable(shift) && shift !== 'P') {
       const speed = num(this.hass, this.config, 'speed');
-      const map: Record<string, string> = { D: 'Driving', R: 'Reverse', N: 'Neutral' };
+      const map: Record<string, string> = {
+        D: STRINGS.status.driving,
+        R: STRINGS.status.reverse,
+        N: STRINGS.status.neutral,
+      };
       const sub =
         speed !== undefined
           ? `${formatNumber(speed)} ${unit(this.hass, this.config, 'speed') || 'mph'}`
-          : 'In motion';
-      return { dot: 'var(--tc-blue, #38bdf8)', label: map[shift] ?? 'Driving', sub };
+          : STRINGS.status.inMotion;
+      return { dot: 'var(--tc-blue, #38bdf8)', label: map[shift] ?? STRINGS.status.driving, sub };
     }
     return {
       dot: locked ? 'var(--tc-green, #34d399)' : 'var(--tc-amber, #fbbf24)',
-      label: 'Parked',
+      label: STRINGS.status.parked,
       sub: html`<span class="lockline">
         ${icon(locked ? mdiLock : mdiLockOpenVariant, { size: 14 })}
-        ${locked ? 'Locked' : 'Unlocked'}
+        ${locked ? STRINGS.status.locked : STRINGS.status.unlocked}
       </span>`,
     };
   }
@@ -73,7 +78,7 @@ export class TcHero extends TcBase {
   protected override render(): TemplateResult {
     const cfg = this.config;
     const asleep = isAsleep(this.hass, cfg);
-    const name = cfg.name ?? 'Model Y';
+    const name = cfg.name ?? STRINGS.hero.defaultName;
     const image = cfg.image;
     const status = this._status(asleep);
 
@@ -110,7 +115,7 @@ export class TcHero extends TcBase {
         <button
           class="battery"
           @click=${() => this._open('charging')}
-          aria-label="Open charging"
+          aria-label=${STRINGS.hero.openCharging}
         >
           <div class="bat-top">
             <span class="bat-pct">

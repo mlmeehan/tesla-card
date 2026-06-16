@@ -12,6 +12,7 @@ import {
 } from '@mdi/js';
 import { TcBase } from '../base';
 import { sharedStyles } from '../styles';
+import { STRINGS } from '../strings';
 import { icon, statTile } from '../ui';
 import { attr, num, rawState, isUnavailable, display, formatNumber, formatMinutesToHM } from '../helpers';
 
@@ -42,14 +43,14 @@ export class TcPanelLocation extends TcBase {
           <div class="map">
             ${coords
               ? html`<iframe
-                  title="Vehicle location"
+                  title=${STRINGS.location.mapLabel}
                   loading="lazy"
                   referrerpolicy="no-referrer"
                   src=${`https://www.openstreetmap.org/export/embed.html?bbox=${coords.lon - d}%2C${coords.lat - d}%2C${coords.lon + d}%2C${coords.lat + d}&layer=mapnik&marker=${coords.lat}%2C${coords.lon}`}
                 ></iframe>`
               : html`<div class="map-empty">
                   ${icon(mdiMapMarker, { size: 30 })}
-                  <span>Location unavailable</span>
+                  <span>${STRINGS.location.unavailable}</span>
                 </div>`}
           </div>
           <div class="map-foot">
@@ -66,7 +67,7 @@ export class TcPanelLocation extends TcBase {
                   target="_blank"
                   rel="noopener noreferrer"
                 >
-                  Open map ${icon(mdiOpenInNew, { size: 13 })}
+                  ${STRINGS.location.openMap} ${icon(mdiOpenInNew, { size: 13 })}
                 </a>`
               : nothing}
           </div>
@@ -76,23 +77,23 @@ export class TcPanelLocation extends TcBase {
           ? html`<div class="grid g3">
               ${statTile({
                 icon: mdiMapMarkerDistance,
-                label: 'To arrival',
+                label: STRINGS.location.toArrival,
                 value: display(this.hass, cfg, 'distance_to_arrival'),
                 color: 'var(--tc-blue, #38bdf8)',
               })}
               ${statTile({
                 icon: mdiClockOutline,
-                label: 'ETA',
+                label: STRINGS.location.eta,
                 value: eta !== undefined ? formatMinutesToHM(eta) : '—',
                 color: 'var(--tc-green, #34d399)',
               })}
               ${statTile({
                 icon: mdiCarBrakeAlert,
-                label: 'Traffic',
+                label: STRINGS.location.traffic,
                 value:
                   trafficRaw && !isUnavailable(trafficRaw)
                     ? `${formatNumber(Number(trafficRaw))} min`
-                    : 'None',
+                    : STRINGS.location.none,
                 color: 'var(--tc-amber, #fbbf24)',
               })}
             </div>`
@@ -101,19 +102,19 @@ export class TcPanelLocation extends TcBase {
         <div class="grid g3">
           ${statTile({
             icon: mdiCounter,
-            label: 'Odometer',
+            label: STRINGS.location.odometer,
             value: display(this.hass, cfg, 'odometer'),
             color: 'var(--tc-purple, #a78bfa)',
           })}
           ${statTile({
             icon: mdiSpeedometer,
-            label: 'Speed',
+            label: STRINGS.location.speed,
             value: display(this.hass, cfg, 'speed'),
             color: 'var(--tc-blue, #38bdf8)',
           })}
           ${statTile({
             icon: mdiLightningBolt,
-            label: 'Power',
+            label: STRINGS.location.power,
             value: display(this.hass, cfg, 'power'),
             color: 'var(--tc-green, #34d399)',
           })}

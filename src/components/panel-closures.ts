@@ -3,6 +3,7 @@ import { customElement } from 'lit/decorators.js';
 import { mdiLock, mdiLockOpenVariant, mdiWindowClosedVariant } from '@mdi/js';
 import { TcBase } from '../base';
 import { sharedStyles } from '../styles';
+import { STRINGS } from '../strings';
 import { icon } from '../ui';
 import {
   rawState,
@@ -57,7 +58,7 @@ export class TcPanelClosures extends TcBase {
       class="zone ${avail ? '' : 'na'}"
       @click=${() => this._toggle(key)}
       role="button"
-      aria-label=${`${label} ${open ? 'open' : 'closed'}`}
+      aria-label=${`${label} ${open ? STRINGS.closures.openWord : STRINGS.closures.closedWord}`}
     >${shape(this._fill(open, color), this._stroke(open, color))}</g>`;
   }
 
@@ -75,30 +76,30 @@ export class TcPanelClosures extends TcBase {
   private _statusLine(): { text: string; tone: string } {
     const locked = rawState(this.hass, this.config, 'lock') === 'locked';
     const openNames: string[] = [];
-    if (this._open('frunk')) openNames.push('frunk');
-    if (this._open('trunk')) openNames.push('trunk');
-    if (this._open('windows')) openNames.push('windows');
-    if (this._open('charge_port')) openNames.push('charge port');
+    if (this._open('frunk')) openNames.push(STRINGS.closures.parts.frunk);
+    if (this._open('trunk')) openNames.push(STRINGS.closures.parts.trunk);
+    if (this._open('windows')) openNames.push(STRINGS.closures.parts.windows);
+    if (this._open('charge_port')) openNames.push(STRINGS.closures.parts.chargePort);
     (
       [
-        ['door_fl', 'front-left door'],
-        ['door_fr', 'front-right door'],
-        ['door_rl', 'rear-left door'],
-        ['door_rr', 'rear-right door'],
+        ['door_fl', STRINGS.closures.parts.doorFL],
+        ['door_fr', STRINGS.closures.parts.doorFR],
+        ['door_rl', STRINGS.closures.parts.doorRL],
+        ['door_rr', STRINGS.closures.parts.doorRR],
       ] as [EntityKey, string][]
     ).forEach(([k, n]) => this._doorOpen(k) && openNames.push(n));
 
     if (openNames.length === 0) {
       return {
-        text: locked ? 'All closed · Locked' : 'All closed · Unlocked',
+        text: `${STRINGS.closures.allClosed} · ${locked ? STRINGS.status.locked : STRINGS.status.unlocked}`,
         tone: locked ? 'good' : 'warn',
       };
     }
     const list =
       openNames.length <= 2
         ? openNames.join(' & ')
-        : `${openNames.length} open`;
-    return { text: `Open: ${list}`, tone: 'warn' };
+        : `${openNames.length} ${STRINGS.closures.openWord}`;
+    return { text: `${STRINGS.closures.openPrefix}: ${list}`, tone: 'warn' };
   }
 
   protected override render(): TemplateResult {
@@ -111,7 +112,7 @@ export class TcPanelClosures extends TcBase {
     return html`
       <div class="wrap">
         <section class="surface diagram">
-          <svg viewBox="0 0 220 384" class="car" aria-label="Vehicle closures">
+          <svg viewBox="0 0 220 384" class="car" aria-label=${STRINGS.closures.diagramLabel}>
             <!-- wheels -->
             <g class="wheels">
               <rect x="22" y="96" width="16" height="52" rx="8"></rect>
@@ -133,7 +134,7 @@ export class TcPanelClosures extends TcBase {
               (fill, stroke) =>
                 svg`<path d="M52 56 q0 -28 28 -28 h60 q28 0 28 28 v22 h-116 z"
                   style="fill:${fill};stroke:${stroke}"></path>`,
-              'Frunk'
+              STRINGS.closures.zones.frunk
             )}
 
             <!-- windshield -->
@@ -146,7 +147,7 @@ export class TcPanelClosures extends TcBase {
               (fill, stroke) =>
                 svg`<rect x="70" y="124" width="80" height="116" rx="12"
                   style="fill:${fill};stroke:${stroke}"></rect>`,
-              'Windows'
+              STRINGS.closures.zones.windows
             )}
             ${sunroofAvail
               ? this._zone(
@@ -155,7 +156,7 @@ export class TcPanelClosures extends TcBase {
                   (fill, stroke) =>
                     svg`<rect x="86" y="140" width="48" height="84" rx="9"
                       style="fill:${fill};stroke:${stroke}"></rect>`,
-                  'Sunroof'
+                  STRINGS.closures.zones.sunroof
                 )
               : nothing}
 
@@ -169,7 +170,7 @@ export class TcPanelClosures extends TcBase {
               (fill, stroke) =>
                 svg`<path d="M52 328 v-22 h116 v22 q0 28 -28 28 h-60 q-28 0 -28 -28 z"
                   style="fill:${fill};stroke:${stroke}"></path>`,
-              'Trunk'
+              STRINGS.closures.zones.trunk
             )}
 
             <!-- doors -->
@@ -191,7 +192,7 @@ export class TcPanelClosures extends TcBase {
               (fill, stroke) =>
                 svg`<circle cx="50" cy="258" r="8"
                   style="fill:${fill};stroke:${stroke}"></circle>`,
-              'Charge port'
+              STRINGS.closures.zones.chargePort
             )}
 
             <!-- centre lock glyph -->
@@ -199,7 +200,7 @@ export class TcPanelClosures extends TcBase {
               class="zone lock-glyph ${lockAvail ? '' : 'na'}"
               @click=${() => lockAvail && toggleEntity(this.hass!, entityId(cfg, 'lock'))}
               role="button"
-              aria-label=${locked ? 'Locked' : 'Unlocked'}
+              aria-label=${locked ? STRINGS.status.locked : STRINGS.status.unlocked}
             >
               <circle
                 cx="110" cy="182" r="22"
@@ -227,7 +228,7 @@ export class TcPanelClosures extends TcBase {
           @click=${() => this._toggle('lock')}
         >
           ${icon(locked ? mdiLock : mdiLockOpenVariant, { size: 20 })}
-          <span>${locked ? 'Locked — tap to unlock' : 'Unlocked — tap to lock'}</span>
+          <span>${locked ? STRINGS.closures.lockedTapToUnlock : STRINGS.closures.unlockedTapToLock}</span>
         </button>
 
         <button
@@ -236,10 +237,10 @@ export class TcPanelClosures extends TcBase {
           @click=${() => this._toggle('windows')}
         >
           ${icon(mdiWindowClosedVariant, { size: 19 })}
-          <span>${this._open('windows') ? 'Close windows' : 'Vent windows'}</span>
+          <span>${this._open('windows') ? STRINGS.closures.closeWindows : STRINGS.closures.ventWindows}</span>
         </button>
 
-        <p class="hint">Tap the frunk, trunk, windows or charge port on the diagram to open or close. Doors are status-only.</p>
+        <p class="hint">${STRINGS.closures.hint}</p>
       </div>
     `;
   }

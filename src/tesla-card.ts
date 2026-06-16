@@ -21,6 +21,8 @@ import { resolveEntities } from './data/resolve';
 import { detectDialect } from './data/dialect';
 import { resolveEnergyEntities, hasEnergySite, type EnergyEntities } from './energy';
 import { tokens, sharedStyles } from './styles';
+import { STRINGS } from './strings';
+import { log } from './log';
 import { icon } from './ui';
 import type {
   HomeAssistant,
@@ -44,16 +46,16 @@ import './components/panel-media';
 type Tab = { id: PanelId; name: string; icon: string };
 
 const PANELS: Tab[] = [
-  { id: 'climate', name: 'Climate', icon: mdiThermometer },
-  { id: 'charging', name: 'Charging', icon: mdiEvStation },
-  { id: 'closures', name: 'Closures', icon: mdiCarDoor },
-  { id: 'tyres', name: 'Tyres', icon: mdiCarTireAlert },
-  { id: 'location', name: 'Location', icon: mdiMapMarkerRadius },
-  { id: 'media', name: 'Media', icon: mdiPlayCircleOutline },
+  { id: 'climate', name: STRINGS.tabs.climate, icon: mdiThermometer },
+  { id: 'charging', name: STRINGS.tabs.charging, icon: mdiEvStation },
+  { id: 'closures', name: STRINGS.tabs.closures, icon: mdiCarDoor },
+  { id: 'tyres', name: STRINGS.tabs.tyres, icon: mdiCarTireAlert },
+  { id: 'location', name: STRINGS.tabs.location, icon: mdiMapMarkerRadius },
+  { id: 'media', name: STRINGS.tabs.media, icon: mdiPlayCircleOutline },
 ];
 
 /** Energy tab, shown only when an energy site is detected (after Charging). */
-const ENERGY_TAB: Tab = { id: 'energy', name: 'Energy', icon: mdiSolarPower };
+const ENERGY_TAB: Tab = { id: 'energy', name: STRINGS.tabs.energy, icon: mdiSolarPower };
 
 @customElement('tesla-card')
 export class TeslaCard extends LitElement implements LovelaceCard {
@@ -306,18 +308,14 @@ export class TeslaCard extends LitElement implements LovelaceCard {
 (window as Window).customCards = (window as Window).customCards || [];
 (window as Window).customCards!.push({
   type: 'tesla-card',
-  name: 'Tesla Card',
-  description: 'A Tesla-app-inspired vehicle card for Tesla Fleet / Teslemetry.',
+  name: STRINGS.card.name,
+  description: STRINGS.card.description,
   preview: true,
   documentationURL: 'https://github.com/mlmeehan/tesla-card',
 });
 
-/* eslint-disable no-console */
-console.info(
-  `%c TESLA-CARD %c v${CARD_VERSION} `,
-  'background:#e82127;color:#fff;font-weight:700;border-radius:4px 0 0 4px;padding:2px 6px',
-  'background:#1f2937;color:#fff;border-radius:0 4px 4px 0;padding:2px 6px'
-);
+// Neutral startup banner via the single logger — no `#e82127` brand badge (D6).
+log.info(`v${CARD_VERSION}`);
 
 declare global {
   interface HTMLElementTagNameMap {
