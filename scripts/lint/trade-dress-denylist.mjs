@@ -51,11 +51,15 @@ const ROOT = join(__dirname, '..', '..'); // tesla-card/
 //   • src/log.test.ts — Story 2.5's neutral-logger gate asserts `#e82127` is gone;
 //   • src/paint.test.ts — Story 2.6's paint relabel test plants option codes /
 //     marketing names to assert PAINT_PRESETS bundles NONE of them.
+//   • docs/trade-dress.md — the policy doc itself DEFINES the denylist, listing the
+//     brand red rgb() form and every option code (PPSW/PBSB/…) as the tokens the
+//     gate catches; same DEFINE-the-tokens rationale as this gate + its test.
 export const CONTENT_SKIP = new Set([
   'scripts/lint/trade-dress-denylist.mjs',
   'src/trade-dress-denylist.test.ts',
   'src/log.test.ts',
   'src/paint.test.ts',
+  'docs/trade-dress.md',
 ]);
 
 // Binary / asset extensions: never content-scanned (a regex over bytes is noise),
