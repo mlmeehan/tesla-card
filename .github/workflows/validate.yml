@@ -39,8 +39,12 @@ jobs:
   # Structural + policy CI gates: the data-access boundary lint suite
   # (no-bare-hass.states + no-cycle, Story 1.7), the trade-dress denylist
   # (Story 2.6 — fails on Tesla brand red / option codes / wordmark ®™ / logo
-  # asset filenames), and the import-allowlist gate (Story 2.7 — runtime imports
-  # ⊆ {lit, @mdi/js}; @mdi/js named-path only, never the barrel — NFR-2).
+  # asset filenames), the import-allowlist gate (Story 2.7 — runtime imports
+  # ⊆ {lit, @mdi/js}; @mdi/js named-path only, never the barrel — NFR-2), and the
+  # no-network-egress gate (Story 2.8 — fails on any direct browser network
+  # primitive (fetch / XMLHttpRequest / WebSocket / EventSource / RTCPeerConnection
+  # / navigator.sendBeacon) in the bundled src/ graph; hass.callService/states ride
+  # HA's own connection — AR-17 privacy affirmation, no telemetry).
   # Merge-blocking, same tier as type-check/build. Dep-light scripts
   # (scripts/lint/*.mjs); no ESLint, no new deps.
   lint:

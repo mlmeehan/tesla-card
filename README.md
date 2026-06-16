@@ -40,6 +40,11 @@ pressures, a map, and the media player.
 - **Zero entity config** — auto-detects your Tesla device and resolves every
   entity by its stable function-name, so it works whatever your vehicle is
   called. Every key is still overridable.
+- **Private by design** — no telemetry, no analytics, no phone-home. The card
+  opens no network connection of its own: it reads `hass.states` and acts via
+  `hass.callService`, so **all** traffic — including your car's location — rides
+  your Home Assistant's own connection and never leaves your instance via this
+  card. Enforced by a merge-blocking CI gate. See [Privacy](docs/privacy.md).
 
 ## Screenshots
 

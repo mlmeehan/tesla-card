@@ -35,6 +35,7 @@ without hard-coded entity IDs.
 - [Development Guide](./development-guide.md) — commands, demo harness, adding a component, CI, release/version-sync
 - [CI Pipeline](./ci.md) — workflows (validate / test / release), quality gates, local-parity scripts, secrets, troubleshooting
 - [Source Tree Analysis](./source-tree-analysis.md) — annotated `src/` and project layout
+- [Privacy](./privacy.md) — no-network-egress / no-telemetry affirmation, the merge-blocking gate, and the sanctioned HA channel
 
 ## Existing Project Docs
 

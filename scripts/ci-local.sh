@@ -16,7 +16,7 @@ npm run typecheck
 echo "==> typecheck:e2e"
 npm run typecheck:e2e
 
-echo "==> lint (structural gates: no-bare-hass.states + no-cycle + trade-dress + import-allowlist)"
+echo "==> lint (structural gates: no-bare-hass.states + no-cycle + trade-dress + import-allowlist + no-network-egress)"
 npm run lint
 
 echo "==> build + bundle-exists check"

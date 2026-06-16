@@ -16,9 +16,11 @@ docs/Tesla2.png
 docs/tesla1-svg/
 assets/
 
-# Transient probe planted by src/import-allowlist.test.ts to exercise the real gate
-# (normally removed in a finally; this guards against a hard-killed run leaving it behind).
+# Transient probes planted by src/import-allowlist.test.ts / src/no-network-egress.test.ts
+# to exercise the real gates (normally removed in a finally; this guards against a
+# hard-killed run leaving one behind).
 src/__import_allowlist_probe__.ts
+src/__no_network_egress_probe__.ts
 
 # Playwright E2E artifacts (reports/results are regenerated; baselines under
 # tests/**/-snapshots/ ARE committed and must not be ignored)
