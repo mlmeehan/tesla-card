@@ -27,7 +27,7 @@ test.describe('hero — render modes', () => {
 
   test('recolor: photoreal body stack from demo/local/', async ({ demo }) => {
     test.skip(!hasRecolorArt, 'demo/local/ recolor art absent (gitignored / CI checkout)');
-    await demo.open({ scenario: 'awake', recolor: true, paint: 'Deep Blue' });
+    await demo.open({ scenario: 'awake', recolor: true, paint: '#2a4f93' });
     await expect(demo.heroSvg).toBeVisible();
   });
 });

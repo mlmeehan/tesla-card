@@ -88,7 +88,7 @@ The built-in render recolours to any paint (see [Paint](#paint)):
 ```yaml
 type: custom:tesla-card
 name: Model Y
-paint: Deep Blue
+paint: blue
 ```
 
 Prefer your own render? Point `image:` at a file in `config/www/` (a transparent
@@ -107,7 +107,7 @@ image: /local/model_y.png
 | `name`               | string  | `Model Y`        | Vehicle name shown in the hero.                      |
 | `image`              | string  | _built-in EV_    | Custom flat car render URL. When unset (and no `body`), the card shows its built-in recolorable EV illustration. |
 | `body`               | map     | _none_           | Recolorable car-body layer set — see [Recolorable car body](#recolorable-car-body). |
-| `paint`              | string \| map | _silver_   | Body colour for the built-in render or a `body` layer set: a CSS colour, a Tesla colour name, or an entity source — see [Paint](#paint). |
+| `paint`              | string \| map | _silver_   | Body colour for the built-in render or a `body` layer set: a CSS colour, a generic colour-preset name, or an entity source — see [Paint](#paint). |
 | `energy`             | map     | _auto_           | Energy-site / Wall-Connector wiring + hide switch — see [Energy panel](#energy-panel). |
 | `device`             | string  | _auto_           | Vehicle device id or name, if you have more than one Tesla. |
 | `prefix`             | string  | _auto_           | Force the entity-id prefix slug (e.g. `model_y`). Rarely needed. |
@@ -163,7 +163,7 @@ covers every colour instead of one PNG per colour.
 ```yaml
 type: custom:tesla-card
 name: Model Y
-paint: Deep Blue          # or '#2a4f93', or an entity (see Paint)
+paint: blue               # or '#2a4f93', or an entity (see Paint)
 body:
   color: /local/tesla-card/color.webp      # base: glass, wheels, lights, shadow
   shade: /local/tesla-card/shade.webp      # grayscale form, composited ×multiply
@@ -195,19 +195,21 @@ on a custom `image`, which can't be tinted. It accepts three forms:
 
 ```yaml
 paint: '#2a4f93'          # 1. any CSS colour (hex, rgb(), hsl(), named…)
-paint: Deep Blue          # 2. a Tesla colour name or option code (PPSB, PMNG…)
+paint: blue               # 2. a generic colour-preset name (see list below)
 paint:                    # 3. read the colour live from an entity
-  entity: sensor.my_tesla_exterior_color
+  entity: sensor.my_exterior_color
   attribute: null         # optional: read this attribute instead of the state
-  map:                    # optional: extra name→colour entries (override the map)
+  map:                    # optional: extra name→colour entries (override the presets)
+    Deep Blue: '#2a4f93'  # ← bring your own vendor names here
     My Custom Wrap: '#114b3a'
   default: '#9aa3ad'      # used when the entity yields nothing usable
 ```
 
-Recognised Tesla names include *Pearl White*, *Solid Black*, *Obsidian Black*,
-*Midnight Silver*, *Stealth Grey*, *Silver*, *Quicksilver*, *Deep Blue*, *Red
-Multi-Coat*, *Ultra Red* and *Midnight Cherry Red* (matching is
-case/space-insensitive; option codes like `PPSW`/`PBSB`/`PPSB` also work).
+The bundled presets are **generic colour names** only: *white*, *silver*,
+*lightsilver*, *grey*/*gray*, *darkgrey*/*darkgray*, *charcoal*, *black*, *blue*,
+*red*, *brightred* and *darkred* (matching is case/space-insensitive). No vendor
+marketing names or option codes are bundled — if you want a name like *Deep Blue*,
+add it under the source's `map` (as above) or just pass the literal hex.
 
 > **Heads-up:** the official `tesla_fleet` integration does **not** expose an
 > exterior-colour entity. The entity form (3) is for a template/helper sensor
@@ -268,7 +270,7 @@ visual work. URL params:
 - `?image=1` — show a custom flat `<img>` instead of the built-in render.
 - `?recolor=1&paint=Deep%20Blue` — exercise the photoreal recolorable body
   (needs your own layers in `demo/local/`, which is gitignored).
-- `?colorentity=Deep%20Blue` — drive the paint from a mock colour entity.
+- `?colorentity=blue` — drive the paint from a mock colour entity.
 
 ## License
 

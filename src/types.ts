@@ -86,7 +86,7 @@ export interface TeslaCardConfig {
   body?: BodyLayers;
   /**
    * Paint colour for the recolorable body. Either a literal CSS colour
-   * (`#23519e`), a Tesla colour name (`"Deep Blue"`), or a {@link PaintSource}
+   * (`#23519e`), a generic colour name (`"blue"`), or a {@link PaintSource}
    * that reads the colour live from an entity/attribute. Recolours both the
    * `body` layer stack and the bundled generic-EV default; only the flat
    * `image` mode ignores it. Defaults to a neutral silver.

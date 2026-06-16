@@ -107,7 +107,7 @@ Put the four files where Home Assistant serves them (e.g.
 ```yaml
 type: custom:tesla-card
 name: Model Y
-paint: Deep Blue
+paint: blue
 body:
   color: /local/tesla-card/color.webp
   shade: /local/tesla-card/shade.webp
@@ -119,7 +119,8 @@ body:
 ```
 
 See [README → Paint](../README.md#paint) for the colour forms (`paint` accepts a
-literal CSS colour, a Tesla colour name, or an entity source).
+literal CSS colour, a generic colour-preset name, or an entity source; vendor
+marketing names are user-supplied via the source's `map`).
 
 ## 6. Verify locally
 

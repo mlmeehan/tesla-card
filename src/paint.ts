@@ -5,9 +5,13 @@ import type { HomeAssistant, TeslaCardConfig } from './types';
  *
  * `config.paint` may be:
  *   • a literal CSS colour            → used verbatim (`#23519e`, `rgb(...)`, `blue`)
- *   • a Tesla colour name             → mapped via {@link TESLA_PAINT} (`"Deep Blue"`)
+ *   • a generic colour name           → mapped via {@link PAINT_PRESETS} (`"blue"`)
  *   • a {@link PaintSource} object    → read live from an entity/attribute, then
- *                                       mapped (Tesla name → hex) or used as-is
+ *                                       mapped (name → hex) or used as-is
+ *
+ * The bundled presets are GENERIC colour names only — no vendor marketing names or
+ * option codes ship (Story 2.6 trade-dress gate). A user who wants vendor-specific
+ * names supplies them via the source's `map` field (or passes a literal colour).
  *
  * NOTE: the official `tesla_fleet` integration does **not** expose an exterior
  * colour attribute, so entity-driven paint only applies to integrations that do
@@ -22,53 +26,37 @@ export interface PaintSource {
   entity: string;
   /** Read this attribute instead of the entity state. */
   attribute?: string;
-  /** Extra name→colour entries, merged over (and overriding) the Tesla map. */
+  /** Extra name→colour entries, merged over (and overriding) the bundled presets. */
   map?: Record<string, string>;
   /** Colour to use when the entity yields nothing usable. */
   default?: string;
 }
 
-/** Tesla exterior colours — both marketing names and API/option codes. */
-export const TESLA_PAINT: Record<string, string> = {
-  // Pearl / white
-  pearlwhitemulticoat: '#eceeef',
-  pearlwhite: '#eceeef',
+/**
+ * Bundled paint presets — GENERIC colour names only (no marketing names, no
+ * option codes), so nothing Tesla-branded ships. Hex VALUES are retained (they
+ * aren't trademarked) and biased slightly bright on purpose — the hero composites
+ * a `multiply` shade over the paint, which darkens it toward the real colour.
+ * Want vendor-specific names? Supply them via `PaintSource.map` or a literal.
+ */
+export const PAINT_PRESETS: Record<string, string> = {
+  // Whites / silvers
   white: '#eceeef',
-  ppsw: '#eceeef',
-  pbcw: '#eceeef',
-  // Solid / obsidian black
-  solidblack: '#21252a',
-  black: '#21252a',
-  obsidianblackmetallic: '#1f2226',
-  obsidianblack: '#1f2226',
-  pbsb: '#21252a',
-  pmbl: '#1f2226',
-  // Midnight silver / grey
-  midnightsilvermetallic: '#5a5e63',
-  midnightsilver: '#5a5e63',
-  pmng: '#5a5e63',
-  stealthgrey: '#6a6e73',
-  stealthgray: '#6a6e73',
-  pn00: '#6a6e73',
-  // Silver / quicksilver
-  silvermetallic: '#c2c5c8',
   silver: '#c2c5c8',
-  pmss: '#c2c5c8',
-  quicksilver: '#c4c7cb',
-  pn01: '#c4c7cb',
+  lightsilver: '#c4c7cb',
+  // Greys → blacks (light to dark)
+  grey: '#6a6e73',
+  gray: '#6a6e73',
+  darkgrey: '#5a5e63',
+  darkgray: '#5a5e63',
+  charcoal: '#1f2226',
+  black: '#21252a',
   // Blue
-  deepbluemetallic: '#2a4f93',
-  deepblue: '#2a4f93',
   blue: '#2a4f93',
-  ppsb: '#2a4f93',
-  // Red
-  redmulticoat: '#9e2228',
+  // Reds (mid, bright, dark)
   red: '#9e2228',
-  ppmr: '#9e2228',
-  ultrared: '#c01020',
-  pr00: '#c01020',
-  pr01: '#c01020',
-  midnightcherryred: '#4d1016',
+  brightred: '#c01020',
+  darkred: '#4d1016',
 };
 
 /** Small set of CSS named colours we accept as literals (recolour-relevant). */
@@ -93,7 +81,7 @@ function looksLikeCss(value: string): boolean {
   return CSS_NAMED.has(v);
 }
 
-/** Map a colour *name* (Tesla marketing name or code) to a hex, if known. */
+/** Map a colour *name* (generic preset or a user-supplied `extra` entry) to a hex, if known. */
 export function colorFromName(
   raw: string,
   extra?: Record<string, string>
@@ -105,7 +93,7 @@ export function colorFromName(
       if (normalizeKey(k) === key) return v;
     }
   }
-  return TESLA_PAINT[key];
+  return PAINT_PRESETS[key];
 }
 
 /**
@@ -119,7 +107,7 @@ export function resolvePaint(
   const paint = config.paint;
   if (paint == null) return undefined;
 
-  // Literal string: a CSS colour wins; otherwise try the Tesla name map; if
+  // Literal string: a CSS colour wins; otherwise try the preset name map; if
   // neither, pass it through (lets users use a colour we don't know about).
   if (typeof paint === 'string') {
     if (looksLikeCss(paint)) return paint;

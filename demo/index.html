@@ -43,9 +43,9 @@
         cursor: pointer;
       }
       .bar button.active {
-        background: #e82127;
-        border-color: #e82127;
-        color: #fff;
+        background: #38bdf8;
+        border-color: #38bdf8;
+        color: #06121e;
       }
       .bar .sep {
         width: 1px;
@@ -191,7 +191,7 @@
       let unresolved = params.get('scenario') === 'unresolved';
       let envKey = params.get('env') === 'renamed' ? 'renamed' : 'default';
       const startPanel = params.get('panel') || 'charging';
-      // ?colorentity=Deep%20Blue (or PPSB, #hex…) drives paint from an entity.
+      // ?colorentity=blue (or a #hex, or a generic preset name) drives paint from an entity.
       const colorEntity = params.get('colorentity');
 
       let states = {};
@@ -227,7 +227,7 @@
       };
       if (recolor) {
         // colorentity → PaintSource (read live from an entity, mapped via the
-        // built-in Tesla colour map); otherwise a literal colour string.
+        // built-in generic colour presets); otherwise a literal colour string.
         cardConfig.paint = colorEntity
           ? { entity: 'sensor.tesla_exterior_color', default: '#9aa3ad' }
           : paint || '#23519e';
