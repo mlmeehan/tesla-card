@@ -45,6 +45,89 @@ export const INTERACTION_BANS = {
 } as const;
 
 /**
+ * Freshness-first visual state model (UX-DR19) — the suite's SIX presentation
+ * states and how a component must LOOK per state. This is the machine-checkable
+ * adoption surface Epics 3–6 read from (mirrors ACCENT_SEMANTICS /
+ * INTERACTION_PRIMITIVES / INTERACTION_BANS); the shared recipes in
+ * `sharedStyles` are the human half — keep the two in sync. NOTHING is wired to
+ * these recipes yet: this story DEFINES the contract; adoption is per-epic via
+ * the Definition of Done (Hero asleep = Epic 3 / UX-DR5; wake-cooldown timer =
+ * Story 5.4 / AR-9; per-panel empty copy = Epic 5 / Story 2.5).
+ *
+ * The defining model is FRESHNESS, not presence: the car sleeps and the Fleet
+ * API is metered, so "I have data but it's old" is the NORMAL case. The one
+ * unforgivable copy error is a label that OVERSTATES freshness (UX-DR18) — these
+ * treatments exist to make that error structurally hard.
+ *
+ * CROSSWALK to the Epic-1 freshness DATA model (data/freshness.ts:
+ * `Staleness = fresh|stale|asleep|unavailable`). Documented via the `staleness`
+ * field, NOT an import — Epic 2 is presentation-only: this module reads NO
+ * `hass.states` and takes NO `data/` edge (the no-cycle / no-bare-hass gates
+ * enforce that boundary). States that DERIVE from staleness carry their bucket
+ * (Asleep ↔ 'asleep', Unavailable ↔ 'unavailable'; the "updated Nm ago" hint ↔
+ * 'stale'); UI-lifecycle states NOT derivable from staleness alone carry null
+ * (Wake-pending, Loading, Optimistic). Empty/NaN-safe derives from
+ * `available:false`.
+ *
+ * Fields: `treatment` (the visual, human prose) · `recipe` (the shared CSS class
+ * that statically backs a gated treatment, else null) · `copy` (the
+ * honest-freshness copy rule, UX-DR18) · `control` (control behaviour /
+ * boundary) · `staleness` (the data-model crosswalk, or null) · `gated`
+ * (true = a test backs it against the real recipe; false = review-enforced or
+ * pinned to an existing impl).
+ */
+export const FRESHNESS_STATES = {
+  asleep: {
+    treatment: 'dim + desaturate the render (opacity ↓ + filter: grayscale) from --tc-dim-*',
+    recipe: '.tc-asleep',
+    copy: 'battery shows — (never a fabricated number); status "Asleep · updated Nm ago"',
+    control: 'manual wake affordance offered; the card never auto-wakes (no-auto-wake ban)',
+    staleness: 'asleep',
+    gated: true,
+  },
+  'wake-pending': {
+    treatment: 'wake affordance reflects pending IMMEDIATELY; surfaces the wake-cooldown with the last-wake time',
+    recipe: null,
+    copy: 'shows WHY the button is resting and when it is available again',
+    control: 'pending-immediately + where last-wake time renders; the cooldown LOGIC (interval, observed-state gate) is AR-9 / Story 5.4 — out of scope here',
+    staleness: null,
+    gated: false,
+  },
+  unavailable: {
+    treatment: 'controls dim + disable (reduced opacity + pointer-events:none + cursor:not-allowed)',
+    recipe: '.tc-disabled',
+    copy: 'last-known value + staleness hint (.tc-stale-copy → --tc-text-dim), or — when none; never a false state / fabricated number',
+    control: 'dim + disable via the shared opt-in recipe',
+    staleness: 'unavailable',
+    gated: true,
+  },
+  loading: {
+    treatment: 'skeleton matching the card silhouette (dimmed block + ghost rows); shimmer halts under reduced-motion',
+    recipe: '.tc-skeleton',
+    copy: 'nothing claimed — a calm placeholder, no fabricated values',
+    control: 'cold-first-paint ONLY (!(_config && hass)); never flashed per state tick',
+    staleness: null,
+    gated: true,
+  },
+  optimistic: {
+    treatment: 'reflect the requested state immediately, then reconcile to the real state on the next hass (the reconcile IS the feedback)',
+    recipe: null,
+    copy: 'announce/settle to the REAL state, never the in-flight guess (UX-DR18)',
+    control: 'command/chrome state only, NEVER flow edges (architecture.md D1); impl = quick-actions (INTERACTION_PRIMITIVES.toggle) — preserve, do not rewrite',
+    staleness: null,
+    gated: false,
+  },
+  empty: {
+    treatment: 'hide or render neutral — never blank, never a crash, never a misleading default',
+    recipe: null,
+    copy: 'each panel = a calm, specific sentence (copy strings = Story 2.5 / owning epic)',
+    control: 'NaN-safe reads (numById/stateById); FR-24 / NFR-4 graceful degradation, proven at the data layer in Story 1.6',
+    staleness: null,
+    gated: false,
+  },
+} as const;
+
+/**
  * Design tokens. Set on the main card host; CSS custom properties inherit
  * through shadow-DOM boundaries, so every child component can use them.
  * Literal values double as defaults when rendered outside Home Assistant
@@ -96,6 +179,17 @@ export const tokens = css`
     --tc-surface-3: rgba(255, 255, 255, 0.1);
     --tc-border: rgba(255, 255, 255, 0.09);
     --tc-border-strong: rgba(255, 255, 255, 0.16);
+
+    /* ── freshness-first visual state model (UX-DR19) ─────────────────────
+       Single-sourced magnitudes for the asleep / disabled / loading recipes
+       below, so no component hard-codes them (the recipes read these via
+       fallback-carrying var()). Asleep dim = opacity 0.5 + full grayscale
+       (UX-DR5: "asleep/stale = opacity 0.5 + grayscale"). These are the VISUAL
+       contract; nothing is wired to it yet — adoption is per-epic via the DoD. */
+    --tc-dim-opacity: 0.5;
+    --tc-dim-grayscale: 1;
+    --tc-disabled-opacity: 0.45;
+    --tc-skeleton-bg: rgba(255, 255, 255, 0.06);
 
     /* ── semantic accents (DESIGN.md §Colors) ────────────────────────────
        Each accent owns ONE suite-wide meaning and is never decorative. The
@@ -456,6 +550,77 @@ export const sharedStyles = css`
     font-weight: 600;
   }
 
+  /* ── freshness-first visual state recipes (UX-DR19) ─────────────────────
+     Reusable classes that auto-apply through shadow DOM (the "every component
+     inherits consistently" mechanism). NONE is wired into a live component here
+     — this story DEFINES the contract; owning epics adopt per the DoD (Hero
+     asleep = Epic 3 / UX-DR5; per-panel empties = Epic 5 / Story 2.5). The
+     machine-checkable half is the FRESHNESS_STATES map; these recipes are the
+     human half — keep the two in sync. */
+
+  /* (a) Asleep — dim + desaturate. Magnitude single-sourced from --tc-dim-* so
+     no component hard-codes it. Under this state the battery shows — (em-dash,
+     never a fabricated number) and a MANUAL wake affordance is offered (the card
+     never auto-wakes — backs the no-auto-wake ban). The copy/affordance belong
+     to the owning epic; the VISUAL treatment is the contract here. NOTE:
+     components/car.ts keeps its own charging/reduced-motion treatments — this
+     recipe is additive and does not touch them (the Hero adopts it in Epic 3). */
+  .tc-asleep {
+    opacity: var(--tc-dim-opacity, 0.5);
+    filter: grayscale(var(--tc-dim-grayscale, 1));
+  }
+
+  /* (c) Unavailable — disabled control. OPT-IN class (deliberately NOT a bare
+     [disabled]: components already carry their own per-class [disabled] rules,
+     so a bare selector would silently restyle them). The owning epic adds
+     .tc-disabled when a control's entity is unavailable. Contract: show
+     last-known + a staleness hint, or — when none; never a false state, never a
+     fabricated number (UX-DR18). */
+  .tc-disabled {
+    opacity: var(--tc-disabled-opacity, 0.45);
+    pointer-events: none;
+    cursor: not-allowed;
+  }
+
+  /* (c) Staleness / last-updated copy → --tc-text-dim (4.5:1), NEVER
+     --tc-text-mute (3:1, decorative only). APPLIES the convention Story 2.3
+     pinned (2.3 AC1e / UX-DR21). The one unforgivable copy error is a label that
+     OVERSTATES freshness (UX-DR18) — this recipe keeps "Asleep · updated 47m ago"
+     legible and honest. */
+  .tc-stale-copy {
+    color: var(--tc-text-dim, #9aa7b8);
+  }
+
+  /* (d) Loading — cold-first-paint skeleton. A calm placeholder matching a card
+     silhouette: a dimmed block (.tc-skeleton) with ghost rows
+     (.tc-skeleton tc-skeleton-line). RENDER-GATING is the component's job —
+     shown ONLY when there is genuinely nothing yet (!(_config && hass)), NEVER
+     flashed per state tick (today render() returns nothing until _config && hass,
+     so there is no loading UI in the code yet). The shimmer REUSES tc-shimmer
+     (no new keyframe → the a11y keyframe-set gate stays exactly
+     {tc-shimmer, tc-pulse}); it HALTS in the shared reduced-motion block below,
+     leaving a frozen dimmed placeholder (the required reduced-motion end state). */
+  .tc-skeleton {
+    border-radius: var(--tc-radius-md, 16px);
+    background: linear-gradient(
+      100deg,
+      var(--tc-skeleton-bg, rgba(255, 255, 255, 0.06)) 30%,
+      var(--tc-surface-3, rgba(255, 255, 255, 0.1)) 50%,
+      var(--tc-skeleton-bg, rgba(255, 255, 255, 0.06)) 70%
+    );
+    background-size: 220% 100%;
+    animation: tc-shimmer 1.6s linear infinite;
+  }
+  .tc-skeleton-line {
+    height: 10px;
+    border-radius: var(--tc-pill, 999px);
+    /* A ghost ROW must carry its OWN dimmed fill (single-sourced from
+       --tc-skeleton-bg). Without it the row renders transparent — nested in
+       the shimmer block it just shows the parent, standalone it is invisible —
+       so there is no visible "row" at all (AC1d: dimmed block + ghost rows). */
+    background: var(--tc-skeleton-bg, rgba(255, 255, 255, 0.06));
+  }
+
   @keyframes tc-shimmer {
     from {
       background-position: 120% 0;
@@ -506,6 +671,12 @@ export const sharedStyles = css`
     }
     .tc-ring .prog {
       transition: none;
+    }
+    /* loading skeleton (UX-DR19 (d)): freeze the shimmer → a static dimmed
+       placeholder. Reuses tc-shimmer, so it must be halted here too (no
+       decorative motion escapes the gate). */
+    .tc-skeleton {
+      animation: none;
     }
   }
 `;
