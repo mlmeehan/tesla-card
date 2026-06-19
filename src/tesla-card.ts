@@ -174,6 +174,7 @@ export class TeslaCard extends LitElement implements LovelaceCard {
                       class="tab ${current === p.id ? 'active' : ''}"
                       role="tab"
                       aria-selected=${current === p.id}
+                      aria-label=${p.name}
                       @click=${() => (this._panel = p.id)}
                     >
                       ${icon(p.icon, { size: 18 })}<span>${p.name}</span>
@@ -283,10 +284,13 @@ export class TeslaCard extends LitElement implements LovelaceCard {
       .tab .tc-ico {
         opacity: 0.95;
       }
-      /* Compact bars: only the active tab shows its label; the rest are
-         icon-only. Above 760px every label is shown. The 760 literal MUST equal
-         BREAKPOINTS.full (styles.ts) — CSS @media can't read the TS constant, so
-         a gate pins them together. */
+      /* Compact bars (below BREAKPOINTS.full): only the active tab shows its
+         label; the rest are icon-only. Above 760px every label is shown. The 760
+         literal MUST equal BREAKPOINTS.full (styles.ts) — CSS @media can't read
+         the TS constant, so a gate pins them together.
+         a11y: display:none strips the span from the accessibility tree, and the
+         icon is aria-hidden — so the button carries an aria-label (its STRINGS
+         tab name) to stay a NAMED control in the icon-only state (UX-DR21). */
       .tab span {
         display: none;
       }
