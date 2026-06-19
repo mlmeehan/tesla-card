@@ -1,4 +1,5 @@
 import type { HomeAssistant, TeslaCardConfig } from '../types';
+import type { EnergyRole } from './registry';
 import { TESLA_PLATFORMS } from './resolve';
 
 /**
@@ -175,6 +176,23 @@ export interface Tagged<T> {
   provenance: Provenance;
 }
 
+// ── Power-sign normalization (AC3) ───────────────────────────────────────────
+//
+// The FlowModel (Epic 4) consumes ONE canonical power convention — battery `+` =
+// charging, grid `+` = import, kW everywhere (declared in flow/balance.ts). But
+// raw sensors disagree: tesla_fleet/powerwall report battery `−` = charging (and
+// grid `+` = import, solar/load/wc ≥ 0). So the dialect boundary flips the raw
+// battery sign on the way in — a sign-flip is a derivation, tagged accordingly —
+// and the FlowModel only ever sees canonical signs (R2 watch-item: the sign bug
+// that "flips every surface" is fixed here, once).
+//
+// `DEFAULT_FLIP` lists the roles whose raw signed POWER is inverted relative to
+// canonical. Only `powerwall` (the battery) differs; grid/solar/home/wall_connector
+// already match (sign is meaningless for the ≥0 quantities — passthrough). The
+// non-fleet dialects degrade to this default (their raw power conventions are
+// uncaptured-corpus; a dialect that genuinely differs overrides via `flipPower`).
+const DEFAULT_FLIP: readonly EnergyRole[] = ['powerwall'];
+
 /**
  * The per-dialect behaviour set. A plain bag of pure functions + data — no
  * inheritance, no `hass` mutation, no Lit/DOM, no upward import. Derivations
@@ -199,6 +217,14 @@ export interface DialectAdapter {
   split(value: number | undefined): number[];
   /** Stamp provenance onto a value the adapter produced. */
   derive<T>(value: T, derived?: boolean): Tagged<T>;
+  /**
+   * Normalize a raw signed power reading (kW) for `role` to the canonical
+   * convention (battery `+` = charging, grid `+` = import). Flips the sign for
+   * roles this dialect reports inverted (default: `powerwall`); a flip is a
+   * derivation, so the result is tagged `derived: true`. `undefined` in →
+   * `undefined` out (NaN-safe upstream owns the read). [AC3]
+   */
+  normalizePower(role: EnergyRole, rawKW: number | undefined): Tagged<number | undefined>;
   /** Per-dialect status normalizers (default mapping unless overridden). */
   normalizeChargingState(raw: string | undefined): ChargingState;
   normalizeLockState(raw: string | undefined): LockState;
@@ -233,6 +259,8 @@ interface AdapterSpec {
   cover?: Readonly<Record<string, CoverState>>;
   combine?: (parts: ReadonlyArray<number | undefined>) => number | undefined;
   split?: (value: number | undefined) => number[];
+  /** Roles whose raw signed power is inverted vs canonical (default: `powerwall`). */
+  flipPower?: readonly EnergyRole[];
 }
 
 /**
@@ -246,18 +274,26 @@ export function makeAdapter(spec: AdapterSpec): DialectAdapter {
   const charging = normMapKeys(spec.charging);
   const lock = normMapKeys(spec.lock);
   const cover = normMapKeys(spec.cover);
+  const flip = new Set<EnergyRole>(spec.flipPower ?? DEFAULT_FLIP);
+  const derive = <T>(value: T, derived?: boolean): Tagged<T> => ({
+    value,
+    provenance: derived
+      ? { integration: spec.integration, derived: true }
+      : { integration: spec.integration },
+  });
   return {
     integration: spec.integration,
     aliasMap,
     alias: (name) => aliasMap[name] ?? name,
     combine: spec.combine ?? defaultCombine,
     split: spec.split ?? defaultSplit,
-    derive: (value, derived) => ({
-      value,
-      provenance: derived
-        ? { integration: spec.integration, derived: true }
-        : { integration: spec.integration },
-    }),
+    derive,
+    normalizePower: (role, rawKW) => {
+      const flipped = flip.has(role);
+      const value = rawKW === undefined ? undefined : flipped ? -rawKW : rawKW;
+      // A sign-flip is a derivation; a canonical-already passthrough is not.
+      return derive(value, flipped);
+    },
     normalizeChargingState: (raw) => normalizeStatus(CHARGING_MAP, 'unknown', raw, charging),
     normalizeLockState: (raw) => normalizeStatus(LOCK_MAP, 'unknown', raw, lock),
     normalizeCoverState: (raw) => normalizeStatus(COVER_MAP, 'unknown', raw, cover),

@@ -19,7 +19,7 @@
 // side-effect import upgrades the custom element, fixtures import as pure JSON.
 import { describe, expect, test, beforeAll } from 'vitest';
 import type { HomeAssistant, TeslaCardConfig } from './types';
-import { detectEnergySite, hasEnergySite, resolveEnergyEntities } from './energy';
+import { detectEnergySite, hasEnergySite, resolveEnergyEntities } from './data/energy';
 import { resolveEntities } from './data/resolve';
 import { TeslaCard } from './tesla-card';
 import './tesla-card';

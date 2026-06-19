@@ -1,5 +1,20 @@
-import type { HomeAssistant, TeslaCardConfig } from './types';
-import type { EnergyKey } from './data/registry';
+import type { HomeAssistant, TeslaCardConfig } from '../types';
+import type { EnergyKey } from './registry';
+import { readRaw } from './freshness';
+
+/**
+ * Energy-site entity resolution + state reads (AR-16 split, relocated from the
+ * former top-level `src/energy.ts` in Story 4.1). This belongs in `src/data/`:
+ * it resolves entities and reads `hass.states` — the data-access boundary's job,
+ * the only subtree permitted bare state access. The flow-MATH that used to be
+ * implied here now lives in `src/flow/` (model + balance); this module is purely
+ * the data half (resolution + reads).
+ *
+ * The numeric/string reads (`numById`/`stateById`) route through the freshness
+ * reader's `readRaw` rather than touching `hass.states` directly — one reader,
+ * no duplicate access pattern. The auto-detect (`find`/`RULES`) legitimately
+ * scans `hass.states` keys here (resolution is a data-layer concern).
+ */
 
 // Story 1.2 drift guard: keep EnergyEntities' keys ≡ the registry's energy-role
 // vocabulary (the 12 energy function-keys). `Expect<Equal<…>>` resolves to a
@@ -16,10 +31,12 @@ type _EnergyKeysMatchRegistry = Expect<Equal<keyof EnergyEntities, EnergyKey>>;
  * Resolved entity ids for the Tesla energy site + Wall Connector. Any may be
  * absent on installs without that hardware.
  *
- * Sign conventions (from the `tesla_fleet`/`powerwall` integrations):
+ * RAW sign conventions (from the `tesla_fleet`/`powerwall` integrations):
  *   • battery_power  negative = charging (power into the Powerwall), positive = discharging
  *   • grid_power     positive = importing from the grid, negative = exporting
  *   • solar_power / load_power / wc_power are ≥ 0
+ * These are RAW signs — the canonical convention the FlowModel sees (battery `+` =
+ * charging) is reached via `data/dialect`'s `normalizePower` (Story 4.1, AC3).
  */
 export interface EnergyEntities {
   /** PV production, kW (≥0). */
@@ -153,23 +170,22 @@ export function detectEnergySite(
   return hasEnergySite(resolveEnergyEntities(hass, config));
 }
 
-/** Numeric state by entity id (NaN-safe). */
+/** Numeric state by entity id (NaN-safe). Routes through the freshness reader. */
 export function numById(
   hass: HomeAssistant | undefined,
   id?: string
 ): number | undefined {
-  if (!hass || !id) return undefined;
-  const st = hass.states[id];
-  if (!st) return undefined;
-  const n = Number(st.state);
+  if (!id) return undefined;
+  const raw = readRaw(hass, id);
+  if (raw === undefined) return undefined;
+  const n = Number(raw);
   return Number.isFinite(n) ? n : undefined;
 }
 
-/** Raw state string by entity id. */
+/** Raw state string by entity id. Routes through the freshness reader. */
 export function stateById(
   hass: HomeAssistant | undefined,
   id?: string
 ): string | undefined {
-  if (!hass || !id) return undefined;
-  return hass.states[id]?.state;
+  return id ? readRaw(hass, id) : undefined;
 }

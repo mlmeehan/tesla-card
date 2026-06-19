@@ -22,7 +22,7 @@ import { DEFAULT_ENTITIES, type EntityKey } from '../const';
 import { num, display, isUnavailable, isAsleep, stateObj, rawState } from '../helpers';
 import { resolveEntities } from './resolve';
 import { read, readKey, isQuiescent } from './freshness';
-import { resolveEnergyEntities, hasEnergySite } from '../energy';
+import { resolveEnergyEntities, hasEnergySite } from './energy';
 import { batteryGauge } from '../ui';
 
 /** A HomeAssistant carrying just the fields the readers touch. */

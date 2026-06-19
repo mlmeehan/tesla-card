@@ -278,7 +278,7 @@ describe('dialect-adapter layer (Story 1.4)', () => {
       expect(typeof normalizeChargingState).toBe('function');
       // Adapter contract surface is stable across every entry.
       for (const a of Object.values(DIALECTS)) {
-        for (const fn of ['alias', 'combine', 'split', 'derive', 'normalizeChargingState', 'normalizeLockState', 'normalizeCoverState'] as const) {
+        for (const fn of ['alias', 'combine', 'split', 'derive', 'normalizePower', 'normalizeChargingState', 'normalizeLockState', 'normalizeCoverState'] as const) {
           expect(typeof a[fn]).toBe('function');
         }
         expect(a.aliasMap).toBeTypeOf('object');
@@ -296,5 +296,56 @@ describe('dialect-adapter layer (Story 1.4)', () => {
       value: 42,
       provenance: { integration: 'tesla_custom', derived: true },
     });
+  });
+});
+
+// ── Raw→canonical power-sign normalization (Story 4.1, AC3) ───────────────────
+//
+// Property tests on the RULE, not single vectors: tesla_fleet/powerwall reports
+// `battery − = charging`; the canonical convention the FlowModel sees is
+// `battery + = charging`, so the powerwall sign is flipped while every other
+// role passes through. A flip is a derivation (provenance.derived = true).
+describe('normalizePower — raw battery sign → canonical (Story 4.1)', () => {
+  // A spread of signed magnitudes, incl. the load-bearing sign boundaries.
+  const SAMPLES = [-7.4, -1.5, -0.05, 0, 0.05, 1.5, 6, 11.5];
+
+  test('powerwall: raw −charging ⇒ canonical +charging (sign flipped) for every value', () => {
+    for (const raw of SAMPLES) {
+      const out = DIALECTS.tesla_fleet.normalizePower('powerwall', raw);
+      expect(out.value).toBeCloseTo(-raw, 10); // the RULE: canonical = −raw
+      expect(out.provenance).toEqual({ integration: 'tesla_fleet', derived: true });
+    }
+    // Concretely: a charging Powerwall (raw −X) reads canonical +X (≥0 ⇒ charging).
+    expect(DIALECTS.tesla_fleet.normalizePower('powerwall', -3).value).toBe(3);
+  });
+
+  test('the flip is idempotent under the declared rule (its own inverse)', () => {
+    for (const raw of SAMPLES) {
+      const once = DIALECTS.tesla_fleet.normalizePower('powerwall', raw).value;
+      const twice = DIALECTS.tesla_fleet.normalizePower('powerwall', once).value;
+      expect(twice).toBeCloseTo(raw, 10); // flip∘flip = identity
+    }
+  });
+
+  test('grid/solar/home/wall_connector pass through unchanged (not derived)', () => {
+    for (const role of ['grid', 'solar', 'home', 'wall_connector'] as const) {
+      for (const raw of SAMPLES) {
+        const out = DIALECTS.tesla_fleet.normalizePower(role, raw);
+        expect(out.value).toBe(raw);
+        expect(out.provenance).toEqual({ integration: 'tesla_fleet' }); // no derivation
+      }
+    }
+  });
+
+  test('undefined in → undefined out (NaN-safe upstream owns the read)', () => {
+    expect(DIALECTS.tesla_fleet.normalizePower('powerwall', undefined).value).toBeUndefined();
+    expect(DIALECTS.tesla_fleet.normalizePower('grid', undefined).value).toBeUndefined();
+  });
+
+  test('every dialect degrades to the default flip set (no dialect overrides flipPower)', () => {
+    for (const a of Object.values(DIALECTS)) {
+      expect(a.normalizePower('powerwall', -2).value).toBe(2); // flipped everywhere
+      expect(a.normalizePower('grid', 2).value).toBe(2); // passthrough everywhere
+    }
   });
 });

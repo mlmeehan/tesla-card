@@ -1,6 +1,6 @@
 import type { EntityKey } from './const';
 import type { PaintSource } from './paint';
-import type { EnergyEntities } from './energy';
+import type { EnergyEntities } from './data/energy';
 import type { Integration } from './data/dialect';
 
 export interface HassEntity {

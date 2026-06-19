@@ -15,7 +15,7 @@ import { TcBase } from '../base';
 import { sharedStyles } from '../styles';
 import { STRINGS } from '../strings';
 import { statTile } from '../ui';
-import { numById, stateById, type EnergyEntities } from '../energy';
+import { numById, stateById, type EnergyEntities } from '../data/energy';
 import { formatNumber, prettyText, isUnavailable } from '../helpers';
 
 /** Power magnitude (kW) below which a flow is considered idle. */

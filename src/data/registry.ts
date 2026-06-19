@@ -64,3 +64,30 @@ const ROLE_OF: ReadonlyMap<FunctionKey, Role> = new Map(
 export function roleOf(key: string): Role | undefined {
   return ROLE_OF.get(key as FunctionKey);
 }
+
+/**
+ * Bus orientation per energy role — the sign of a positive CANONICAL power
+ * reading relative to the shared site bus (the implicit electrical junction the
+ * flow graph centres on):
+ *   • `+1` → a positive canonical reading INJECTS into the bus (a source/export),
+ *   • `−1` → a positive canonical reading DRAWS from the bus (a sink/charge).
+ *
+ * This is role metadata, NOT the sign convention itself: the canonical convention
+ * (battery `+` = charging, grid `+` = import, kW everywhere — declared once in
+ * `flow/balance.ts`) fixes what a `+` MEANS; orientation maps that meaning onto
+ * the bus topology. The two genuinely differ — grid `+` (import) injects into the
+ * bus (`+1`) while battery `+` (charging) draws from it (`−1`), so orientation
+ * cannot be read off the sign convention alone.
+ *
+ * Living here (the registry, the single source of role truth) is what keeps
+ * `flow/balance.ts` ROLE-GENERIC: balance never branches on role, and adding a
+ * new energy node is a registry + component edit — never a balance edit (the
+ * compute boundary). Keyed by `EnergyRole` so the table cannot omit a role.
+ */
+export const BUS_ORIENTATION: Readonly<Record<EnergyRole, 1 | -1>> = {
+  solar: 1, // PV always produces → injects into the bus
+  grid: 1, // canonical + = import → power flowing from grid INTO the bus
+  powerwall: -1, // canonical + = charging → power INTO the battery, OUT of the bus
+  home: -1, // household load → always draws from the bus
+  wall_connector: -1, // charging the car → draws from the bus
+} as const;

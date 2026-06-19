@@ -37,7 +37,9 @@ const STATE_MEMBERS = new Set(['states', 'entities', 'devices']);
 // empty. The boundary ratchets shut, never re-opens. Each entry names the story
 // that retires it. NEW breaches in any other file fail the gate.
 const BASELINE = [
-  'src/energy.ts', // → Epic 4 / Story 4.1: energy reads→data/, math→flow/ split
+  // 'src/energy.ts' retired in Story 4.1: reads→data/energy.ts, math→flow/. The
+  // boundary ratcheted shut here — the self-invalidation assertion below fails if
+  // this entry returns, so it stays gone.
   'src/helpers.ts', // → legacy (hass,config,EntityKey) state-read helpers fold into data/
   'src/tesla-card.ts', // → fold the parent's registry (hass.entities/devices) reads into data/ resolve
 ];

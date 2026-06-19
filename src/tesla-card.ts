@@ -19,7 +19,7 @@ import {
 import { CARD_VERSION } from './const';
 import { resolveEntities } from './data/resolve';
 import { detectDialect } from './data/dialect';
-import { resolveEnergyEntities, hasEnergySite, type EnergyEntities } from './energy';
+import { resolveEnergyEntities, hasEnergySite, type EnergyEntities } from './data/energy';
 import { tokens, sharedStyles } from './styles';
 import { STRINGS } from './strings';
 import { log } from './log';
