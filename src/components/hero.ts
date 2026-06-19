@@ -5,7 +5,7 @@ import { TcBase } from '../base';
 import { sharedStyles } from '../styles';
 import { STRINGS } from '../strings';
 import { icon, batteryGauge } from '../ui';
-import { carView, carStyles } from './car';
+import { carView, carStyles, CLOSED_APERTURES } from './car';
 import { resolvePaint } from '../paint';
 import { readKey, referenceNow } from '../data/freshness';
 import { normalizeChargingState } from '../data/dialect';
@@ -21,7 +21,7 @@ import {
   formatAge,
   unit,
 } from '../helpers';
-import type { ChargeVisual, PanelId } from '../types';
+import type { ApertureState, ChargeVisual, PanelId } from '../types';
 
 interface HeroStatus {
   dot: string;
@@ -69,6 +69,36 @@ export class TcHero extends TcBase {
         // a usable value. charging_status stays the authority (AC1).
         return isOn(this.hass, this.config, 'charge_cable') ? 'plugged' : 'parked';
     }
+  }
+
+  /**
+   * Classify the four INDEPENDENT apertures (Story 3.5, AC1/AC3) from the resolved
+   * entity keys via the data-boundary helpers — never bare `hass.states` (the
+   * `components/` read rule). A flat record of four booleans, NOT a single enum:
+   * apertures are physically independent (frunk up + door ajar + window down can
+   * all hold at once), so each is read and rendered on its own (linear, never
+   * combinatorial — types.ts ApertureState). Mirrors panel-closures.ts's read
+   * idiom (`_open` = cover 'open', `_doorOpen` = binary_sensor 'on').
+   *
+   * Graceful degrade (AC3) is STRUCTURAL: `rawState(...) === 'open'` and `isOn(...)`
+   * return `false` for `undefined` / `unavailable` / any non-open value, so a
+   * missing or asleep aperture entity yields `false` (closed/hidden) — NEVER a
+   * fabricated "open". Absence reads as closed; the card never asserts an aperture
+   * state it can't confirm (the UX-DR18 honesty floor). The aggregate `windows`
+   * cover is the clean single window signal (matches the closures panel's window
+   * zone); on a Model Y the rear hatch IS the `trunk` cover (the design's "liftgate").
+   */
+  private _apertures(): ApertureState {
+    return {
+      frunk: rawState(this.hass, this.config, 'frunk') === 'open',
+      liftgate: rawState(this.hass, this.config, 'trunk') === 'open',
+      door:
+        isOn(this.hass, this.config, 'door_fl') ||
+        isOn(this.hass, this.config, 'door_fr') ||
+        isOn(this.hass, this.config, 'door_rl') ||
+        isOn(this.hass, this.config, 'door_rr'),
+      window: rawState(this.hass, this.config, 'windows') === 'open',
+    };
   }
 
   /**
@@ -181,6 +211,10 @@ export class TcHero extends TcBase {
     // still wins — an asleep car shows no live charge state).
     const charge: ChargeVisual = asleep ? 'parked' : this._chargeVisual();
     const charging = charge === 'charging';
+    // Apertures (Story 3.5): asleep suppresses the cues — mirror the charge gate.
+    // An asleep car's aperture entities read `unavailable` anyway (→ all-closed),
+    // and we never paint state on a dimmed car (Story 3.3's isAsleep still wins).
+    const apertures: ApertureState = asleep ? CLOSED_APERTURES : this._apertures();
     const rangeNum = num(this.hass, cfg, 'battery_range');
     const rangeUnit = unit(this.hass, cfg, 'battery_range') || 'mi';
 
@@ -217,6 +251,7 @@ export class TcHero extends TcBase {
             body: cfg.body,
             paint: resolvePaint(this.hass, cfg),
             charge,
+            apertures,
           })}
         </div>
 

@@ -13,7 +13,16 @@ import { describe, expect, test } from 'vitest';
 import { render } from 'lit';
 import { carView } from './car';
 import { HERO_VIEWBOX } from '../const';
-import type { BodyLayers } from '../types';
+import type { BodyLayers, ApertureState } from '../types';
+
+/** Build a full ApertureState (all-closed) overriding only the named apertures. */
+const AP = (o: Partial<ApertureState> = {}): ApertureState => ({
+  frunk: false,
+  liftgate: false,
+  door: false,
+  window: false,
+  ...o,
+});
 
 /** Render a carView() result into a detached container and return its root node. */
 function mount(opts: Parameters<typeof carView>[0]): HTMLElement {
@@ -188,5 +197,122 @@ describe('paint plumbing — applied to both SVG render paths', () => {
       .getAttribute('style')).toContain('--tc-paint:#c6c8c9');
     expect(mount({}).querySelector('svg.tc-ev')!
       .getAttribute('style')).toContain('--tc-paint:#c6c8c9');
+  });
+});
+
+// Story 3.5 — aperture open-state overlays. jsdom can't measure the crossfade
+// pixels (that's e2e) — assert the .ap-<name> node PRESENCE (always in the DOM so
+// the crossfade has both endpoints), the .tc-car.<aperture>-open class hooks, the
+// neutral-silver/no-paint contract (AC2), and the state-bearing aria-label.
+const AP_NAMES = ['frunk', 'liftgate', 'door', 'window'] as const;
+
+describe('Story 3.5 AC1 — overlays always present (crossfade endpoints)', () => {
+  test('all four .ap-<name> overlays render on the bundled EV even when all closed', () => {
+    const ev = mount({}).querySelector('svg.tc-ev')!;
+    for (const n of AP_NAMES) expect(ev.querySelector(`.ap-${n}`), n).toBeTruthy();
+    // …and they are the .ap class the crossfade rule targets.
+    expect(ev.querySelectorAll('.ap').length).toBe(4);
+  });
+
+  test('opening an aperture does NOT add/remove the node — it stays present (fade, not cut)', () => {
+    const closed = mount({}).querySelector('svg.tc-ev .ap-frunk');
+    const open = mount({ apertures: AP({ frunk: true }) }).querySelector('svg.tc-ev .ap-frunk');
+    expect(closed).toBeTruthy();
+    expect(open).toBeTruthy();
+  });
+
+  test('body-layers mode renders <image class="ap"> slots ONLY when an asset is supplied (graceful)', () => {
+    // No apertureLayers → no overlay nodes in body mode.
+    const none = mount({ body: BODY }).querySelector('svg.tc-car')!;
+    expect(none.querySelectorAll('.ap').length).toBe(0);
+    // Supply frunk + door assets → exactly those two <image> slots, the other two absent.
+    const some = mount({
+      body: { ...BODY, apertureLayers: { frunk: '/local/a-frunk.webp', door: '/local/a-door.webp' } },
+    }).querySelector('svg.tc-car')!;
+    const frunk = some.querySelector('.ap-frunk');
+    expect(frunk).toBeTruthy();
+    expect(frunk!.tagName.toLowerCase()).toBe('image'); // photoreal overlay is an <image> layer
+    expect(some.querySelector('.ap-door')).toBeTruthy();
+    expect(some.querySelector('.ap-liftgate')).toBeNull();
+    expect(some.querySelector('.ap-window')).toBeNull();
+  });
+});
+
+describe('Story 3.5 AC1 — independent .tc-car.<aperture>-open class hooks', () => {
+  const evClass = (ap: ApertureState): DOMTokenList =>
+    mount({ apertures: ap }).querySelector('svg.tc-ev')!.classList;
+
+  test('each aperture toggles its OWN class, never a shared/combined token', () => {
+    expect(evClass(AP({ frunk: true })).contains('frunk-open')).toBe(true);
+    expect(evClass(AP({ liftgate: true })).contains('liftgate-open')).toBe(true);
+    expect(evClass(AP({ door: true })).contains('door-open')).toBe(true);
+    expect(evClass(AP({ window: true })).contains('window-open')).toBe(true);
+  });
+
+  test('independence: frunk+door+window open at once → three classes, liftgate absent', () => {
+    const cls = evClass(AP({ frunk: true, door: true, window: true }));
+    expect(cls.contains('frunk-open')).toBe(true);
+    expect(cls.contains('door-open')).toBe(true);
+    expect(cls.contains('window-open')).toBe(true);
+    expect(cls.contains('liftgate-open')).toBe(false);
+  });
+
+  test('all closed (default) → no aperture-open class', () => {
+    const cls = mount({}).querySelector('svg.tc-ev')!.classList;
+    for (const n of AP_NAMES) expect(cls.contains(`${n}-open`)).toBe(false);
+  });
+
+  test('the body-layers render carries the same class hooks', () => {
+    const cls = mount({ body: BODY, apertures: AP({ frunk: true, window: true }) })
+      .querySelector('svg.tc-car')!.classList;
+    expect(cls.contains('frunk-open')).toBe(true);
+    expect(cls.contains('window-open')).toBe(true);
+    expect(cls.contains('door-open')).toBe(false);
+  });
+});
+
+describe('Story 3.5 AC2 — opened panel is neutral silver, never paint-tinted', () => {
+  test('the opened panel skin is the literal neutral silver #c6c8c9', () => {
+    // frunk/liftgate/door carry a silver skin; window is cavity-only (dark cabin).
+    const ev = mount({ apertures: AP({ frunk: true, liftgate: true, door: true }) })
+      .querySelector('svg.tc-ev')!;
+    for (const n of ['frunk', 'liftgate', 'door'] as const) {
+      expect(ev.querySelector(`.ap-${n}`)!.outerHTML, n).toContain('#c6c8c9');
+    }
+  });
+
+  test('NO overlay element references var(--tc-paint) — recolor of exposed paint is v2', () => {
+    const ev = mount({ apertures: AP({ frunk: true, liftgate: true, door: true, window: true }) })
+      .querySelector('svg.tc-ev')!;
+    for (const n of AP_NAMES) {
+      expect(ev.querySelector(`.ap-${n}`)!.outerHTML, n).not.toContain('--tc-paint');
+    }
+  });
+});
+
+describe('Story 3.5 a11y — state-bearing aria-label (open apertures read as words)', () => {
+  test('open apertures append to the label ("Model Y · open: frunk, door")', () => {
+    const svg = mount({ name: 'Model Y', apertures: AP({ frunk: true, door: true }) })
+      .querySelector('svg.tc-ev')!;
+    const label = svg.getAttribute('aria-label')!;
+    expect(label).toContain('Model Y');
+    expect(label).toContain('open');
+    expect(label).toContain('frunk');
+    expect(label).toContain('door');
+  });
+
+  test('all closed → the plain name (the hero never announces "all closed")', () => {
+    expect(mount({ name: 'Model Y' }).querySelector('svg.tc-ev')!.getAttribute('aria-label')).toBe(
+      'Model Y'
+    );
+  });
+
+  test('the body + image render modes carry the same state-bearing label', () => {
+    const body = mount({ body: BODY, name: 'Model Y', apertures: AP({ liftgate: true }) })
+      .querySelector('svg.tc-car')!;
+    expect(body.getAttribute('aria-label')).toContain('liftgate');
+    const img = mount({ image: '/local/car.png', name: 'Model Y', apertures: AP({ window: true }) })
+      .querySelector('img')!;
+    expect(img.getAttribute('alt')).toContain('window');
   });
 });

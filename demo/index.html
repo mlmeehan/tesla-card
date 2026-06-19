@@ -65,6 +65,9 @@
       <button id="b-awake" class="active">Awake / Charging</button>
       <button id="b-plugged" title="Plugged but not drawing — blue charge-port glow + cable, no halo">Plugged-idle</button>
       <button id="b-parked" title="Not plugged — neutral, no charge cue">Parked</button>
+      <button id="b-apertures" title="Frunk + liftgate + door + window open — neutral-silver crossfading overlays">
+        Apertures
+      </button>
       <button id="b-asleep">Asleep</button>
       <button id="b-unresolved" title="Foreign / unconfigured install — no Tesla entities resolve (designed empty state)">
         Unresolved
@@ -154,6 +157,33 @@
         return st;
       }
 
+      // Story 3.5 — an apertures scenario so the four open-state overlays are
+      // visually verifiable (frunk + liftgate + door + window). Clone the awake
+      // corpus and open the aperture entities; awake → fresh stamps → "Just now".
+      // Per-aperture URL flags (?frunk=1&door=1 …) open ONLY those (independence
+      // check); ?unavail=<name> forces one aperture `unavailable` (graceful-degrade
+      // check — its overlay must stay hidden, never a false "open"). HTML-only.
+      function aperturesStates() {
+        const st = awakeStates();
+        const want = apAny
+          ? apFlags
+          : { frunk: true, liftgate: true, door: true, window: true };
+        st['cover.garage_model_y_frunk'] = s(want.frunk ? 'open' : 'closed');
+        st['cover.garage_model_y_trunk'] = s(want.liftgate ? 'open' : 'closed'); // rear hatch = liftgate
+        // The front-driver door drives the single "a door is open" indication.
+        st['binary_sensor.garage_model_y_front_driver_door'] = s(want.door ? 'on' : 'off');
+        st['cover.garage_model_y_windows'] = s(want.window ? 'open' : 'closed');
+        // Graceful-degrade probe: force one aperture entity `unavailable`.
+        const unavailMap = {
+          frunk: 'cover.garage_model_y_frunk',
+          liftgate: 'cover.garage_model_y_trunk',
+          door: 'binary_sensor.garage_model_y_front_driver_door',
+          window: 'cover.garage_model_y_windows',
+        };
+        if (apUnavail && unavailMap[apUnavail]) st[unavailMap[apUnavail]] = s('unavailable');
+        return st;
+      }
+
       function unresolvedStates() {
         // Foreign / unconfigured install (Story 1.6 designed-empty-state): a few
         // unrelated, non-Tesla entities and NO Tesla registry. Nothing Tesla
@@ -224,7 +254,18 @@
       let asleep = params.get('scenario') === 'asleep';
       let parked = params.get('scenario') === 'parked';
       let plugged = params.get('scenario') === 'plugged';
+      let apertures = params.get('scenario') === 'apertures';
       let unresolved = params.get('scenario') === 'unresolved';
+      // Per-aperture flags (Story 3.5 independence/degrade harness). When any is
+      // set, only those apertures open; otherwise the scenario opens all four.
+      const apFlags = {
+        frunk: params.get('frunk') === '1',
+        liftgate: params.get('liftgate') === '1',
+        door: params.get('door') === '1',
+        window: params.get('window') === '1',
+      };
+      const apAny = apFlags.frunk || apFlags.liftgate || apFlags.door || apFlags.window;
+      const apUnavail = params.get('unavail'); // ?unavail=frunk|liftgate|door|window
       let envKey = params.get('env') === 'renamed' ? 'renamed' : 'default';
       const startPanel = params.get('panel') || 'charging';
       // ?colorentity=blue (or a #hex, or a generic preset name) drives paint from an entity.
@@ -247,7 +288,9 @@
             ? parkedStates()
             : plugged
               ? pluggedStates()
-              : awakeStates();
+              : apertures
+                ? aperturesStates()
+                : awakeStates();
         states = reprefix(base, env.prefix);
         registry = buildRegistry(states, env);
       }
@@ -330,15 +373,17 @@
       const bAwake = document.getElementById('b-awake');
       const bPlugged = document.getElementById('b-plugged');
       const bParked = document.getElementById('b-parked');
+      const bApertures = document.getElementById('b-apertures');
       const bAsleep = document.getElementById('b-asleep');
       const bUnresolved = document.getElementById('b-unresolved');
       const bDefault = document.getElementById('b-default');
       const bRenamed = document.getElementById('b-renamed');
 
       function syncButtons() {
-        bAwake.classList.toggle('active', !asleep && !unresolved && !parked && !plugged);
+        bAwake.classList.toggle('active', !asleep && !unresolved && !parked && !plugged && !apertures);
         bPlugged.classList.toggle('active', plugged);
         bParked.classList.toggle('active', parked);
+        bApertures.classList.toggle('active', apertures);
         bAsleep.classList.toggle('active', asleep);
         bUnresolved.classList.toggle('active', unresolved);
         bDefault.classList.toggle('active', envKey === 'default');
@@ -352,16 +397,18 @@
       }
 
       // Scenario buttons are mutually exclusive — selecting one clears the rest.
-      function setScenario({ a = false, pa = false, pl = false, u = false }) {
+      function setScenario({ a = false, pa = false, pl = false, ap = false, u = false }) {
         asleep = a;
         parked = pa;
         plugged = pl;
+        apertures = ap;
         unresolved = u;
         apply();
       }
       bAwake.addEventListener('click', () => setScenario({}));
       bPlugged.addEventListener('click', () => setScenario({ pl: true }));
       bParked.addEventListener('click', () => setScenario({ pa: true }));
+      bApertures.addEventListener('click', () => setScenario({ ap: true }));
       bAsleep.addEventListener('click', () => setScenario({ a: true }));
       bUnresolved.addEventListener('click', () => setScenario({ u: true }));
       bDefault.addEventListener('click', () => {

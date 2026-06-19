@@ -293,3 +293,119 @@ test.describe('hero — charge visual states (Story 3.4)', () => {
     await expect(demo.heroStatus).not.toContainText('kW');
   });
 });
+
+// Story 3.5 — aperture open-state overlays, locked in a real browser against the
+// built bundle. jsdom proves the classifier + class hooks + node presence; only
+// here can the crossfade opacity + the reduced-motion INSTANT CUT be measured.
+test.describe('hero — aperture overlays (Story 3.5)', () => {
+  test('AC1: all four overlays are always in the DOM and visible (opacity 1) when open', async ({
+    demo,
+  }) => {
+    await demo.open({ scenario: 'apertures' });
+    // Always-present endpoints: four .ap nodes exist regardless of open state.
+    await expect(demo.heroApertures).toHaveCount(4);
+    for (const name of ['frunk', 'liftgate', 'door', 'window'] as const) {
+      await expect(demo.aperture(name)).toHaveCSS('opacity', '1');
+    }
+  });
+
+  test('AC1 independence: a single open aperture shows ONLY its overlay (others stay opacity 0)', async ({
+    demo,
+  }) => {
+    await demo.open({ scenario: 'apertures', apertures: ['frunk'] });
+    await expect(demo.aperture('frunk')).toHaveCSS('opacity', '1');
+    // The other three are present but faded out — no false "open".
+    await expect(demo.aperture('liftgate')).toHaveCSS('opacity', '0');
+    await expect(demo.aperture('door')).toHaveCSS('opacity', '0');
+    await expect(demo.aperture('window')).toHaveCSS('opacity', '0');
+  });
+
+  // AC1 independence, the canonical "any combination" case: three open + one
+  // closed at once (frunk+door+window up, liftgate shut). The single-aperture
+  // test above proves one toggle; this proves the overlays are TRULY independent
+  // (never a combinatorial state set) — a mixed combination renders exactly the
+  // open three and leaves liftgate faded out (no false open), measured live in
+  // the shipped bundle.
+  test('AC1 independence (mixed): three open + one closed — only the open three are visible', async ({
+    demo,
+  }) => {
+    await demo.open({ scenario: 'apertures', apertures: ['frunk', 'door', 'window'] });
+    await expect(demo.aperture('frunk')).toHaveCSS('opacity', '1');
+    await expect(demo.aperture('door')).toHaveCSS('opacity', '1');
+    await expect(demo.aperture('window')).toHaveCSS('opacity', '1');
+    // liftgate stays shut — present in the DOM but faded out, never a false open.
+    await expect(demo.aperture('liftgate')).toHaveCSS('opacity', '0');
+  });
+
+  test('AC3 graceful degrade: an unavailable aperture entity stays hidden (opacity 0), never a false open', async ({
+    demo,
+  }) => {
+    // Open all four, but force the frunk entity unavailable → its overlay must hide.
+    await demo.open({ scenario: 'apertures', unavail: 'frunk' });
+    await expect(demo.aperture('frunk')).toHaveCSS('opacity', '0');
+    // The others remain genuinely open.
+    await expect(demo.aperture('liftgate')).toHaveCSS('opacity', '1');
+  });
+
+  test('AC2: the opened panel skin is neutral silver #c6c8c9, not the paint tint', async ({
+    demo,
+  }) => {
+    await demo.open({ scenario: 'apertures', apertures: ['frunk'], paint: '#23519e' });
+    // The silver skin path inside the frunk overlay fills #c6c8c9 = rgb(198, 200, 201),
+    // independent of the car's --tc-paint (#23519e) — recolor of exposed paint is v2.
+    const skin = demo.aperture('frunk').locator('path').last();
+    await expect(skin).toHaveCSS('fill', 'rgb(198, 200, 201)');
+  });
+
+  // AC4 — under prefers-reduced-motion the crossfade becomes an INSTANT CUT: the
+  // overlay transition-duration collapses to 0s (the open/closed state is still
+  // fully shown — only the fade is removed). Without the AC4 guard the duration
+  // would remain 0.3s.
+  test('AC4: reduced-motion turns the aperture crossfade into an instant cut (transition none)', async ({
+    demo,
+    page,
+  }) => {
+    await page.emulateMedia({ reducedMotion: 'reduce' });
+    await demo.open({ scenario: 'apertures', apertures: ['door'] });
+    // The open door is still shown (information preserved)…
+    await expect(demo.aperture('door')).toHaveCSS('opacity', '1');
+    // …but its transition is cut to 0s (no fade).
+    await expect(demo.aperture('door')).toHaveCSS('transition-duration', '0s');
+  });
+
+  test('AC4 (control): WITHOUT reduced-motion the overlay carries the 0.3s fade', async ({
+    demo,
+  }) => {
+    await demo.open({ scenario: 'apertures', apertures: ['door'] });
+    await expect(demo.aperture('door')).toHaveCSS('transition-duration', '0.3s');
+  });
+
+  // DoD a11y floor (EXPERIENCE.md:176) — the open state must not be overlay-only.
+  // The shipped bundle composes the open apertures into the car svg's aria-label
+  // ("Model Y · open: frunk, door"), so a screen-reader / colour-blind user reads
+  // the open state from words, never the silver overlay alone. jsdom pins the
+  // string (hero.test.ts); this confirms it survives the build + real-DOM render.
+  test('a11y (DoD): open apertures make the car aria-label state-bearing (real bundle)', async ({
+    demo,
+  }) => {
+    await demo.open({ scenario: 'apertures', apertures: ['frunk', 'door'] });
+    // Label order is fixed (frunk, liftgate, door, window) → "open: frunk, door".
+    await expect(demo.heroSvg).toHaveAttribute('aria-label', /·\s*open:\s*frunk,\s*door\b/);
+    await expect(demo.heroSvg).not.toHaveAttribute('aria-label', /liftgate|window/);
+  });
+
+  // The other half of the a11y contract: when no aperture cue is shown the hero
+  // keeps the plain name and never announces "all closed" (the closures panel
+  // owns that detail) — so the label only ever ADDS information, never asserts a
+  // closed state it would have to keep honest. Asleep is the guaranteed cue-free
+  // render: the isAsleep gate forces CLOSED_APERTURES, so this also proves the
+  // asleep gate suppresses the aperture state in the SR label, not just the overlay
+  // (the "asleep still wins" DoD, measured at the bundle tier).
+  test('a11y (DoD): asleep suppresses the aperture label → plain name (no "open:" announced)', async ({
+    demo,
+  }) => {
+    await demo.open({ scenario: 'asleep' });
+    await expect(demo.heroSvg).toHaveAttribute('aria-label', 'Model Y');
+    await expect(demo.heroSvg).not.toHaveAttribute('aria-label', /open:/);
+  });
+});

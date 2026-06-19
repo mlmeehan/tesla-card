@@ -456,3 +456,116 @@ describe('AC1/AC4 — asleep still wins: no live charge state on a dimmed car', 
     expect(labelOf(el)).toBe(STRINGS.status.asleep);
   });
 });
+
+// ───────────────────────────────────────────────────────────────────────────
+// Story 3.5 — aperture-state classifier → independent crossfading overlays
+// ───────────────────────────────────────────────────────────────────────────
+// The Hero's _apertures() reads the four function-groups through the data boundary
+// and drives one .tc-car.<aperture>-open class per open aperture on the bundled-EV
+// car svg. jsdom proves the classifier mapping + independence + graceful degrade +
+// the asleep gate + the state-bearing aria-label against the actual DOM/classes;
+// the crossfade pixels + reduced-motion cut are e2e. Aperture entity ids come from
+// const.ts DEFAULT_ENTITIES (never inlined).
+
+const APID = {
+  frunk: DEFAULT_ENTITIES.frunk, // cover
+  trunk: DEFAULT_ENTITIES.trunk, // cover (the "liftgate")
+  windows: DEFAULT_ENTITIES.windows, // aggregate cover
+  doorFL: DEFAULT_ENTITIES.door_fl, // binary_sensor
+} as const;
+
+/** The bundled-EV car svg the Hero renders by default (no body/image config). */
+const carEl = (el: HeroEl): SVGElement =>
+  el.shadowRoot!.querySelector('svg.tc-ev') as unknown as SVGElement;
+const hasApClass = (el: HeroEl, name: string): boolean =>
+  carEl(el).classList.contains(`${name}-open`);
+
+describe('Story 3.5 AC1 — classifier maps each function-group to its own overlay', () => {
+  test('frunk cover "open" → only .frunk-open', async () => {
+    const states = makeStates();
+    states[APID.frunk] = ent(APID.frunk, 'open', at(0));
+    const el = await mountHero(states);
+    expect(hasApClass(el, 'frunk')).toBe(true);
+    expect(hasApClass(el, 'liftgate')).toBe(false);
+  });
+
+  test('trunk cover "open" → .liftgate-open (the rear hatch IS the liftgate)', async () => {
+    const states = makeStates();
+    states[APID.trunk] = ent(APID.trunk, 'open', at(0));
+    expect(hasApClass(await mountHero(states), 'liftgate')).toBe(true);
+  });
+
+  test('any door binary_sensor "on" → .door-open (one indication for "a door is open")', async () => {
+    const states = makeStates();
+    states[APID.doorFL] = ent(APID.doorFL, 'on', at(0));
+    expect(hasApClass(await mountHero(states), 'door')).toBe(true);
+  });
+
+  test('windows aggregate cover "open" → .window-open', async () => {
+    const states = makeStates();
+    states[APID.windows] = ent(APID.windows, 'open', at(0));
+    expect(hasApClass(await mountHero(states), 'window')).toBe(true);
+  });
+
+  test('independence (AC1): frunk+door+window open at once → three classes, liftgate absent', async () => {
+    const states = makeStates();
+    states[APID.frunk] = ent(APID.frunk, 'open', at(0));
+    states[APID.doorFL] = ent(APID.doorFL, 'on', at(0));
+    states[APID.windows] = ent(APID.windows, 'open', at(0));
+    const el = await mountHero(states);
+    expect(hasApClass(el, 'frunk')).toBe(true);
+    expect(hasApClass(el, 'door')).toBe(true);
+    expect(hasApClass(el, 'window')).toBe(true);
+    expect(hasApClass(el, 'liftgate')).toBe(false);
+  });
+});
+
+describe('Story 3.5 AC3 — missing/unavailable aperture → hidden, never a false "open"', () => {
+  // Table-drive the frunk cover read: only the literal 'open' yields an open
+  // overlay; 'closed' / 'unavailable' / absent ALL read closed (no class) — the
+  // honesty floor (the card never asserts a state it can't confirm). isOn/rawState
+  // return false for absence by construction.
+  const cases: Array<{ raw?: string; open: boolean }> = [
+    { raw: 'open', open: true },
+    { raw: 'closed', open: false },
+    { raw: 'unavailable', open: false },
+    { raw: 'unknown', open: false },
+    { raw: undefined, open: false }, // entity entirely absent from hass.states
+  ];
+  for (const c of cases) {
+    test(`frunk state ${c.raw ?? 'ABSENT'} → ${c.open ? 'open' : 'hidden'} (no false open)`, async () => {
+      const states = makeStates();
+      if (c.raw !== undefined) states[APID.frunk] = ent(APID.frunk, c.raw, at(0));
+      expect(hasApClass(await mountHero(states), 'frunk')).toBe(c.open);
+    });
+  }
+});
+
+describe('Story 3.5 — asleep suppresses aperture cues (Story 3.3 isAsleep still wins)', () => {
+  test('an asleep car shows NO aperture class even if an aperture entity reads open', async () => {
+    const states = makeStates({ asleep: true });
+    states[APID.frunk] = ent(APID.frunk, 'open', at(0)); // stale/lingering open
+    const el = await mountHero(states);
+    for (const n of ['frunk', 'liftgate', 'door', 'window'])
+      expect(hasApClass(el, n), n).toBe(false);
+  });
+});
+
+describe('Story 3.5 a11y — the car aria-label is state-bearing', () => {
+  test('open apertures append to the car label; colour-/sight-independent', async () => {
+    const states = makeStates();
+    states[APID.frunk] = ent(APID.frunk, 'open', at(0));
+    states[APID.doorFL] = ent(APID.doorFL, 'on', at(0));
+    const el = await mountHero(states, { name: 'Garage Model Y' });
+    const label = carEl(el).getAttribute('aria-label')!;
+    expect(label).toContain('Garage Model Y');
+    expect(label).toContain(STRINGS.hero.aperture.open);
+    expect(label).toContain(STRINGS.hero.aperture.frunk);
+    expect(label).toContain(STRINGS.hero.aperture.door);
+  });
+
+  test('all closed → the plain name (the hero leaves "all closed" to the closures panel)', async () => {
+    const el = await mountHero(makeStates(), { name: 'Garage Model Y' });
+    expect(carEl(el).getAttribute('aria-label')).toBe('Garage Model Y');
+  });
+});

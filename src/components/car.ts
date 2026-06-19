@@ -1,9 +1,20 @@
-import { html, svg, css, nothing, type TemplateResult } from 'lit';
-import type { BodyLayers, ChargeVisual } from '../types';
+import { html, svg, css, nothing, type TemplateResult, type SVGTemplateResult } from 'lit';
+import type { BodyLayers, ChargeVisual, ApertureState } from '../types';
 import { HERO_VIEWBOX } from '../const';
+import { STRINGS } from '../strings';
 
 /** Neutral silver — matches a typical source render, reads as "no tint applied". */
 const DEFAULT_PAINT = '#c6c8c9';
+/** Dark cavity behind an opened panel — reuses the generic EV's glass/shadow neutral. */
+const APERTURE_CAVITY = '#10141a';
+
+/** All-closed aperture state — the default, and what an asleep car shows (Story 3.5). */
+export const CLOSED_APERTURES: ApertureState = {
+  frunk: false,
+  liftgate: false,
+  door: false,
+  window: false,
+};
 
 export interface CarViewOpts {
   /** Flat fallback image, used when `body` layers are absent. */
@@ -20,6 +31,50 @@ export interface CarViewOpts {
    * Defaults to `parked` (neither). Drives the `.tc-car.<state>` style hook.
    */
   charge?: ChargeVisual;
+  /**
+   * Open-aperture state (Story 3.5): four INDEPENDENT booleans (frunk / liftgate
+   * / door / window) — any combination can be open at once (AC1, linear not
+   * combinatorial). Each toggles its own crossfading `.ap-<name>` overlay via a
+   * `.tc-car.<aperture>-open` class hook. Defaults to all-closed.
+   */
+  apertures?: ApertureState;
+}
+
+/**
+ * Compose the `.tc-car` class list: the static base + the charge-state hook +
+ * one `<aperture>-open` hook per open aperture (Story 3.5, AC1). Each open
+ * aperture is its own independent class (never a combined token), so the four
+ * overlays toggle independently.
+ */
+function carClasses(base: string, charge: ChargeVisual, ap: ApertureState): string {
+  return [
+    base,
+    charge,
+    ap.frunk ? 'frunk-open' : '',
+    ap.liftgate ? 'liftgate-open' : '',
+    ap.door ? 'door-open' : '',
+    ap.window ? 'window-open' : '',
+  ]
+    .filter(Boolean)
+    .join(' ');
+}
+
+/**
+ * State-bearing aria-label (Story 3.5, DoD a11y / EXPERIENCE.md:176): when any
+ * aperture is open, append the open list ("Model Y · open: frunk, door") so a
+ * screen-reader / colour-blind user reads the open state from words, never the
+ * silver overlay alone. When all closed, the plain `name` (the hero doesn't
+ * announce "all closed" — the closures panel owns that detail).
+ */
+function carLabel(name: string, ap: ApertureState): string {
+  const open: string[] = [];
+  if (ap.frunk) open.push(STRINGS.hero.aperture.frunk);
+  if (ap.liftgate) open.push(STRINGS.hero.aperture.liftgate);
+  if (ap.door) open.push(STRINGS.hero.aperture.door);
+  if (ap.window) open.push(STRINGS.hero.aperture.window);
+  return open.length
+    ? `${name} · ${STRINGS.hero.aperture.open}: ${open.join(', ')}`
+    : name;
 }
 
 /**
@@ -40,8 +95,9 @@ export interface CarViewOpts {
  * coordinate.
  */
 export function carView(opts: CarViewOpts): TemplateResult {
-  const { body, name = 'Vehicle', charge = 'parked' } = opts;
+  const { body, name = 'Vehicle', charge = 'parked', apertures = CLOSED_APERTURES } = opts;
   const paint = opts.paint ?? DEFAULT_PAINT;
+  const label = carLabel(name, apertures);
 
   if (body) {
     // Per-vehicle overrides win; otherwise the body layers fill the shared
@@ -52,11 +108,11 @@ export function carView(opts: CarViewOpts): TemplateResult {
     // id is scoped to this card's shadow root, so multiple cards never collide.
     return html`
       <svg
-        class="car-img tc-car ${charge}"
+        class=${carClasses('car-img tc-car', charge, apertures)}
         viewBox="0 0 ${w} ${h}"
         style="--tc-paint:${paint}"
         role="img"
-        aria-label=${name}
+        aria-label=${label}
         xmlns="http://www.w3.org/2000/svg"
       >
         <defs>
@@ -95,6 +151,8 @@ export function carView(opts: CarViewOpts): TemplateResult {
               />`
             : nothing}
         </g>
+
+        ${bodyApertureLayers(body, w, h)}
       </svg>
     `;
   }
@@ -103,12 +161,38 @@ export function carView(opts: CarViewOpts): TemplateResult {
     return html`<img
       class="car-img"
       src=${opts.image}
-      alt=${name}
+      alt=${label}
       draggable="false"
     />`;
   }
 
-  return genericCar(paint, name, charge);
+  return genericCar(paint, label, charge, apertures);
+}
+
+/**
+ * Body-layers aperture overlays (Story 3.5 slot — assets DEFERRED to 3.6/3.7).
+ *
+ * Each supplied bring-your-own neutral-silver inpainted overlay renders as a
+ * crossfading `<image class="ap ap-<name>">` layer ABOVE the recolor stack and
+ * BELOW the charge overlay (aperture-render-spec.md z-order; the body-mode charge
+ * overlay itself lands in 3.6). When an aperture's asset is absent we render
+ * NOTHING for it (graceful) — the node only exists once an asset backs it, so the
+ * crossfade has both endpoints. Opacity + reduced-motion cut live in `carStyles`
+ * (one shared `.ap` rule covers both render modes, DRY). The photoreal assets +
+ * the formal `@unstable` Layer-contract inclusion are Stories 3.6/3.7 — this
+ * story ships the mechanism; the bundled generic EV is the primary target.
+ */
+function bodyApertureLayers(body: BodyLayers, w: number, h: number): SVGTemplateResult {
+  const a = body.apertureLayers;
+  if (!a) return svg`${nothing}`;
+  const layer = (name: string, href: string | undefined): SVGTemplateResult =>
+    href
+      ? svg`<image class="ap ap-${name}" href=${href} x="0" y="0" width=${w} height=${h} />`
+      : svg`${nothing}`;
+  return svg`${layer('frunk', a.frunk)}${layer('liftgate', a.liftgate)}${layer(
+    'door',
+    a.door
+  )}${layer('window', a.window)}`;
 }
 
 /**
@@ -127,6 +211,7 @@ function genericCar(
   paint: string,
   name: string,
   charge: ChargeVisual,
+  apertures: ApertureState,
 ): TemplateResult {
   // The hand-tuned artwork is authored in its own intrinsic 1024×480 space; we
   // do NOT redraw those ~80 coordinates. Instead the outer <svg> adopts the
@@ -136,7 +221,7 @@ function genericCar(
   // coordinate space the body layers and Epic 4's overlays anchor to.
   return html`
     <svg
-      class="car-img tc-car tc-ev ${charge}"
+      class=${carClasses('car-img tc-car tc-ev', charge, apertures)}
       viewBox="0 0 ${HERO_VIEWBOX.width} ${HERO_VIEWBOX.height}"
       style="--tc-paint:${paint}"
       role="img"
@@ -219,6 +304,38 @@ function genericCar(
         </g>
         <circle cx="792" cy="350" r="15" fill="#82888f" />
       </g>
+
+      <!-- ── aperture open-state overlays (Story 3.5, AC1/AC2) ──────────────
+           Four INDEPENDENT open-state shapes anchored in the art's 1024×480
+           coordinate space, one per aperture. Unlike the charge port (a single
+           conditional node), these are ALWAYS present in the DOM at opacity 0 —
+           a crossfade needs both endpoints, and an absent node can't fade (the
+           one deliberate divergence from 3.4). Each fades in only when its
+           .tc-car.<aperture>-open class is set (carStyles). The opened panel
+           skin is NEUTRAL SILVER (#c6c8c9, "panel ajar") — deliberately NOT the
+           --tc-paint recolor: per-aperture recolor of newly-exposed paint is v2
+           (DESIGN.md:316).
+           The exposed cavity/gap reuses the dark glass neutral (#10141a). -->
+      <g class="ap ap-frunk">
+        <!-- frunk: front clamshell raised up-left over the cowl (x≈300–410) -->
+        <path d="M 296 210 L 404 205 L 404 218 L 296 224 Z" fill=${APERTURE_CAVITY} opacity="0.85" />
+        <path d="M 298 208 L 312 150 L 412 134 L 406 204 Z" fill=${DEFAULT_PAINT} stroke="#9aa0a6" stroke-width="2" />
+      </g>
+      <g class="ap ap-liftgate">
+        <!-- liftgate: rear hatch raised up-right over the tail (x≈648–828) -->
+        <path d="M 648 206 L 822 188 L 824 202 L 648 220 Z" fill=${APERTURE_CAVITY} opacity="0.85" />
+        <path d="M 648 200 L 660 100 L 830 168 L 824 212 Z" fill=${DEFAULT_PAINT} stroke="#9aa0a6" stroke-width="2" />
+      </g>
+      <g class="ap ap-door">
+        <!-- door: front cabin door ajar, swung outward with a dark hinge gap (x≈524–650) -->
+        <path d="M 524 216 L 536 216 L 542 350 L 530 350 Z" fill=${APERTURE_CAVITY} opacity="0.9" />
+        <path d="M 538 216 L 652 228 L 652 352 L 544 350 Z" fill=${DEFAULT_PAINT} stroke="#9aa0a6" stroke-width="2" />
+      </g>
+      <g class="ap ap-window">
+        <!-- window: front glass dropped — dark cabin showing through (over the glass path) -->
+        <path d="M 410 188 L 466 118 L 556 118 L 556 188 Z" fill=${APERTURE_CAVITY} opacity="0.92" />
+      </g>
+
       ${charge !== 'parked'
         ? svg`
       <!-- Charge-port glow + cable (Story 3.4, AC1/AC2). Anchored at the rear
@@ -308,5 +425,34 @@ export const carStyles = css`
     stroke-width: 7;
     stroke-linecap: round;
     opacity: 0.85;
+  }
+
+  /* ── aperture open-state crossfade (Story 3.5, AC1/AC4) ────────────────
+     Each overlay is always in the DOM at opacity 0 and crossfades in via an
+     opacity TRANSITION (EXPERIENCE.md:162 "Layers, never page reloads") — a
+     transition, never a new keyframe (the locked a11y corpus {tc-pulse,
+     tc-shimmer} stays untouched; this rule lives in carStyles, not
+     sharedStyles). One .ap base rule covers BOTH render modes (the bundled
+     generic-EV groups and the body-layers image.ap), DRY. Reuse the
+     shared --tc-ease token WITH its fallback (the fallback-value gate is hard). */
+  .ap {
+    opacity: 0;
+    transition: opacity 0.3s var(--tc-ease, cubic-bezier(0.22, 1, 0.36, 1));
+  }
+  .tc-car.frunk-open .ap-frunk,
+  .tc-car.liftgate-open .ap-liftgate,
+  .tc-car.door-open .ap-door,
+  .tc-car.window-open .ap-window {
+    opacity: 1;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    /* AC4 — the crossfade becomes an INSTANT CUT (EXPERIENCE.md:174 "aperture and
+       charge-state crossfades become instant cuts"). The open/closed information
+       is fully preserved (opacity still flips 0↔1); only the fade is removed.
+       Kill the motion, keep the data — the direct analogue of 3.4's reduced-motion
+       fix. */
+    .ap {
+      transition: none;
+    }
   }
 `;

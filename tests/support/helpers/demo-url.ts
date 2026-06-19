@@ -4,14 +4,17 @@
 // param contract changes, it changes here only.
 //
 // The harness contract lives in `demo/index.html` (URLSearchParams):
-//   scenario=asleep|parked|plugged|unresolved  awake/charging is the default (no param)
+//   scenario=asleep|parked|plugged|apertures|unresolved  awake/charging is the default (no param)
 //   env=renamed                proves name-based resolution (my_tesla_* prefix)
 //   panel=<id>                 default open panel
 //   paint=<css|tesla-name>     tint the bundled generic-EV hero
 //   image=1                    legacy flat <img> (demo/car.svg, committed)
 //   recolor=1 | colorentity=…  photoreal recolor stack from demo/local/ (GITIGNORED)
+//   frunk|liftgate|door|window=1  (apertures scenario) open ONLY those — independence check
+//   unavail=<aperture>         (apertures scenario) force one entity unavailable — graceful-degrade check
 
-export type Scenario = 'awake' | 'asleep' | 'parked' | 'plugged' | 'unresolved';
+export type Scenario = 'awake' | 'asleep' | 'parked' | 'plugged' | 'apertures' | 'unresolved';
+export type ApertureName = 'frunk' | 'liftgate' | 'door' | 'window';
 export type Env = 'default' | 'renamed';
 export type PanelId =
   | 'climate'
@@ -30,6 +33,8 @@ export interface DemoOptions {
   image?: boolean; // ?image=1 — flat car.svg
   recolor?: boolean; // ?recolor=1 — REQUIRES demo/local art (see hasRecolorArt)
   colorentity?: string; // entity-driven paint (also implies recolor in the harness)
+  apertures?: ApertureName[]; // (apertures scenario) open ONLY these — independence check
+  unavail?: ApertureName; // (apertures scenario) force one entity unavailable — degrade check
 }
 
 const DEMO_PATH = '/demo/index.html';
@@ -40,6 +45,7 @@ export function buildDemoUrl(opts: DemoOptions = {}): string {
   if (opts.scenario === 'asleep') q.set('scenario', 'asleep');
   if (opts.scenario === 'parked') q.set('scenario', 'parked');
   if (opts.scenario === 'plugged') q.set('scenario', 'plugged');
+  if (opts.scenario === 'apertures') q.set('scenario', 'apertures');
   if (opts.scenario === 'unresolved') q.set('scenario', 'unresolved');
   if (opts.env === 'renamed') q.set('env', 'renamed');
   if (opts.panel) q.set('panel', opts.panel);
@@ -47,6 +53,8 @@ export function buildDemoUrl(opts: DemoOptions = {}): string {
   if (opts.image) q.set('image', '1');
   if (opts.recolor) q.set('recolor', '1');
   if (opts.colorentity) q.set('colorentity', opts.colorentity);
+  for (const a of opts.apertures ?? []) q.set(a, '1'); // open only these (independence)
+  if (opts.unavail) q.set('unavail', opts.unavail); // force one unavailable (degrade)
   const qs = q.toString();
   return qs ? `${DEMO_PATH}?${qs}` : DEMO_PATH;
 }

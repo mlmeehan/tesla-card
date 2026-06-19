@@ -93,6 +93,16 @@ export class TeslaCardPage {
     return this.heroStage.locator('.tc-port');
   }
 
+  /** All four aperture open-state overlays (Story 3.5) — always present in the DOM, opacity-toggled. */
+  get heroApertures(): Locator {
+    return this.heroStage.locator('.ap');
+  }
+
+  /** A single aperture overlay by name (.ap-frunk / .ap-liftgate / .ap-door / .ap-window). */
+  aperture(name: 'frunk' | 'liftgate' | 'door' | 'window'): Locator {
+    return this.heroStage.locator(`.ap-${name}`);
+  }
+
   /** The tappable battery row — a real <button> that dispatches open-panel{charging} (AC3). */
   get heroBattery(): Locator {
     return this.hero.locator('button.battery');

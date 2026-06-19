@@ -59,6 +59,17 @@ export const STRINGS = {
     updatedPrefix: 'updated', // composed: `updated ${age} ago`
     ago: 'ago',
     justNow: 'Just now', // age < 1 min (or indeterminate-but-fresh)
+    // State-bearing aperture nouns (Story 3.5) for the car render's aria-label:
+    // "Model Y · open: frunk, door". Lower-case sentence-flow nouns (matching the
+    // closures.parts convention). The hero says "liftgate" where closures says
+    // "trunk" — honest to the DESIGN naming of the rear hatch.
+    aperture: {
+      open: 'open', // label prefix: `${name} · open: …`
+      frunk: 'frunk',
+      liftgate: 'liftgate',
+      door: 'door',
+      window: 'window',
+    },
   },
 
   commands: {
