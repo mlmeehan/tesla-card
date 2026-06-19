@@ -445,3 +445,82 @@ describe('Story 3.6 AC3 — non-conforming body degrades gracefully', () => {
     expect(warn).not.toHaveBeenCalled();
   });
 });
+
+// Story 3.7 — bring-your-own render + multi-model asset packs. The render path
+// (3.1/3.2/3.6) already loads HA-served packs by URL; this story LOCKS the four
+// ACs against the real carView DOM so the named feature can't silently regress.
+// jsdom doesn't fetch/measure images — assert node presence, `href`s, `viewBox`,
+// classes and `log.warn`, never pixels (the visible recolor is e2e-covered,
+// guarded on demo/local/ art). Reuses the BODY fixture + mount() helper.
+describe('bring-your-own render + multi-model packs (Story 3.7)', () => {
+  /** Two distinct packs, referenced ONLY by HA-served local-path URLs (never bundled). */
+  const PACK_A = {
+    color: '/local/tesla-card/model-a/color.webp',
+    shade: '/local/tesla-card/model-a/shade.webp',
+    mask: '/local/tesla-card/model-a/mask.png',
+  } as const satisfies BodyLayers;
+  // Model B: different URLs AND a non-1024×687 intrinsic size.
+  const PACK_B = {
+    color: '/local/tesla-card/model-b/color.webp',
+    shade: '/local/tesla-card/model-b/shade.webp',
+    mask: '/local/tesla-card/model-b/mask.png',
+    width: 1600,
+    height: 900,
+  } as const satisfies BodyLayers;
+
+  const hrefs = (svg: Element): (string | null)[] =>
+    Array.from(svg.querySelectorAll('image')).map((i) => i.getAttribute('href'));
+
+  test('AC1 — a BYO body referenced by local-path URLs composites + recolours', () => {
+    const svg = mount({ body: PACK_A, paint: '#2a4f93' }).querySelector('svg.tc-car')!;
+    // The recolor stack is present (paint mask is the body-layers signature)…
+    expect(svg.querySelector('mask#tc-paintmask')).toBeTruthy();
+    // …with the configured local-path URLs wired straight to the <image href>s…
+    const h = hrefs(svg);
+    expect(h).toContain(PACK_A.color); // color base
+    expect(h).toContain(PACK_A.shade); // masked shade
+    expect(h).toContain(PACK_A.mask); // the paint mask
+    // …and the chosen paint reaches the recolor.
+    expect(svg.getAttribute('style')).toContain('--tc-paint:#2a4f93');
+    // Not the bundled EV, not a flat <img>.
+    expect(svg.classList.contains('tc-ev')).toBe(false);
+  });
+
+  test('AC1 — a BYO flat image renders as a plain <img>, no contract SVG', () => {
+    const root = mount({ image: '/local/tesla-card/model_y.png' });
+    const img = root.querySelector('img')!;
+    expect(img.getAttribute('src')).toBe('/local/tesla-card/model_y.png');
+    expect(root.querySelector('svg')).toBeNull();
+  });
+
+  test('AC2 — swapping models is config-only: pack B drives its own viewBox + hrefs', () => {
+    const a = mount({ body: PACK_A }).querySelector('svg.tc-car')!;
+    const b = mount({ body: PACK_B }).querySelector('svg.tc-car')!;
+    // Same component, no per-vehicle geometry: pack B's size drives the viewBox…
+    expect(a.getAttribute('viewBox')).toBe(`0 0 ${HERO_VIEWBOX.width} ${HERO_VIEWBOX.height}`);
+    expect(b.getAttribute('viewBox')).toBe('0 0 1600 900');
+    // …and pack B renders B's URLs, not A's (the swap is purely the config URLs).
+    const hb = hrefs(b);
+    expect(hb).toContain(PACK_B.color);
+    expect(hb).not.toContain(PACK_A.color);
+  });
+
+  test('AC2/AC3 — a swapped pack missing a required layer degrades gracefully', () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      // Pack B's URLs but with `mask` dropped → non-conforming.
+      const broken = { color: PACK_B.color, shade: PACK_B.shade } as unknown as BodyLayers;
+      const root = mount({ body: broken });
+      // No contract recolor render — falls through to the bundled EV…
+      expect(root.querySelector('mask#tc-paintmask')).toBeNull();
+      expect(root.querySelector('svg.tc-ev')).toBeTruthy();
+      // …with exactly one honest warning naming the missing layer (3.6 guard holds).
+      expect(warn).toHaveBeenCalledTimes(1);
+      const msg = warn.mock.calls[0].join(' ');
+      expect(msg).toMatch(/missing required layer/i);
+      expect(msg).toContain('mask');
+    } finally {
+      warn.mockRestore();
+    }
+  });
+});

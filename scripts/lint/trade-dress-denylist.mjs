@@ -51,6 +51,11 @@ const ROOT = join(__dirname, '..', '..'); // tesla-card/
 //   • src/log.test.ts — Story 2.5's neutral-logger gate asserts `#e82127` is gone;
 //   • src/paint.test.ts — Story 2.6's paint relabel test plants option codes /
 //     marketing names to assert PAINT_PRESETS bundles NONE of them.
+//   • src/layer-contract.test.ts — Story 3.6's contract test plants option codes
+//     in an absence-asserting regex (`/#e82127|ppsw|pbsb|pmng|pn00/`) to prove
+//     LAYER_CONTRACT bundles NONE of them — identical DEFINE-to-assert-absence
+//     rationale as src/paint.test.ts (added here in Story 3.7, the gate's first
+//     run over the 3.6-expanded src/ surface).
 //   • docs/trade-dress.md — the policy doc itself DEFINES the denylist, listing the
 //     brand red rgb() form and every option code (PPSW/PBSB/…) as the tokens the
 //     gate catches; same DEFINE-the-tokens rationale as this gate + its test.
@@ -59,6 +64,7 @@ export const CONTENT_SKIP = new Set([
   'src/trade-dress-denylist.test.ts',
   'src/log.test.ts',
   'src/paint.test.ts',
+  'src/layer-contract.test.ts',
   'docs/trade-dress.md',
 ]);
 

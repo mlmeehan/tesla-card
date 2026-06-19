@@ -105,6 +105,12 @@ this layer entirely for a matte finish — the card treats `highlight` as option
 
 ## 5. Wire it up
 
+> **Shipping a pack, or juggling more than one model?** See
+> **[asset-packs.md](./asset-packs.md)** for per-model placement
+> (`config/www/tesla-card/<model>/`), swapping models by URL, and the
+> never-committed / `@unstable` rules. This section bakes one pack; that doc
+> distributes and swaps them.
+
 Put the four files where Home Assistant serves them (e.g.
 `config/www/tesla-card/`) and reference them:
 

@@ -186,7 +186,10 @@ renderer itself is generic.
 
 **No vehicle artwork ships with this card** — you bring your own render. The
 step-by-step pipeline for baking the four layers from a single source image is
-in **[docs/recolorable-body.md](docs/recolorable-body.md)**.
+in **[docs/recolorable-body.md](docs/recolorable-body.md)**. Bringing your own
+render or running multiple models? See **[docs/asset-packs.md](docs/asset-packs.md)**
+(`@unstable`) for WebP externalization, per-model placement, and swapping models
+by URL.
 
 > **Trademark note.** Tesla's vehicle designs are trade dress and Tesla's
 > badges/wordmark are trademarks. Use a render you have the right to use, keep it

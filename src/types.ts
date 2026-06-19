@@ -68,7 +68,9 @@ export interface EnergyConfig {
  * needs zero per-vehicle geometry: it just composites these layers + named nodes.
  * Every layer/overlay must be IDENTICAL pixel size and ALIGNED (registration),
  * shot from a front-right 3/4 camera, anchored to the 1024×687 coordinate
- * contract (`HERO_VIEWBOX`). See `docs/layer-contract.md`.
+ * contract (`HERO_VIEWBOX`). See `docs/layer-contract.md` for the shape, and
+ * `docs/asset-packs.md` for bringing your own render / multi-model packs (WebP
+ * externalization, per-model placement, swapping by URL — never committed).
  */
 export interface BodyLayers {
   /** Base layer — glass, wheels, lights and ground shadow keep their real pixels. */

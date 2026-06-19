@@ -38,6 +38,7 @@ without hard-coded entity IDs.
 - [Privacy](./privacy.md) — no-network-egress / no-telemetry affirmation, the merge-blocking gate, and the sanctioned HA channel
 - [Layer contract (`@unstable`)](./layer-contract.md) — the published body-render contract: named layers/nodes, registration, the 3/4 camera, the 1024×687 anchor, and the one-way-door freeze warning
 - [Recolorable body](./recolorable-body.md) — how to bake the four layers the Layer contract composites (bring-your-own render)
+- [Asset packs (`@unstable`)](./asset-packs.md) — bring-your-own render + multi-model packs: WebP externalization, HA placement, swapping models by URL, the never-committed boundary
 
 ## Existing Project Docs
 

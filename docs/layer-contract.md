@@ -65,11 +65,14 @@ bleeds paint onto glass; an aperture overlay drawn at a different scale floats.
   `chargePort` anchor and aperture regions are measured in. If your layers are a
   different intrinsic size, set `body.width`/`body.height` so the viewBox matches.
 
-## Externalization (Story 3.7)
+## Externalization & bring-your-own packs
 
 Body packs are **never bundled** — no vehicle artwork ships with the card. They
 are WebP files **you** serve from Home Assistant (`config/www/tesla-card/…`,
-referenced as `/local/tesla-card/…`). Story 3.7 builds the bring-your-own /
-multi-model pack mechanics **on top of this contract**; this document defines the
-shape those packs conform to. Keep your packs to renders you have the right to use
-— a generic EV is the safe choice for anything public (trade dress / trademarks).
+referenced as `/local/tesla-card/…`), and they are **never committed to the card
+repo**. This document defines the *shape* a conforming pack has; the
+bring-your-own / multi-model **distribution & usage** how-to — externalizing to
+WebP, placing packs under your HA install, swapping models by URL, and the
+never-committed boundary — lives in **[asset-packs.md](./asset-packs.md)**. Keep
+your packs to renders you have the right to use — a generic EV is the safe choice
+for anything public (trade dress / trademarks).
