@@ -17,6 +17,7 @@ import './hero';
 import { formatAge } from '../helpers';
 import { STRINGS } from '../strings';
 import { DEFAULT_ENTITIES } from '../const';
+import { flowOverlayStyles } from '../flow/hero-svg';
 import type { HassEntity, HomeAssistant, TeslaCardConfig } from '../types';
 
 type HeroEl = HTMLElement & {
@@ -567,5 +568,77 @@ describe('Story 3.5 a11y — the car aria-label is state-bearing', () => {
   test('all closed → the plain name (the hero leaves "all closed" to the closures panel)', async () => {
     const el = await mountHero(makeStates(), { name: 'Garage Model Y' });
     expect(carEl(el).getAttribute('aria-label')).toBe('Garage Model Y');
+  });
+});
+
+// ───────────────────────────────────────────────────────────────────────────
+// Story 4.3 — live energy-flow overlay composited over the Hero stage
+// ───────────────────────────────────────────────────────────────────────────
+// The Hero binds the FlowModel (bindFlowModel) and composites HeroSvgRenderer's
+// overlay into .car-stage. jsdom proves the compositing: present-energy ⇒ an
+// absolutely-positioned, pointer-events:none overlay layered in the stage, anchored
+// to the 1024×687 viewBox; vehicle-only (empty model) ⇒ NO overlay chrome; and the
+// battery button below the stage stays clickable. We make ONE energy role present
+// via a config.energy.entities override pointing at a DEFAULT_ENTITIES constant
+// (charger_power, a fresh kW sensor) — never an inlined literal id (components rule).
+
+const overlay = (el: HeroEl): SVGElement | null =>
+  el.shadowRoot!.querySelector('.car-stage svg.tc-flow-overlay');
+
+/** Bind the solar role to the (fresh, numeric) charger_power sensor so a node is present. */
+const ENERGY_OVER: Partial<TeslaCardConfig> = {
+  energy: { entities: { solar_power: DEFAULT_ENTITIES.charger_power } },
+};
+/** States with charger_power fresh-at-REF → the overridden solar role resolves present. */
+const withEnergy = (extra: Parameters<typeof makeStates>[0] = {}) =>
+  makeStates({ power: '6.0', ...extra });
+
+describe('Story 4.3 — energy-flow overlay composites into .car-stage', () => {
+  test('present energy → an overlay SVG inside .car-stage, anchored to 1024×687', async () => {
+    const el = await mountHero(withEnergy(), ENERGY_OVER);
+    const ov = overlay(el);
+    expect(ov).toBeTruthy();
+    expect(ov!.getAttribute('viewBox')).toBe('0 0 1024 687');
+    // State-bearing aria-label (UX-DR18, mirrors the carView label): prefixed with
+    // the flow label and naming the present node — not the bare static string.
+    const label = ov!.getAttribute('aria-label')!;
+    expect(label.startsWith(STRINGS.energy.flowLabel)).toBe(true);
+    expect(label).toContain(STRINGS.energy.nodes.solar);
+    // The present role gets a glass chip carrying its label.
+    const chip = ov!.querySelector('.fo-chip[data-role="solar"]');
+    expect(chip).toBeTruthy();
+    expect(chip!.querySelector('.fo-chip-label')!.textContent).toBe(STRINGS.energy.nodes.solar);
+  });
+
+  test('the overlay never captures taps (pointer-events:none, layered above carView)', () => {
+    // The contract lives in the overlay stylesheet (added to the Hero static
+    // styles) — the battery button below the stage must stay reachable.
+    expect(flowOverlayStyles.cssText).toContain('pointer-events: none');
+    expect(flowOverlayStyles.cssText).toContain('position: absolute');
+  });
+
+  test('vehicle-only install (empty model) → NO overlay chrome (no occluding box)', async () => {
+    // The default makeStates() has no energy entities → empty model → omitted.
+    const el = await mountHero(makeStates());
+    expect(overlay(el)).toBeNull();
+  });
+
+  test('the battery button stays clickable with the overlay present', async () => {
+    const el = await mountHero(withEnergy(), ENERGY_OVER);
+    expect(overlay(el)).toBeTruthy(); // overlay IS drawn…
+    let detail: { panel?: string } | undefined;
+    el.addEventListener('open-panel', (e) => {
+      detail = (e as CustomEvent<{ panel: string }>).detail;
+    });
+    el.shadowRoot!.querySelector<HTMLButtonElement>('.battery')!.click();
+    expect(detail).toEqual({ panel: 'charging' }); // …yet the tap still fires
+  });
+
+  test('asleep → overlay still composites under the shared .tc-asleep dim (no parallel branch)', async () => {
+    // No bespoke asleep suppression: the model+`.tc-asleep` recipe handle it — the
+    // stage carries the dim and the overlay is still composited within it.
+    const el = await mountHero(withEnergy({ asleep: true }), ENERGY_OVER);
+    expect(el.shadowRoot!.querySelector('.car-stage')!.classList.contains('tc-asleep')).toBe(true);
+    expect(overlay(el)).toBeTruthy();
   });
 });

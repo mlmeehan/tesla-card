@@ -6,7 +6,10 @@ import { sharedStyles } from '../styles';
 import { STRINGS } from '../strings';
 import { icon, batteryGauge } from '../ui';
 import { carView, carStyles, CLOSED_APERTURES } from './car';
+import { bindFlowModel } from '../flow/binding';
+import { HeroSvgRenderer, flowOverlayStyles } from '../flow/hero-svg';
 import { resolvePaint } from '../paint';
+import { HERO_VIEWBOX } from '../const';
 import { readKey, referenceNow } from '../data/freshness';
 import { normalizeChargingState } from '../data/dialect';
 import {
@@ -31,6 +34,11 @@ interface HeroStatus {
 
 @customElement('tc-hero')
 export class TcHero extends TcBase {
+  // The live energy-flow overlay hub (Story 4.3). Held across renders so it caches
+  // the model + precomputed geometry; the element stays thin (composites its
+  // `view()`). All mapping/derivation lives in the renderer, not here.
+  private readonly _flow = new HeroSvgRenderer();
+
   private _open(panel: PanelId): void {
     fireEvent<{ panel: PanelId }>(this, 'open-panel', { panel });
   }
@@ -215,6 +223,15 @@ export class TcHero extends TcBase {
     // An asleep car's aperture entities read `unavailable` anyway (→ all-closed),
     // and we never paint state on a dimmed car (Story 3.3's isAsleep still wins).
     const apertures: ApertureState = asleep ? CLOSED_APERTURES : this._apertures();
+
+    // Live energy-flow overlay (Story 4.3). `bindFlowModel` self-resolves the
+    // energy entities and returns the model the renderer draws — the renderer
+    // never re-reads hass.states. A vehicle-only install ⇒ empty model ⇒ the
+    // overlay is omitted entirely (no occluding box). Asleep needs no parallel
+    // branch: the binding yields calm `quiescent` edges and `.tc-asleep` dims the
+    // whole stage (overlay included).
+    this._flow.update(bindFlowModel(this.hass, cfg));
+
     const rangeNum = num(this.hass, cfg, 'battery_range');
     const rangeUnit = unit(this.hass, cfg, 'battery_range') || 'mi';
 
@@ -253,6 +270,16 @@ export class TcHero extends TcBase {
             charge,
             apertures,
           })}
+          ${this._flow.empty
+            ? nothing
+            : html`<svg
+                class="tc-flow-overlay"
+                viewBox="0 0 ${HERO_VIEWBOX.width} ${HERO_VIEWBOX.height}"
+                role="img"
+                aria-label=${this._flow.label()}
+              >
+                ${this._flow.view()}
+              </svg>`}
         </div>
 
         <button
@@ -278,6 +305,7 @@ export class TcHero extends TcBase {
   static override styles = [
     sharedStyles,
     carStyles,
+    flowOverlayStyles,
     css`
       .hero {
         padding: 18px 20px 20px;

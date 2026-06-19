@@ -204,6 +204,17 @@ export const STRINGS = {
     connector: 'Connector',
     connected: 'Connected',
     unplugged: 'Unplugged',
+    // Flow-node chip labels (Story 4.3 HeroSvgRenderer) — the colour-blind-safe
+    // text every edge carries alongside its kW (AC4: source is never hue-only).
+    // Keyed by EnergyRole; "Wall connector" is the car-charging edge (no 6th
+    // vehicle node — the Hero silhouette IS the vehicle).
+    nodes: {
+      solar: 'Solar',
+      grid: 'Grid',
+      powerwall: 'Powerwall',
+      home: 'Home',
+      wall_connector: 'Wall connector',
+    },
   },
 
   editor: {
