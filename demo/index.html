@@ -91,8 +91,11 @@
         // Promote the shared corpus to this demo's mutable state map. structuredClone
         // so asleepStates()'s muters and the colour-entity inject below never scribble
         // on the imported module object. The fixture carries the full HA state shape
-        // (entity_id/last_changed/last_updated); the card reads only .state/.attributes,
-        // so the richer shape is transparent here.
+        // (entity_id/last_changed/last_updated). Since Story 3.3 the Hero consumes
+        // data/freshness for the honest "updated Nm ago" hint, so those stamps are
+        // now load-bearing: referenceNow() = MAX stamp across states (here the
+        // fixture instant), and the battery_level stamp drives the hint. Awake
+        // leaves the fixture stamps intact → fresh → "Just now".
         const st = structuredClone(awakeFixture.states);
         // Synthetic exterior-colour helper for entity-driven paint (?colorentity=…).
         // Demo-only: the official tesla_fleet exposes no such attribute, so it is
@@ -104,7 +107,13 @@
       function asleepStates() {
         const st = awakeStates();
         st['binary_sensor.garage_model_y_status'] = s('off');
-        st['sensor.garage_model_y_battery_level'] = s('unavailable');
+        // Back-date the battery stamp ~47m before the fixture reference instant
+        // (the max stamp across the still-fresh fixture entities) so the Hero
+        // shows "Asleep · updated 47m ago" (AC4). Even though the value reads
+        // `unavailable` while asleep, last_updated still says WHEN it last
+        // reported — exactly the honest hint we surface.
+        const staleStamp = new Date(Date.parse(awakeFixture.states['sensor.garage_model_y_battery_level'].last_updated) - 47 * 60_000).toISOString();
+        st['sensor.garage_model_y_battery_level'] = { ...s('unavailable'), last_updated: staleStamp, last_changed: staleStamp };
         st['sensor.garage_model_y_battery_range'] = s('unavailable');
         st['climate.garage_model_y_climate'] = s('off', { min_temp: 15, max_temp: 28, target_temp_step: 0.5 });
         st['sensor.garage_model_y_charging'] = s('unavailable');

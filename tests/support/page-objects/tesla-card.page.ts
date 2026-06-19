@@ -78,6 +78,21 @@ export class TeslaCardPage {
     return this.heroStage.locator('img');
   }
 
+  /** The Hero status line (dot + label + sub-hint, incl. the "updated Nm ago" freshness hint). */
+  get heroStatus(): Locator {
+    return this.hero.locator('.status');
+  }
+
+  /** The tappable battery row — a real <button> that dispatches open-panel{charging} (AC3). */
+  get heroBattery(): Locator {
+    return this.hero.locator('button.battery');
+  }
+
+  /** The battery percentage readout ("64%" / "—"). */
+  get heroBatteryPct(): Locator {
+    return this.hero.locator('.bat-pct');
+  }
+
   async setEnv(env: 'default' | 'renamed'): Promise<void> {
     // Harness env toggles live in the page's light DOM (stable ids), not the card.
     await this.page.locator(env === 'renamed' ? '#b-renamed' : '#b-default').click();

@@ -46,8 +46,18 @@ export const STRINGS = {
 
   hero: {
     defaultName: 'Model Y',
-    tapToWake: 'Tap a command to wake', // honest asleep affordance
-    openCharging: 'Open charging', // battery button aria-label
+    tapToWake: 'Tap a command to wake', // honest asleep affordance (future wake citizenship, Story 5.4)
+    openCharging: 'Open charging', // battery button aria-label (unknown-battery fallback)
+    // State-bearing battery aria-label (UX-DR21 / EXPERIENCE.md:176 "Battery 64%,
+    // opens charging") — composed at the call site with the SETTLED percent + '%'
+    // glue: `${battery} ${pct}%, ${opensCharging}`.
+    battery: 'Battery',
+    opensCharging: 'opens charging',
+    // Honest last-updated hint (UX-DR18): "updated 47m ago" / "Just now". Never
+    // "Offline"/"No connection" — an asleep car is fine, just idle.
+    updatedPrefix: 'updated', // composed: `updated ${age} ago`
+    ago: 'ago',
+    justNow: 'Just now', // age < 1 min (or indeterminate-but-fresh)
   },
 
   commands: {

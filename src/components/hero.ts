@@ -7,6 +7,7 @@ import { STRINGS } from '../strings';
 import { icon, batteryGauge } from '../ui';
 import { carView, carStyles } from './car';
 import { resolvePaint } from '../paint';
+import { readKey, referenceNow } from '../data/freshness';
 import {
   num,
   rawState,
@@ -15,6 +16,7 @@ import {
   fireEvent,
   formatNumber,
   formatHoursToHM,
+  formatAge,
   unit,
 } from '../helpers';
 import type { PanelId } from '../types';
@@ -35,9 +37,45 @@ export class TcHero extends TcBase {
     return rawState(this.hass, this.config, 'charging_status') === 'Charging';
   }
 
-  private _status(asleep: boolean): HeroStatus {
+  /**
+   * The honest "updated Nm ago" hint (AC1/AC4) — the Hero is the FIRST consumer
+   * of the Epic-1 freshness read-model (R6 sequencing `data → freshness → … →
+   * hero`). Backing signal: `battery_level` — the headline value the battery row
+   * shows; even when it reads `unavailable` (asleep) its `last_updated` stamp
+   * still tells us WHEN it last reported (precisely the "47m ago"). `readKey`
+   * resolves the function-key via the registry then delegates to `read` — no
+   * bare `hass.states` reaches this component (the read happens inside `data/`).
+   *
+   * Age is measured against HA's OWN time base (`referenceNow` = max server
+   * stamp across states), NEVER `Date.now()`: a naive client subtraction can
+   * manufacture phantom freshness, the one unforgivable error (UX-DR18).
+   * Graceful omission: no stamp → `undefined` (caller omits the hint entirely;
+   * never "updated NaN"/a fabricated time).
+   */
+  private _ageHint(): string | undefined {
+    // Compute HA's server time base ONCE and reuse it for both the freshness read
+    // (which classifies staleness against it internally) and the displayed age —
+    // one O(n) scan of hass.states per render, not two, and a single consistent
+    // reference for both derivations.
+    const now = referenceNow(this.hass);
+    const r = readKey(this.hass, this.config, 'battery_level', { now });
+    if (!r.lastUpdated) return undefined;
+    const age = formatAge(now - Date.parse(r.lastUpdated));
+    return age === ''
+      ? STRINGS.hero.justNow
+      : `${STRINGS.hero.updatedPrefix} ${age} ${STRINGS.hero.ago}`;
+  }
+
+  private _status(asleep: boolean, hint: string | undefined): HeroStatus {
     if (asleep) {
-      return { dot: 'var(--tc-text-mute, #64748b)', label: STRINGS.status.asleep, sub: STRINGS.hero.tapToWake };
+      // "Asleep · updated 47m ago" (AC4) — the last-updated hint is the asleep
+      // sub. Falls back to the wake affordance only when no stamp exists (cold
+      // paint / absent entity), never a fabricated time.
+      return {
+        dot: 'var(--tc-text-mute, #64748b)',
+        label: STRINGS.status.asleep,
+        sub: hint ?? STRINGS.hero.tapToWake,
+      };
     }
     const shift = rawState(this.hass, this.config, 'shift_state');
     const charging = this._isCharging();
@@ -80,13 +118,23 @@ export class TcHero extends TcBase {
     const asleep = isAsleep(this.hass, cfg);
     const name = cfg.name ?? STRINGS.hero.defaultName;
     const image = cfg.image;
-    const status = this._status(asleep);
+    const hint = this._ageHint();
+    const status = this._status(asleep, hint);
 
     const battery = asleep ? undefined : num(this.hass, cfg, 'battery_level');
     const limit = num(this.hass, cfg, 'charge_limit');
     const charging = !asleep && this._isCharging();
     const rangeNum = num(this.hass, cfg, 'battery_range');
     const rangeUnit = unit(this.hass, cfg, 'battery_range') || 'mi';
+
+    // AC3 — a STATE-BEARING aria-label (EXPERIENCE.md:176 "Battery 64%, opens
+    // charging"): SR users hear the charge + the action. Built from the SETTLED
+    // battery value (never an optimistic guess); falls back to the action-only
+    // label when the percent is unknown/asleep (no number to overstate).
+    const batteryLabel =
+      battery !== undefined
+        ? `${STRINGS.hero.battery} ${formatNumber(battery)}%, ${STRINGS.hero.opensCharging}`
+        : STRINGS.hero.openCharging;
 
     return html`
       <div class="hero surface">
@@ -98,11 +146,14 @@ export class TcHero extends TcBase {
               <span class="st-label">${status.label}</span>
               <span class="st-sep">·</span>
               <span class="st-sub">${status.sub}</span>
+              ${!asleep && hint
+                ? html`<span class="st-sep">·</span><span class="st-sub">${hint}</span>`
+                : nothing}
             </span>
           </div>
         </div>
 
-        <div class="car-stage ${asleep ? 'asleep' : ''}">
+        <div class="car-stage ${asleep ? 'tc-asleep' : ''}">
           ${carView({
             image,
             name,
@@ -115,7 +166,7 @@ export class TcHero extends TcBase {
         <button
           class="battery"
           @click=${() => this._open('charging')}
-          aria-label=${STRINGS.hero.openCharging}
+          aria-label=${batteryLabel}
         >
           <div class="bat-top">
             <span class="bat-pct">
@@ -195,6 +246,10 @@ export class TcHero extends TcBase {
         place-items: center;
         padding: 10px 0 14px;
         min-height: 160px;
+        /* Preserve the asleep fade feel; the dim/grayscale magnitudes themselves
+           come from the shared .tc-asleep recipe (--tc-dim-*), not re-hard-coded. */
+        transition: opacity 0.4s var(--tc-ease, cubic-bezier(0.22, 1, 0.36, 1)),
+          filter 0.4s var(--tc-ease, cubic-bezier(0.22, 1, 0.36, 1));
       }
       .car-stage::after {
         content: '';
@@ -223,10 +278,6 @@ export class TcHero extends TcBase {
         object-fit: contain;
         filter: drop-shadow(0 22px 30px rgba(0, 0, 0, 0.45));
         transition: opacity 0.4s var(--tc-ease, cubic-bezier(0.22, 1, 0.36, 1)), filter 0.4s var(--tc-ease, cubic-bezier(0.22, 1, 0.36, 1));
-      }
-      .car-stage.asleep .car-img {
-        opacity: 0.5;
-        filter: grayscale(0.4) drop-shadow(0 16px 22px rgba(0, 0, 0, 0.4));
       }
 
       /* ── battery row ─────────────────────────────────────────────── */

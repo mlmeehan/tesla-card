@@ -137,3 +137,65 @@ test.describe('hero — 1024×687 coordinate contract (AC3) + surface stage (AC1
     await expect(demo.heroStage.locator('svg')).toHaveCount(0);
   });
 });
+
+// Story 3.3 — status line + tappable battery, locked in a real browser against
+// the built bundle (jsdom can't measure layout, so the ≥44×44 hit target is
+// proven HERE; the honest "updated Nm ago" hint depends on demo last_updated
+// stamps that only the bundle + harness exercise end-to-end).
+test.describe('hero — status line + tappable battery (Story 3.3)', () => {
+  test('AC4: asleep → dim+grayscale render (.tc-asleep) + "Asleep · updated …" + battery —', async ({
+    demo,
+  }) => {
+    await demo.open({ scenario: 'asleep' });
+    // Shared .tc-asleep recipe backs the render: opacity 0.5 + full grayscale.
+    await expect(demo.heroStage).toHaveClass(/\btc-asleep\b/);
+    await expect(demo.heroStage).toHaveCSS('opacity', '0.5');
+    await expect(demo.heroStage).toHaveCSS('filter', /grayscale\(1\)/);
+    // Honest status: drive-state + last-updated hint, never "Offline".
+    await expect(demo.heroStatus).toContainText('Asleep');
+    await expect(demo.heroStatus).toContainText(/updated \d+m ago/);
+    await expect(demo.heroStatus).not.toContainText(/Offline|No connection/i);
+    // Battery shows the em-dash, never a fabricated number.
+    await expect(demo.heroBatteryPct).toHaveText('—');
+  });
+
+  test('AC1: awake status line carries a fresh last-updated hint', async ({ demo }) => {
+    await demo.open({ scenario: 'awake' });
+    // Fixture stamps are all at one instant → fresh → "Just now".
+    await expect(demo.heroStatus).toContainText('Just now');
+  });
+
+  test('AC3: the battery row is a real <button> with a ≥44×44 hit target', async ({ demo }) => {
+    await demo.open({ scenario: 'awake' });
+    await expect(demo.heroBattery).toBeVisible();
+    const box = await demo.heroBattery.boundingBox();
+    expect(box, 'battery button must have a measurable box').not.toBeNull();
+    expect(box!.height).toBeGreaterThanOrEqual(44);
+    expect(box!.width).toBeGreaterThanOrEqual(44);
+  });
+
+  test('AC3: tapping the battery dispatches open-panel{panel:"charging"} (bubbles + composed)', async ({
+    demo,
+    page,
+  }) => {
+    await demo.open({ scenario: 'awake' });
+    // The intent bubbles + composed, so it reaches document — capture it there.
+    await page.evaluate(() => {
+      (window as unknown as { __panel?: string }).__panel = undefined;
+      document.addEventListener(
+        'open-panel',
+        (e) => {
+          (window as unknown as { __panel?: string }).__panel = (
+            e as CustomEvent<{ panel: string }>
+          ).detail.panel;
+        },
+        { once: true }
+      );
+    });
+    await demo.heroBattery.click();
+    const panel = await page.evaluate(
+      () => (window as unknown as { __panel?: string }).__panel
+    );
+    expect(panel).toBe('charging');
+  });
+});

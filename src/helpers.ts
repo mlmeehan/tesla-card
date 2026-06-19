@@ -108,6 +108,24 @@ export function formatMinutesToHM(minutes: number): string {
   return formatHoursToHM(minutes / 60);
 }
 
+/**
+ * Elapsed age (ms) → a COARSE relative magnitude for the "updated Nm ago" hint:
+ * `''` (< 1 min — caller renders "Just now"), `"Nm"` (< 1 h), `"Nh"` (< 1 d),
+ * else `"Nd"`. NaN/negative age also maps to `''` — a stamp at-or-after our
+ * server reference is the freshest possible, never old (mirrors `classifyAge`'s
+ * lean-fresh guard in data/freshness; UX-DR18 — never overstate staleness from
+ * an indeterminate age). `floor` so a partial unit never rounds the magnitude UP
+ * (47m stays "47m", never "1h").
+ */
+export function formatAge(ms: number): string {
+  if (!Number.isFinite(ms) || ms < 60_000) return '';
+  const min = Math.floor(ms / 60_000);
+  if (min < 60) return `${min}m`;
+  const hr = Math.floor(min / 60);
+  if (hr < 24) return `${hr}h`;
+  return `${Math.floor(hr / 24)}d`;
+}
+
 /** Pretty "value unit", or em-dash when unavailable. */
 export function display(
   hass: HomeAssistant | undefined,
