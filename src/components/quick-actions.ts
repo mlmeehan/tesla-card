@@ -1,5 +1,5 @@
-import { html, css, type TemplateResult } from 'lit';
-import { customElement } from 'lit/decorators.js';
+import { html, css, type TemplateResult, type PropertyValues } from 'lit';
+import { customElement, state } from 'lit/decorators.js';
 import {
   mdiLock,
   mdiLockOpenVariant,
@@ -14,7 +14,23 @@ import { sharedStyles } from '../styles';
 import { STRINGS } from '../strings';
 import { icon } from '../ui';
 import type { EntityKey } from '../const';
-import { entityId, rawState, isUnavailable, toggleEntity } from '../helpers';
+import {
+  entityId,
+  rawState,
+  isUnavailable,
+  toggleEntity,
+  srState,
+  prettyText,
+} from '../helpers';
+
+/**
+ * Per-tap reconcile fence (ms). A stuck optimistic override would lie forever if
+ * the command silently failed or the car is asleep, so each tap arms a single
+ * one-shot timer that drops the override → reverts to real (truth). This is NOT
+ * background polling (UX-DR23 bans polling/auto-wake): it is a bounded, per-tap
+ * expiry — the same exemption rAF gets — cleared on reconcile and on disconnect.
+ */
+export const RECONCILE_TIMEOUT_MS = 10_000;
 
 interface QuickAction {
   key: EntityKey;
@@ -80,9 +96,73 @@ const ACTIONS: QuickAction[] = [
 
 @customElement('tc-quick-actions')
 export class TcQuickActions extends TcBase {
-  private _tap(key: EntityKey): void {
+  /**
+   * Optimistic overrides: `EntityKey` → the requested `on` value. The VISUAL pill
+   * (icon + `.ctrl.on`) reads this immediately on tap so the control feels
+   * responsive; the SCREEN-READER state (aria-pressed + accessible name) ignores
+   * it and always reflects the real, settled `hass` value (UX-DR21). An entry is
+   * dropped when the real state catches up (reconcile IS the feedback) or when the
+   * per-tap fence expires (honest revert).
+   */
+  @state() private _optimistic: Record<string, boolean> = {};
+
+  /** One-shot reconcile-fence timer per pending key (cleared on reconcile/disconnect). */
+  private _timers = new Map<EntityKey, ReturnType<typeof setTimeout>>();
+
+  override disconnectedCallback(): void {
+    super.disconnectedCallback();
+    // No orphaned reconcile fences once we leave the DOM.
+    for (const t of this._timers.values()) clearTimeout(t);
+    this._timers.clear();
+  }
+
+  /**
+   * Reconcile on every `hass` tick: when the live state of a pending control
+   * matches its optimistic request, the round-trip landed → drop the override
+   * (and its fence). Re-derive from the live `ACTIONS` predicate — never a frozen
+   * tap-time snapshot — so reconcile is correct even if the car was toggled
+   * elsewhere. A still-disagreeing tick is the expected in-flight window; only the
+   * fence (or a matching tick) clears it.
+   */
+  protected override willUpdate(changed: PropertyValues): void {
+    if (!changed.has('hass')) return;
+    for (const a of ACTIONS) {
+      if (!(a.key in this._optimistic)) continue;
+      const real = a.on(rawState(this.hass, this.config, a.key));
+      if (real === this._optimistic[a.key]) this._reconcile(a.key);
+    }
+  }
+
+  private _tap(a: QuickAction): void {
     if (!this.hass) return;
-    toggleEntity(this.hass, entityId(this.config, key));
+    const s = rawState(this.hass, this.config, a.key);
+    if (isUnavailable(s)) return; // a disabled control never enters the optimistic path
+    const nextOn = !a.on(s);
+    this._optimistic = { ...this._optimistic, [a.key]: nextOn };
+    // Arm a fresh single-shot fence (replacing any prior one for this key).
+    this._clearTimer(a.key);
+    this._timers.set(
+      a.key,
+      setTimeout(() => this._reconcile(a.key), RECONCILE_TIMEOUT_MS)
+    );
+    toggleEntity(this.hass, entityId(this.config, a.key));
+  }
+
+  /** Drop a pending override + its fence (reconciled or expired → back to truth). */
+  private _reconcile(key: EntityKey): void {
+    this._clearTimer(key);
+    if (!(key in this._optimistic)) return;
+    const next = { ...this._optimistic };
+    delete next[key];
+    this._optimistic = next;
+  }
+
+  private _clearTimer(key: EntityKey): void {
+    const t = this._timers.get(key);
+    if (t !== undefined) {
+      clearTimeout(t);
+      this._timers.delete(key);
+    }
   }
 
   protected override render(): TemplateResult {
@@ -91,16 +171,21 @@ export class TcQuickActions extends TcBase {
         ${ACTIONS.map((a) => {
           const s = rawState(this.hass, this.config, a.key);
           const unavailable = isUnavailable(s);
-          const active = a.on(s);
+          const settled = a.on(s); // real, reconciled state → drives the SR announce
+          const active = a.key in this._optimistic ? this._optimistic[a.key] : settled;
+          // Sighted feedback is optimistic (instant); SR feedback is the settled
+          // truth — never tell a screen-reader a toggle happened that may not have.
+          const srLabel =
+            unavailable || s === undefined ? a.label : srState(a.label, prettyText(s));
           return html`
             <div class="ctrl-wrap">
               <button
                 class="ctrl ${active ? 'on' : ''}"
                 style="--accent:${a.accent}"
                 ?disabled=${unavailable}
-                @click=${() => this._tap(a.key)}
-                aria-label=${a.label}
-                aria-pressed=${active}
+                @click=${() => this._tap(a)}
+                aria-label=${srLabel}
+                aria-pressed=${settled}
               >
                 ${icon(active ? a.iconOn : a.iconOff, { size: 24 })}
               </button>

@@ -401,7 +401,7 @@ export const sharedStyles = css`
   .ctrl.on {
     color: var(--accent, var(--tc-blue, #38bdf8));
     border-color: color-mix(in srgb, var(--accent, var(--tc-blue, #38bdf8)) 45%, transparent);
-    background: color-mix(in srgb, var(--accent, var(--tc-blue, #38bdf8)) 16%, transparent);
+    background: color-mix(in srgb, var(--accent, var(--tc-blue, #38bdf8)) 18%, transparent);
     box-shadow: 0 0 0 1px
         color-mix(in srgb, var(--accent, var(--tc-blue, #38bdf8)) 25%, transparent),
       0 10px 26px -12px color-mix(in srgb, var(--accent, var(--tc-blue, #38bdf8)) 70%, transparent);
