@@ -28,6 +28,21 @@ export function isUnavailable(state: string | undefined): boolean {
   return state === undefined || UNAVAILABLE_STATES.includes(state);
 }
 
+/**
+ * Command-availability gate for the `button` domain (stateless-by-design): a
+ * button's state is the ISO timestamp of its last press, or `'unknown'` until
+ * it has ever been pressed — and it resets to `'unknown'` after every HA restart
+ * (button entities do NOT restore state). So a command must degrade ONLY when
+ * the entity is genuinely missing (state `undefined`) or explicitly
+ * `'unavailable'` — NEVER on `'unknown'`/`'none'`/`''` (never pressed ≠ broken;
+ * over-degrading there would disable wake and make an asleep car un-wakeable).
+ * Deliberately narrower than {@link isUnavailable} (correct for sensors/toggles
+ * where `'unknown'` means "no reading") — do NOT widen `UNAVAILABLE_STATES`.
+ */
+export function isMissing(state: string | undefined): boolean {
+  return state === undefined || state === 'unavailable';
+}
+
 export function num(
   hass: HomeAssistant | undefined,
   config: TeslaCardConfig,

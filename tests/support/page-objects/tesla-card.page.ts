@@ -113,6 +113,26 @@ export class TeslaCardPage {
     return this.hero.locator('.bat-pct');
   }
 
+  /** The fire-and-forget commands block (Story 5.3) — sits at the card bottom. */
+  get commands(): Locator {
+    return this.card.locator('tc-commands');
+  }
+
+  /** Every command pill (`<button class="cmd">`) in render order: wake·honk·flash·HomeLink·keyless·boombox. */
+  get commandButtons(): Locator {
+    return this.commands.locator('button.cmd');
+  }
+
+  /** A single command pill by its visible label ("Wake", "Honk", …). */
+  command(label: string): Locator {
+    return this.commands.locator('button.cmd', { hasText: label });
+  }
+
+  /** The asleep wake-affordance hint ("Tap a command to wake") — present only when asleep (AC2). */
+  get wakeHint(): Locator {
+    return this.commands.locator('.wake-hint');
+  }
+
   async setEnv(env: 'default' | 'renamed'): Promise<void> {
     // Harness env toggles live in the page's light DOM (stable ids), not the card.
     await this.page.locator(env === 'renamed' ? '#b-renamed' : '#b-default').click();
