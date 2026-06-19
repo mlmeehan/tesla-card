@@ -23,6 +23,7 @@ export const STRINGS = {
   status: {
     asleep: 'Asleep',
     charging: 'Charging',
+    pluggedIdle: 'Plugged-idle', // connected, at rest (blue) — Story 3.4 / EXPERIENCE.md:134
     driving: 'Driving',
     reverse: 'Reverse',
     neutral: 'Neutral',

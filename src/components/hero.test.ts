@@ -38,6 +38,9 @@ const ID = {
   limit: DEFAULT_ENTITIES.charge_limit,
   lock: DEFAULT_ENTITIES.lock,
   shift: DEFAULT_ENTITIES.shift_state,
+  power: DEFAULT_ENTITIES.charger_power,
+  cable: DEFAULT_ENTITIES.charge_cable,
+  ttf: DEFAULT_ENTITIES.time_to_full_charge,
 } as const;
 
 function ent(id: string, state: string, stamp?: string, attrs: Record<string, any> = {}): HassEntity {
@@ -54,7 +57,11 @@ function makeStates(opts: {
   battery?: string; // raw battery_level state ('unavailable' for the asleep/unknown path)
   batteryAgeMs?: number; // age of the battery stamp before REF
   batteryStamped?: boolean; // false → battery carries NO last_updated (omission path)
-  charging?: boolean;
+  charging?: boolean; // convenience: 'Charging' vs 'Disconnected' charging_status
+  chargeStatus?: string; // raw charging_status override (dialect spellings, 'unknown', …)
+  power?: string; // raw charger_power state (kW) — Story 3.4 live-kW read
+  cable?: string; // raw charge_cable state ('on'/'off') — unknown-degrade corroboration
+  ttf?: string; // raw time_to_full_charge (hours) — charging-sub fallback
   limit?: string;
   locked?: boolean;
 } = {}): Record<string, HassEntity> {
@@ -64,6 +71,10 @@ function makeStates(opts: {
     batteryAgeMs = 0,
     batteryStamped = true,
     charging = false,
+    chargeStatus,
+    power,
+    cable,
+    ttf,
     limit,
     locked = true,
   } = opts;
@@ -72,7 +83,11 @@ function makeStates(opts: {
     [ID.status]: ent(ID.status, asleep ? 'off' : 'on', at(0)),
     [ID.lock]: ent(ID.lock, locked ? 'locked' : 'unlocked', at(0)),
     [ID.range]: ent(ID.range, asleep ? 'unavailable' : '210', at(0)),
-    [ID.charging]: ent(ID.charging, charging ? 'Charging' : 'Disconnected', at(0)),
+    [ID.charging]: ent(
+      ID.charging,
+      chargeStatus ?? (charging ? 'Charging' : 'Disconnected'),
+      at(0)
+    ),
   };
   states[ID.battery] = ent(
     ID.battery,
@@ -80,6 +95,9 @@ function makeStates(opts: {
     batteryStamped ? at(batteryAgeMs) : undefined
   );
   if (limit !== undefined) states[ID.limit] = ent(ID.limit, limit, at(0));
+  if (power !== undefined) states[ID.power] = ent(ID.power, power, at(0));
+  if (cable !== undefined) states[ID.cable] = ent(ID.cable, cable, at(0));
+  if (ttf !== undefined) states[ID.ttf] = ent(ID.ttf, ttf, at(0));
   return states;
 }
 
@@ -303,5 +321,138 @@ describe('formatAge — coarse relative magnitude, NaN/negative-safe', () => {
   test('NaN / negative age → "" (lean-fresh; never overstate staleness)', () => {
     expect(formatAge(NaN)).toBe('');
     expect(formatAge(-5_000)).toBe('');
+  });
+});
+
+// ───────────────────────────────────────────────────────────────────────────
+// Story 3.4 — three glanceable charge states (Parked / Plugged-idle / Charging)
+// ───────────────────────────────────────────────────────────────────────────
+
+const labelOf = (el: HeroEl): string =>
+  el.shadowRoot!.querySelector('.st-label')!.textContent!.trim();
+const dotOf = (el: HeroEl): string =>
+  el.shadowRoot!.querySelector('.status .dot')!.getAttribute('style') ?? '';
+const port = (el: HeroEl): Element | null => el.shadowRoot!.querySelector('.tc-port');
+
+describe('AC1/AC2 — classify charge state from the charging-state entity (normalizer)', () => {
+  // Table-drive the canonical mapping THROUGH normalizeChargingState — incl. the
+  // dialect spellings it collapses and the unknown→parked neutral degrade. Asserts
+  // the rendered label/dot/port, never prose.
+  const cases: Array<{ raw: string; label: string; dot: string; visual: 'parked' | 'plugged' | 'charging' }> = [
+    { raw: 'Charging', label: STRINGS.status.charging, dot: 'var(--tc-green', visual: 'charging' },
+    { raw: 'charging', label: STRINGS.status.charging, dot: 'var(--tc-green', visual: 'charging' }, // dialect lower-case collapses
+    { raw: 'ChargeStarting', label: STRINGS.status.pluggedIdle, dot: 'var(--tc-blue', visual: 'plugged' },
+    { raw: 'Complete', label: STRINGS.status.pluggedIdle, dot: 'var(--tc-blue', visual: 'plugged' },
+    { raw: 'Stopped', label: STRINGS.status.pluggedIdle, dot: 'var(--tc-blue', visual: 'plugged' },
+    { raw: 'NoPower', label: STRINGS.status.pluggedIdle, dot: 'var(--tc-blue', visual: 'plugged' },
+    { raw: 'Disconnected', label: STRINGS.status.parked, dot: 'var(--tc-green', visual: 'parked' }, // parked+locked → green dot
+    { raw: 'unknown', label: STRINGS.status.parked, dot: 'var(--tc-green', visual: 'parked' }, // neutral degrade, never false plug/charge
+  ];
+
+  for (const c of cases) {
+    test(`charging_status "${c.raw}" → ${c.visual} (label "${c.label}", dot ${c.dot}…)`, async () => {
+      const el = await mountHero(makeStates({ chargeStatus: c.raw }));
+      expect(labelOf(el)).toBe(c.label);
+      expect(dotOf(el)).toContain(c.dot);
+      // AC2 — the port-glow/cable renders for BOTH plugged and charging, absent for parked.
+      if (c.visual === 'parked') expect(port(el)).toBeNull();
+      else expect(port(el)).toBeTruthy();
+    });
+  }
+
+  test('AC2 charging ⇒ plugged: charging also renders the port-glow/cable (superset of plugged)', async () => {
+    const charging = await mountHero(makeStates({ chargeStatus: 'Charging', power: '7.0' }));
+    const plugged = await mountHero(makeStates({ chargeStatus: 'Complete' }));
+    expect(port(charging)).toBeTruthy();
+    expect(port(plugged)).toBeTruthy();
+  });
+
+  test('graceful degradation: an unknown charging entity with cable "on" reads plugged-idle', async () => {
+    // The unknown→parked degrade is corroborated ONLY by the physical cable sensor
+    // (real connection evidence, not a fabricated charge state).
+    const el = await mountHero(makeStates({ chargeStatus: 'unknown', cable: 'on' }));
+    expect(labelOf(el)).toBe(STRINGS.status.pluggedIdle);
+    expect(port(el)).toBeTruthy();
+  });
+
+  // DoD graceful degradation (NFR-4) — the REAL HA sentinels, not the literal
+  // 'unknown' token the table above uses: an `unavailable` or entirely-ABSENT
+  // charging entity must degrade to neutral Parked, NEVER a false Charging/Plugged
+  // (the normalizer collapses ''/'unavailable'/'none'/'null'/undefined → 'unknown'
+  // → the parked degrade). These are the strings/holes that actually flow from HA.
+  test('unavailable charging_status → Parked, never a false plug/charge (no .tc-port)', async () => {
+    const el = await mountHero(makeStates({ chargeStatus: 'unavailable' }));
+    expect(labelOf(el)).toBe(STRINGS.status.parked);
+    expect(port(el)).toBeNull();
+  });
+
+  test('an entirely-absent charging entity degrades to Parked (no .tc-port)', async () => {
+    const states = makeStates();
+    delete states[ID.charging]; // the function-key resolves to a hole in hass.states
+    const el = await mountHero(states);
+    expect(labelOf(el)).toBe(STRINGS.status.parked);
+    expect(port(el)).toBeNull();
+  });
+
+  test('an unusable charge state with cable "off" stays Parked (cable never fabricates plugged)', async () => {
+    // The inverse of the cable-"on" corroboration: an `unavailable` charge state
+    // with the cable physically OFF must not invent a connection.
+    const el = await mountHero(makeStates({ chargeStatus: 'unavailable', cable: 'off' }));
+    expect(labelOf(el)).toBe(STRINGS.status.parked);
+    expect(port(el)).toBeNull();
+  });
+
+  test('AC1 a11y: states are distinguished by the LABEL, not hue alone', async () => {
+    // A colour-blind user must read the state from the word — assert the labels
+    // are distinct strings across the three states (not just the dot colour).
+    const parked = labelOf(await mountHero(makeStates({ chargeStatus: 'Disconnected' })));
+    const plugged = labelOf(await mountHero(makeStates({ chargeStatus: 'Complete' })));
+    const charging = labelOf(await mountHero(makeStates({ chargeStatus: 'Charging' })));
+    expect(new Set([parked, plugged, charging]).size).toBe(3);
+    expect(plugged).toBe('Plugged-idle');
+  });
+});
+
+describe('AC3 — live kW is a direct NaN-safe read of charger_power', () => {
+  test('charging with charger_power → "Charging · N.N kW" (1 decimal)', async () => {
+    const el = await mountHero(makeStates({ chargeStatus: 'Charging', power: '11.5' }));
+    expect(statusText(el)).toContain('Charging · 11.5 kW');
+  });
+
+  test('a whole-number power still renders one decimal (N.N kW per DESIGN)', async () => {
+    const el = await mountHero(makeStates({ chargeStatus: 'Charging', power: '7' }));
+    expect(statusText(el)).toContain('7.0 kW');
+  });
+
+  test('unavailable power degrades gracefully to time-to-full — never "NaN kW"', async () => {
+    const el = await mountHero(
+      makeStates({ chargeStatus: 'Charging', power: 'unavailable', ttf: '1.5', limit: '80' })
+    );
+    const text = statusText(el);
+    expect(text).not.toMatch(/NaN/);
+    expect(text).not.toContain('kW');
+    expect(text).toContain('1h 30m to 80%');
+  });
+
+  test('no power and no time-to-full → the plain "Charging" label, never a fabricated figure', async () => {
+    const el = await mountHero(makeStates({ chargeStatus: 'Charging' }));
+    const text = statusText(el);
+    expect(text).not.toMatch(/NaN|kW/);
+    expect(labelOf(el)).toBe(STRINGS.status.charging);
+  });
+
+  test('zero power falls back too (0 kW is "not drawing", not a live rate)', async () => {
+    const el = await mountHero(makeStates({ chargeStatus: 'Charging', power: '0', ttf: '2' }));
+    expect(statusText(el)).not.toContain('0.0 kW');
+    expect(statusText(el)).toContain('2h');
+  });
+});
+
+describe('AC1/AC4 — asleep still wins: no live charge state on a dimmed car', () => {
+  test('asleep suppresses the charge cue (no .tc-port) even if charging_status is stale "Charging"', async () => {
+    const el = await mountHero(makeStates({ asleep: true, chargeStatus: 'Charging', power: '11.5' }));
+    // isAsleep gates charge → 'parked'; the port glow never paints on a dimmed car.
+    expect(port(el)).toBeNull();
+    expect(labelOf(el)).toBe(STRINGS.status.asleep);
   });
 });

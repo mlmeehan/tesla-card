@@ -63,6 +63,8 @@
     <div class="bar">
       <h1>Tesla Card · live demo</h1>
       <button id="b-awake" class="active">Awake / Charging</button>
+      <button id="b-plugged" title="Plugged but not drawing — blue charge-port glow + cable, no halo">Plugged-idle</button>
+      <button id="b-parked" title="Not plugged — neutral, no charge cue">Parked</button>
       <button id="b-asleep">Asleep</button>
       <button id="b-unresolved" title="Foreign / unconfigured install — no Tesla entities resolve (designed empty state)">
         Unresolved
@@ -126,6 +128,29 @@
         st['sensor.garage_model_y_charger_voltage'] = s('unavailable');
         st['cover.garage_model_y_charge_port_door'] = s('unavailable');
         st['media_player.garage_model_y_media_player'] = s('off');
+        return st;
+      }
+
+      // Story 3.4 — the two charge states the awake fixture (which is Charging)
+      // doesn't cover, so a human can sweep nothing → blue → green. Mute the
+      // relevant entities off the cloned awake corpus; leave the battery stamp
+      // fresh (these are awake states → "Just now").
+      function parkedStates() {
+        const st = awakeStates();
+        st['sensor.garage_model_y_charging'] = s('Disconnected');
+        st['binary_sensor.garage_model_y_charge_cable'] = s('off');
+        st['cover.garage_model_y_charge_port_door'] = s('closed');
+        st['sensor.garage_model_y_charger_power'] = s('0');
+        st['sensor.garage_model_y_time_to_full_charge'] = s('0');
+        return st;
+      }
+
+      function pluggedStates() {
+        const st = awakeStates();
+        st['sensor.garage_model_y_charging'] = s('Complete'); // plugged, not drawing
+        st['binary_sensor.garage_model_y_charge_cable'] = s('on');
+        st['cover.garage_model_y_charge_port_door'] = s('open');
+        st['sensor.garage_model_y_charger_power'] = s('0');
         return st;
       }
 
@@ -197,6 +222,8 @@
 
       const params = new URLSearchParams(location.search);
       let asleep = params.get('scenario') === 'asleep';
+      let parked = params.get('scenario') === 'parked';
+      let plugged = params.get('scenario') === 'plugged';
       let unresolved = params.get('scenario') === 'unresolved';
       let envKey = params.get('env') === 'renamed' ? 'renamed' : 'default';
       const startPanel = params.get('panel') || 'charging';
@@ -214,7 +241,14 @@
           return;
         }
         const env = ENVIRONMENTS[envKey];
-        states = reprefix(asleep ? asleepStates() : awakeStates(), env.prefix);
+        const base = asleep
+          ? asleepStates()
+          : parked
+            ? parkedStates()
+            : plugged
+              ? pluggedStates()
+              : awakeStates();
+        states = reprefix(base, env.prefix);
         registry = buildRegistry(states, env);
       }
       rebuild();
@@ -294,13 +328,17 @@
       }
 
       const bAwake = document.getElementById('b-awake');
+      const bPlugged = document.getElementById('b-plugged');
+      const bParked = document.getElementById('b-parked');
       const bAsleep = document.getElementById('b-asleep');
       const bUnresolved = document.getElementById('b-unresolved');
       const bDefault = document.getElementById('b-default');
       const bRenamed = document.getElementById('b-renamed');
 
       function syncButtons() {
-        bAwake.classList.toggle('active', !asleep && !unresolved);
+        bAwake.classList.toggle('active', !asleep && !unresolved && !parked && !plugged);
+        bPlugged.classList.toggle('active', plugged);
+        bParked.classList.toggle('active', parked);
         bAsleep.classList.toggle('active', asleep);
         bUnresolved.classList.toggle('active', unresolved);
         bDefault.classList.toggle('active', envKey === 'default');
@@ -313,21 +351,19 @@
         syncButtons();
       }
 
-      bAwake.addEventListener('click', () => {
-        asleep = false;
-        unresolved = false;
+      // Scenario buttons are mutually exclusive — selecting one clears the rest.
+      function setScenario({ a = false, pa = false, pl = false, u = false }) {
+        asleep = a;
+        parked = pa;
+        plugged = pl;
+        unresolved = u;
         apply();
-      });
-      bAsleep.addEventListener('click', () => {
-        asleep = true;
-        unresolved = false;
-        apply();
-      });
-      bUnresolved.addEventListener('click', () => {
-        unresolved = true;
-        asleep = false;
-        apply();
-      });
+      }
+      bAwake.addEventListener('click', () => setScenario({}));
+      bPlugged.addEventListener('click', () => setScenario({ pl: true }));
+      bParked.addEventListener('click', () => setScenario({ pa: true }));
+      bAsleep.addEventListener('click', () => setScenario({ a: true }));
+      bUnresolved.addEventListener('click', () => setScenario({ u: true }));
       bDefault.addEventListener('click', () => {
         envKey = 'default';
         apply();

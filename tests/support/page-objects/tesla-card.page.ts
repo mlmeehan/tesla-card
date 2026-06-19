@@ -83,6 +83,16 @@ export class TeslaCardPage {
     return this.hero.locator('.status');
   }
 
+  /** The status-line LABEL ("Parked" / "Plugged-idle" / "Charging" / …) — Story 3.4 a11y. */
+  get heroStatusLabel(): Locator {
+    return this.hero.locator('.st-label');
+  }
+
+  /** The charge-port glow + cable group on the bundled EV (present only when plugged/charging). */
+  get heroPort(): Locator {
+    return this.heroStage.locator('.tc-port');
+  }
+
   /** The tappable battery row — a real <button> that dispatches open-panel{charging} (AC3). */
   get heroBattery(): Locator {
     return this.hero.locator('button.battery');

@@ -4,14 +4,14 @@
 // param contract changes, it changes here only.
 //
 // The harness contract lives in `demo/index.html` (URLSearchParams):
-//   scenario=asleep|unresolved awake/charging is the default (no param)
+//   scenario=asleep|parked|plugged|unresolved  awake/charging is the default (no param)
 //   env=renamed                proves name-based resolution (my_tesla_* prefix)
 //   panel=<id>                 default open panel
 //   paint=<css|tesla-name>     tint the bundled generic-EV hero
 //   image=1                    legacy flat <img> (demo/car.svg, committed)
 //   recolor=1 | colorentity=…  photoreal recolor stack from demo/local/ (GITIGNORED)
 
-export type Scenario = 'awake' | 'asleep' | 'unresolved';
+export type Scenario = 'awake' | 'asleep' | 'parked' | 'plugged' | 'unresolved';
 export type Env = 'default' | 'renamed';
 export type PanelId =
   | 'climate'
@@ -38,6 +38,8 @@ const DEMO_PATH = '/demo/index.html';
 export function buildDemoUrl(opts: DemoOptions = {}): string {
   const q = new URLSearchParams();
   if (opts.scenario === 'asleep') q.set('scenario', 'asleep');
+  if (opts.scenario === 'parked') q.set('scenario', 'parked');
+  if (opts.scenario === 'plugged') q.set('scenario', 'plugged');
   if (opts.scenario === 'unresolved') q.set('scenario', 'unresolved');
   if (opts.env === 'renamed') q.set('env', 'renamed');
   if (opts.panel) q.set('panel', opts.panel);

@@ -91,19 +91,61 @@ describe('AC3 — the 1024×687 coordinate contract', () => {
   });
 });
 
-describe('AC1 — charging glow class on the SVG renders (energy-glow accent)', () => {
-  test('charging:true adds the .charging class to both body and bundled-EV SVGs', () => {
-    expect(mount({ body: BODY, charging: true }).querySelector('svg.tc-car')!
+describe('Story 3.4 — charge-state class hook on the SVG renders', () => {
+  test('charge:"charging" adds the .charging class to both body and bundled-EV SVGs', () => {
+    expect(mount({ body: BODY, charge: 'charging' }).querySelector('svg.tc-car')!
       .classList.contains('charging')).toBe(true);
-    expect(mount({ charging: true }).querySelector('svg.tc-ev')!
+    expect(mount({ charge: 'charging' }).querySelector('svg.tc-ev')!
       .classList.contains('charging')).toBe(true);
   });
 
-  test('charging absent/false leaves the SVG unanimated (no .charging class)', () => {
+  test('charge:"plugged" adds the .plugged class (the blue, no-halo state hook)', () => {
+    expect(mount({ body: BODY, charge: 'plugged' }).querySelector('svg.tc-car')!
+      .classList.contains('plugged')).toBe(true);
+    const ev = mount({ charge: 'plugged' }).querySelector('svg.tc-ev')!;
+    expect(ev.classList.contains('plugged')).toBe(true);
+    // Plugged is NOT charging — never gets the pulsing-halo hook.
+    expect(ev.classList.contains('charging')).toBe(false);
+  });
+
+  test('charge:"parked" (default) leaves the SVG unanimated (no charge class)', () => {
     expect(mount({ body: BODY }).querySelector('svg.tc-car')!
       .classList.contains('charging')).toBe(false);
-    expect(mount({ charging: false }).querySelector('svg.tc-ev')!
-      .classList.contains('charging')).toBe(false);
+    const ev = mount({ charge: 'parked' }).querySelector('svg.tc-ev')!;
+    expect(ev.classList.contains('charging')).toBe(false);
+    expect(ev.classList.contains('plugged')).toBe(false);
+  });
+});
+
+// AC1/AC2 — the net-new charge-port glow + cable on the bundled EV. The element
+// renders for BOTH plugged and charging (charging ⇒ plugged, AC2), and is absent
+// when parked. jsdom can't measure the glow's pixels/colour (that's e2e) — assert
+// the .tc-port node presence + structure (glow + core + cable) against the DOM.
+describe('AC1/AC2 — charge-port glow + cable (bundled EV)', () => {
+  test('charging → .tc-port present with glow, core and cable nodes', () => {
+    const ev = mount({ charge: 'charging' }).querySelector('svg.tc-ev')!;
+    const port = ev.querySelector('.tc-port');
+    expect(port).toBeTruthy();
+    expect(port!.querySelector('.tc-port-glow')).toBeTruthy();
+    expect(port!.querySelector('.tc-port-core')).toBeTruthy();
+    expect(port!.querySelector('.tc-port-cable')).toBeTruthy();
+  });
+
+  test('plugged → .tc-port present too (charging ⇒ plugged: green is a superset of blue)', () => {
+    expect(mount({ charge: 'plugged' }).querySelector('svg.tc-ev .tc-port')).toBeTruthy();
+  });
+
+  test('parked → NO .tc-port (neither glow nor cable)', () => {
+    expect(mount({ charge: 'parked' }).querySelector('svg.tc-ev .tc-port')).toBeNull();
+    // Default opts (no charge) is parked too.
+    expect(mount({}).querySelector('svg.tc-ev .tc-port')).toBeNull();
+  });
+
+  test('the port nodes carry NO inline colour hex — colour is driven by the CSS state hook', () => {
+    // The fallback-value gate forbids bare hex in src; the recolor must live in
+    // carStyles' .tc-car.<state> rules, not on the SVG nodes.
+    const port = mount({ charge: 'charging' }).querySelector('svg.tc-ev .tc-port')!;
+    expect(port.outerHTML).not.toMatch(/fill="#|stroke="#/);
   });
 });
 

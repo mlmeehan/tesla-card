@@ -199,3 +199,97 @@ test.describe('hero — status line + tappable battery (Story 3.3)', () => {
     expect(panel).toBe('charging');
   });
 });
+
+// Story 3.4 — the three glanceable charge states, locked in a real browser against
+// the built bundle. jsdom proves the DOM/class presence; only here can the port
+// glow's resolved COLOUR (the --tc-* tokens), the green halo filter and the
+// reduced-motion static-glow be measured. Colours: --tc-green #34d399 =
+// rgb(52, 211, 153); --tc-blue #38bdf8 = rgb(56, 189, 248).
+test.describe('hero — charge visual states (Story 3.4)', () => {
+  test('charging (default awake): green port glow + "· N.N kW" + the .charging halo hook', async ({
+    demo,
+  }) => {
+    await demo.open({ scenario: 'awake' });
+    await expect(demo.heroStatusLabel).toHaveText('Charging');
+    await expect(demo.heroStatus).toContainText('11.5 kW');
+    // Port glow present and resolved GREEN (charging).
+    await expect(demo.heroPort).toBeVisible();
+    await expect(demo.heroStage.locator('.tc-port-core')).toHaveCSS(
+      'fill',
+      'rgb(52, 211, 153)'
+    );
+    // The body-halo hook is on (the pulsing green drop-shadow animates over it).
+    await expect(demo.heroSvg).toHaveClass(/\bcharging\b/);
+  });
+
+  test('plugged-idle: blue port glow + cable + "Plugged-idle", and NO charging halo', async ({
+    demo,
+  }) => {
+    await demo.open({ scenario: 'plugged' });
+    await expect(demo.heroStatusLabel).toHaveText('Plugged-idle');
+    await expect(demo.heroPort).toBeVisible();
+    await expect(demo.heroStage.locator('.tc-port-cable')).toBeVisible();
+    // Resolved BLUE (connected, at rest), and the calm state never gets the halo.
+    await expect(demo.heroStage.locator('.tc-port-core')).toHaveCSS(
+      'fill',
+      'rgb(56, 189, 248)'
+    );
+    await expect(demo.heroSvg).toHaveClass(/\bplugged\b/);
+    await expect(demo.heroSvg).not.toHaveClass(/\bcharging\b/);
+  });
+
+  test('parked: neither glow nor cable — a neutral car', async ({ demo }) => {
+    await demo.open({ scenario: 'parked' });
+    await expect(demo.heroStatusLabel).toHaveText('Parked');
+    await expect(demo.heroPort).toHaveCount(0);
+    await expect(demo.heroSvg).not.toHaveClass(/\bcharging\b/);
+    await expect(demo.heroSvg).not.toHaveClass(/\bplugged\b/);
+  });
+
+  // AC4 — under prefers-reduced-motion the pulsing halo resolves to a STATIC green
+  // glow (the loop does not run; the green is PRESENT, not removed). We assert the
+  // resolved filter carries the green drop-shadow on the charging car.
+  test('AC4: reduced-motion keeps a static green glow on the charging car (loop off, green present)', async ({
+    demo,
+    page,
+  }) => {
+    await page.emulateMedia({ reducedMotion: 'reduce' });
+    await demo.open({ scenario: 'awake' });
+    await expect(demo.heroSvg).toHaveClass(/\bcharging\b/);
+    // The static filter pins the green drop-shadow (rgb(52, 211, 153)) — without
+    // the AC4 fix the base filter would carry no green at all.
+    await expect(demo.heroSvg).toHaveCSS('filter', /rgb\(52, 211, 153\)/);
+  });
+
+  // AC4 (the other half, Task 4 "confirm it is unaffected") — the plugged-idle blue
+  // glow is INHERENTLY static (no keyframe), so reduced-motion must leave it fully
+  // present: blue port glow + cable, NO green, and never the charging halo. The
+  // reduced-motion fix touches only .tc-car.charging; this proves the calm state is
+  // untouched by the media query.
+  test('AC4: reduced-motion leaves the plugged-idle blue glow intact (static, no halo, no green)', async ({
+    demo,
+    page,
+  }) => {
+    await page.emulateMedia({ reducedMotion: 'reduce' });
+    await demo.open({ scenario: 'plugged' });
+    await expect(demo.heroPort).toBeVisible();
+    await expect(demo.heroStage.locator('.tc-port-core')).toHaveCSS(
+      'fill',
+      'rgb(56, 189, 248)'
+    );
+    await expect(demo.heroSvg).not.toHaveClass(/\bcharging\b/);
+    // The green halo must NOT bleed into the calm plugged state under reduced-motion.
+    await expect(demo.heroSvg).not.toHaveCSS('filter', /rgb\(52, 211, 153\)/);
+  });
+
+  // AC3 (integration, graceful read) — kW is a CHARGING-only readout. A plugged-but-
+  // idle car draws nothing, so the status must surface NO rate (never "0.0 kW" or a
+  // fabricated figure off the 0-power entity); the blue state's sub is the lock line.
+  test('AC3: plugged-idle surfaces no kW rate (the kW readout is charging-only)', async ({
+    demo,
+  }) => {
+    await demo.open({ scenario: 'plugged' });
+    await expect(demo.heroStatusLabel).toHaveText('Plugged-idle');
+    await expect(demo.heroStatus).not.toContainText('kW');
+  });
+});

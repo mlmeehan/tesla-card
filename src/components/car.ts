@@ -1,5 +1,5 @@
 import { html, svg, css, nothing, type TemplateResult } from 'lit';
-import type { BodyLayers } from '../types';
+import type { BodyLayers, ChargeVisual } from '../types';
 import { HERO_VIEWBOX } from '../const';
 
 /** Neutral silver — matches a typical source render, reads as "no tint applied". */
@@ -14,8 +14,12 @@ export interface CarViewOpts {
   paint?: string;
   /** Accessible label / alt text. */
   name?: string;
-  /** Charging → adds a subtle energy-glow accent. */
-  charging?: boolean;
+  /**
+   * Glanceable charge state (Story 3.4): `plugged`/`charging` add the charge-port
+   * glow + cable (blue vs green); `charging` additionally pulses the body halo.
+   * Defaults to `parked` (neither). Drives the `.tc-car.<state>` style hook.
+   */
+  charge?: ChargeVisual;
 }
 
 /**
@@ -36,7 +40,7 @@ export interface CarViewOpts {
  * coordinate.
  */
 export function carView(opts: CarViewOpts): TemplateResult {
-  const { body, name = 'Vehicle', charging } = opts;
+  const { body, name = 'Vehicle', charge = 'parked' } = opts;
   const paint = opts.paint ?? DEFAULT_PAINT;
 
   if (body) {
@@ -48,7 +52,7 @@ export function carView(opts: CarViewOpts): TemplateResult {
     // id is scoped to this card's shadow root, so multiple cards never collide.
     return html`
       <svg
-        class="car-img tc-car ${charging ? 'charging' : ''}"
+        class="car-img tc-car ${charge}"
         viewBox="0 0 ${w} ${h}"
         style="--tc-paint:${paint}"
         role="img"
@@ -104,7 +108,7 @@ export function carView(opts: CarViewOpts): TemplateResult {
     />`;
   }
 
-  return genericCar(paint, name, !!charging);
+  return genericCar(paint, name, charge);
 }
 
 /**
@@ -122,7 +126,7 @@ export function carView(opts: CarViewOpts): TemplateResult {
 function genericCar(
   paint: string,
   name: string,
-  charging: boolean,
+  charge: ChargeVisual,
 ): TemplateResult {
   // The hand-tuned artwork is authored in its own intrinsic 1024×480 space; we
   // do NOT redraw those ~80 coordinates. Instead the outer <svg> adopts the
@@ -132,7 +136,7 @@ function genericCar(
   // coordinate space the body layers and Epic 4's overlays anchor to.
   return html`
     <svg
-      class="car-img tc-car tc-ev ${charging ? 'charging' : ''}"
+      class="car-img tc-car tc-ev ${charge}"
       viewBox="0 0 ${HERO_VIEWBOX.width} ${HERO_VIEWBOX.height}"
       style="--tc-paint:${paint}"
       role="img"
@@ -215,6 +219,27 @@ function genericCar(
         </g>
         <circle cx="792" cy="350" r="15" fill="#82888f" />
       </g>
+      ${charge !== 'parked'
+        ? svg`
+      <!-- Charge-port glow + cable (Story 3.4, AC1/AC2). Anchored at the rear
+           quarter just aft of the rear wheel (cx≈792) in the art's coordinate
+           space. Colour is driven by the .tc-car.<state> CSS hook in carStyles
+           (blue plugged / green charging) so the --tc-* fallback gate stays
+           satisfied and the recolor lives in one place. Present for BOTH plugged
+           and charging — charging ⇒ plugged (AC2), green is a superset of blue.
+           NOTE: only the bundled generic EV carries this overlay; the body-layers
+           render mode (different intrinsic geometry) gets it in Story 3.6 — see
+           the carView body branch. -->
+      <g class="tc-port">
+        <circle class="tc-port-glow" cx="900" cy="300" r="34" />
+        <path
+          class="tc-port-cable"
+          d="M 900 308 C 912 360 902 408 872 452"
+          fill="none"
+        />
+        <circle class="tc-port-core" cx="900" cy="300" r="13" />
+      </g>`
+        : nothing}
       </svg>
     </svg>
   `;
@@ -244,8 +269,44 @@ export const carStyles = css`
     }
   }
   @media (prefers-reduced-motion: reduce) {
+    /* AC4 — the loop does not run, but the green must REMAIN (EXPERIENCE.md:174:
+       "the pulsing charge halo becomes a static glow … not removed"). Pin a static
+       green drop-shadow so the information (current is flowing) survives without
+       motion; without this the base filter loses all green. The plugged-idle blue
+       glow is inherently static (no keyframe), so it needs no guard. */
     .tc-car.charging {
       animation: none;
+      filter: drop-shadow(0 0 14px var(--tc-green, #34d399))
+        drop-shadow(0 22px 30px rgba(0, 0, 0, 0.45));
     }
+  }
+
+  /* ── charge-port glow + cable (Story 3.4) ──────────────────────────────
+     Colour by state via the .tc-car.<state> hook (one place keeps the --tc-*
+     fallbacks; the SVG nodes carry no inline hex). Blue = plugged (connected, at
+     rest); green = charging (drawing). Both render the same nodes — charging ⇒
+     plugged (AC2). */
+  .tc-car.plugged .tc-port-glow,
+  .tc-car.plugged .tc-port-core {
+    fill: var(--tc-blue, #38bdf8);
+  }
+  .tc-car.plugged .tc-port-cable {
+    stroke: var(--tc-blue, #38bdf8);
+  }
+  .tc-car.charging .tc-port-glow,
+  .tc-car.charging .tc-port-core {
+    fill: var(--tc-green, #34d399);
+  }
+  .tc-car.charging .tc-port-cable {
+    stroke: var(--tc-green, #34d399);
+  }
+  .tc-port-glow {
+    opacity: 0.4;
+    filter: blur(7px);
+  }
+  .tc-port-cable {
+    stroke-width: 7;
+    stroke-linecap: round;
+    opacity: 0.85;
   }
 `;

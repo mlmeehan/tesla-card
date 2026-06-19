@@ -8,10 +8,12 @@ import { icon, batteryGauge } from '../ui';
 import { carView, carStyles } from './car';
 import { resolvePaint } from '../paint';
 import { readKey, referenceNow } from '../data/freshness';
+import { normalizeChargingState } from '../data/dialect';
 import {
   num,
   rawState,
   isAsleep,
+  isOn,
   isUnavailable,
   fireEvent,
   formatNumber,
@@ -19,7 +21,7 @@ import {
   formatAge,
   unit,
 } from '../helpers';
-import type { PanelId } from '../types';
+import type { ChargeVisual, PanelId } from '../types';
 
 interface HeroStatus {
   dot: string;
@@ -33,8 +35,40 @@ export class TcHero extends TcBase {
     fireEvent<{ panel: PanelId }>(this, 'open-panel', { panel });
   }
 
-  private _isCharging(): boolean {
-    return rawState(this.hass, this.config, 'charging_status') === 'Charging';
+  /**
+   * Classify the glanceable charge state (AC1/AC2) from the DISCRETE charging-state
+   * entity via the Epic-1 canonical normalizer — never signed power, never an inline
+   * `=== 'Charging'` (the debt `data/dialect` was built to retire, dialect.ts:78-81).
+   * The 7-member `ChargingState` union collapses to the 3 visual states the Hero shows:
+   *   charging                                  → 'charging'
+   *   starting | stopped | complete | no_power  → 'plugged'  (connected, not drawing)
+   *   disconnected                              → 'parked'
+   *   unknown                                   → 'parked'   (neutral degrade — never a
+   *                                                false Charging/Plugged; NFR-4)
+   * `Charging ⇒ plugged` (AC2) is structural: the port-glow/cable renders for BOTH
+   * 'plugged' and 'charging' (car.ts), so green is a superset of blue.
+   */
+  private _chargeVisual(): ChargeVisual {
+    const state = normalizeChargingState(
+      rawState(this.hass, this.config, 'charging_status')
+    );
+    switch (state) {
+      case 'charging':
+        return 'charging';
+      case 'starting':
+      case 'stopped':
+      case 'complete':
+      case 'no_power':
+        return 'plugged';
+      case 'disconnected':
+        return 'parked';
+      default:
+        // 'unknown' → neutral Parked. Corroborate ONLY with the physical cable
+        // sensor (real evidence of a connection, never a fabricated charge state):
+        // an `on` cable means plugged-idle even when charging_status hasn't reported
+        // a usable value. charging_status stays the authority (AC1).
+        return isOn(this.hass, this.config, 'charge_cable') ? 'plugged' : 'parked';
+    }
   }
 
   /**
@@ -78,16 +112,28 @@ export class TcHero extends TcBase {
       };
     }
     const shift = rawState(this.hass, this.config, 'shift_state');
-    const charging = this._isCharging();
+    const visual = this._chargeVisual();
     const locked = rawState(this.hass, this.config, 'lock') === 'locked';
+    // Lock sub-line — useful while either parked OR plugged-idle (both stationary).
+    const lockSub = html`<span class="lockline">
+      ${icon(locked ? mdiLock : mdiLockOpenVariant, { size: 14 })}
+      ${locked ? STRINGS.status.locked : STRINGS.status.unlocked}
+    </span>`;
 
-    if (charging) {
+    if (visual === 'charging') {
+      // Live kW is a DIRECT NaN-safe read of `charger_power` (AC3) — never a
+      // flow-balance derivation, so Epic 3 carries no copy of Epic 4's sign
+      // convention. A missing / unavailable / 0 power degrades to time-to-full or
+      // the plain "Charging" label — never "NaN kW" or a fabricated figure.
+      const kw = num(this.hass, this.config, 'charger_power');
       const ttf = num(this.hass, this.config, 'time_to_full_charge');
       const limit = num(this.hass, this.config, 'charge_limit');
       const sub =
-        ttf && ttf > 0
-          ? `${STRINGS.status.charging} · ${formatHoursToHM(ttf)}${limit ? ` to ${formatNumber(limit)}%` : ''}`
-          : STRINGS.status.charging;
+        kw !== undefined && kw > 0
+          ? `${STRINGS.status.charging} · ${formatNumber(kw, 1)} kW`
+          : ttf && ttf > 0
+            ? `${STRINGS.status.charging} · ${formatHoursToHM(ttf)}${limit ? ` to ${formatNumber(limit)}%` : ''}`
+            : STRINGS.status.charging;
       return { dot: 'var(--tc-green, #34d399)', label: STRINGS.status.charging, sub };
     }
     if (shift && !isUnavailable(shift) && shift !== 'P') {
@@ -103,13 +149,21 @@ export class TcHero extends TcBase {
           : STRINGS.status.inMotion;
       return { dot: 'var(--tc-blue, #38bdf8)', label: map[shift] ?? STRINGS.status.driving, sub };
     }
+    if (visual === 'plugged') {
+      // "Plugged-idle" — connected, at rest (ACCENT_SEMANTICS.blue). The blue is
+      // ALWAYS paired with the label (a11y: a colour-blind user reads the state
+      // from the word, never hue alone). Keep the lock sub-line — lock state is
+      // still useful while plugged.
+      return {
+        dot: 'var(--tc-blue, #38bdf8)',
+        label: STRINGS.status.pluggedIdle,
+        sub: lockSub,
+      };
+    }
     return {
       dot: locked ? 'var(--tc-green, #34d399)' : 'var(--tc-amber, #fbbf24)',
       label: STRINGS.status.parked,
-      sub: html`<span class="lockline">
-        ${icon(locked ? mdiLock : mdiLockOpenVariant, { size: 14 })}
-        ${locked ? STRINGS.status.locked : STRINGS.status.unlocked}
-      </span>`,
+      sub: lockSub,
     };
   }
 
@@ -123,7 +177,10 @@ export class TcHero extends TcBase {
 
     const battery = asleep ? undefined : num(this.hass, cfg, 'battery_level');
     const limit = num(this.hass, cfg, 'charge_limit');
-    const charging = !asleep && this._isCharging();
+    // Classify once: asleep suppresses the charge cue (Story 3.3's isAsleep gate
+    // still wins — an asleep car shows no live charge state).
+    const charge: ChargeVisual = asleep ? 'parked' : this._chargeVisual();
+    const charging = charge === 'charging';
     const rangeNum = num(this.hass, cfg, 'battery_range');
     const rangeUnit = unit(this.hass, cfg, 'battery_range') || 'mi';
 
@@ -159,7 +216,7 @@ export class TcHero extends TcBase {
             name,
             body: cfg.body,
             paint: resolvePaint(this.hass, cfg),
-            charging,
+            charge,
           })}
         </div>
 
