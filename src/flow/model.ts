@@ -101,8 +101,13 @@ export interface FlowInput {
 /** The implicit electrical junction every energy node attaches to (role-less). */
 export const BUS_NODE_ID = 'bus';
 
-/** Magnitude (kW) below which a live flow is treated as idle (`direction:'none'`). */
-const IDLE_KW = 0.05;
+/**
+ * Magnitude (kW) below which a live flow is treated as idle (`direction:'none'`).
+ * Exported so the Story-4.2 binding reuses THIS one threshold as its magnitude
+ * deadband (provenance→`quiescent`) instead of forking a 4th `0.05` literal — the
+ * meaning is identical ("below this, there is no flow to draw"). [Story 4.2 AC5]
+ */
+export const IDLE_KW = 0.05;
 
 /** Resolve an edge's {@link Direction} from its signed kW + provenance. */
 function senseOf(kW: number, provenance: Provenance): Direction {

@@ -7,11 +7,11 @@
 // Environment 'node' (no DOM); hermetic (committed fixtures, zero network).
 import { describe, expect, test } from 'vitest';
 import type { HomeAssistant, TeslaCardConfig } from '../types';
-import type { EnergyRole } from '../data/registry';
 import { resolveEnergyEntities, numById, type EnergyEntities } from '../data/energy';
 import { adapterFor } from '../data/dialect';
 import { BUS_ORIENTATION } from '../data/registry';
-import { buildFlowModel, BUS_NODE_ID, type FlowInput, type Provenance, type FlowModel } from './model';
+import { buildFlowModel, BUS_NODE_ID, type FlowInput, type FlowModel } from './model';
+import { flowInputsFrom, POWER_KEY, ENERGY_ROLES } from './binding';
 import * as balanceModule from './balance';
 import { computeBalance } from './balance';
 import awake from '../fixtures/model-y-awake.json';
@@ -25,36 +25,16 @@ function cfg(over: Partial<TeslaCardConfig> = {}): TeslaCardConfig {
   return { type: 'custom:tesla-card', ...over };
 }
 
-/** The representative signed-power key per energy role. */
-const POWER_KEY: Record<EnergyRole, keyof EnergyEntities> = {
-  solar: 'solar_power',
-  powerwall: 'battery_power',
-  grid: 'grid_power',
-  home: 'load_power',
-  wall_connector: 'wc_power',
-};
-const ENERGY_ROLES = Object.keys(POWER_KEY) as EnergyRole[];
-
-/**
- * Test-only stand-in for Story 4.2's binding layer: resolve each role's power
- * entity, read it (NaN-safe), and normalize its raw sign to canonical at the
- * `data/dialect` boundary BEFORE it reaches the model. This is exactly the seam
- * 4.1 builds (resolve→read→normalize→model); the 4.2 binding (auto-detect
- * provenance, freshness→quiescent coupling) is out of scope, so provenance is
- * supplied here.
- */
-function inputsFrom(hass: HomeAssistant, provenance: Provenance): FlowInput[] {
-  const entities: EnergyEntities = resolveEnergyEntities(hass, cfg());
-  const adapter = adapterFor(hass, cfg());
-  return ENERGY_ROLES.map((role) => {
-    const raw = numById(hass, entities[POWER_KEY[role]]);
-    return { role, kW: adapter.normalizePower(role, raw).value, provenance };
-  });
-}
+// The balance tests bind their inputs through the PRODUCTION binding (Story 4.2,
+// `flowInputsFrom`) — there is no test-only stub hand-supplying provenance, and no
+// second divergent pipeline. The asleep fixture back-dates every stamp 50 min, so
+// we inject its `reference_now` for hermetic staleness (else the reader would call
+// the last-known reads fresh); the binding then DERIVES `quiescent` from freshness.
+const ASLEEP_NOW = Date.parse(asleep.provenance.reference_now as string);
 
 describe('computeBalance — conservation (Story 4.1, AC4)', () => {
   test('the awake fixture conserves: per-node injections sum to ~0 (Kirchhoff at the bus)', () => {
-    const model = buildFlowModel(inputsFrom(makeHass(awake.states), 'measured'));
+    const model = buildFlowModel(flowInputsFrom(makeHass(awake.states), cfg()));
     const b = computeBalance(model);
     expect(b.residual).toBeCloseTo(0, 6);
     expect(b.balanced).toBe(true);
@@ -98,7 +78,7 @@ describe('computeBalance — sign-convention correctness (Story 4.1, AC4)', () =
 
 describe('computeBalance — degenerate states (Story 4.1, AC4)', () => {
   test('all-quiescent (asleep) still conserves — calm-but-present, never blank', () => {
-    const model = buildFlowModel(inputsFrom(makeHass(asleep.states), 'quiescent'));
+    const model = buildFlowModel(flowInputsFrom(makeHass(asleep.states), cfg(), { now: ASLEEP_NOW }));
     const b = computeBalance(model);
     expect(b.residual).toBeCloseTo(0, 6);
     expect(b.balanced).toBe(true);
@@ -109,7 +89,7 @@ describe('computeBalance — degenerate states (Story 4.1, AC4)', () => {
   });
 
   test('absent nodes (all-unresolved install) → empty graph balances vacuously', () => {
-    const inputs = inputsFrom(makeHass(unresolved.states), 'measured');
+    const inputs = flowInputsFrom(makeHass(unresolved.states), cfg());
     const model = buildFlowModel(inputs);
     expect(model.nodes.every((n) => !n.present)).toBe(true); // all absent
     expect(model.edges).toHaveLength(0);
@@ -195,7 +175,7 @@ describe('computeBalance — sign-convention holds on the fixture CORPUS (Story 
     const hass = makeHass(awake.states);
     const entities: EnergyEntities = resolveEnergyEntities(hass, cfg());
     const adapter = adapterFor(hass, cfg());
-    const model = buildFlowModel(inputsFrom(hass, 'measured'));
+    const model = buildFlowModel(flowInputsFrom(hass, cfg()));
     const b = computeBalance(model);
     for (const node of model.nodes) {
       if (!node.present) continue;
