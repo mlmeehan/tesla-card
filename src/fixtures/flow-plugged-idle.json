@@ -1,0 +1,46 @@
+{
+  "provenance": {
+    "captured_at": "2026-06-19T12:00:00Z",
+    "reference_now": "2026-06-19T12:00:00Z",
+    "source_integration": "tesla_fleet",
+    "model": "Energy Site",
+    "scenario": "plugged-idle",
+    "ha_version": "2026.6",
+    "synthesized": true,
+    "capture_method": "SYNTHESIZED for Story 4.5 (not a live capture): an energy-only fixture (the FlowModel consumes only the five *_power sensors + optional grid_status). RAW tesla_fleet/powerwall signs (battery -=charging, grid +=import, others >=0); the dialect normalizes to canonical before the model. Every power sensor stamped at reference_now so the freshness reader reads it fresh (measured) when now=reference_now.",
+    "entity_count": 3,
+    "notes": "State 5b of 7 (the contrast partner of flow-charging.json): PLUGGED-IDLE. The SAME wall_connector node is PRESENT but quiescent (wc 0.0 < deadband -> direction:'none', no motion) \u2014 plugged in, not charging. grid forward (1.0), home reverse (1.0). solar/powerwall absent. The ONLY visual difference from charging is the wc edge's active/direction. Conserves: +1 (grid) -1 (home) +0 (wc) = 0."
+  },
+  "states": {
+    "sensor.grid_power": {
+      "entity_id": "sensor.grid_power",
+      "state": "1.0",
+      "attributes": {
+        "unit_of_measurement": "kW",
+        "device_class": "power"
+      },
+      "last_changed": "2026-06-19T12:00:00Z",
+      "last_updated": "2026-06-19T12:00:00Z"
+    },
+    "sensor.load_power": {
+      "entity_id": "sensor.load_power",
+      "state": "1.0",
+      "attributes": {
+        "unit_of_measurement": "kW",
+        "device_class": "power"
+      },
+      "last_changed": "2026-06-19T12:00:00Z",
+      "last_updated": "2026-06-19T12:00:00Z"
+    },
+    "sensor.tesla_wall_connector_total_power": {
+      "entity_id": "sensor.tesla_wall_connector_total_power",
+      "state": "0.0",
+      "attributes": {
+        "unit_of_measurement": "kW",
+        "device_class": "power"
+      },
+      "last_changed": "2026-06-19T12:00:00Z",
+      "last_updated": "2026-06-19T12:00:00Z"
+    }
+  }
+}

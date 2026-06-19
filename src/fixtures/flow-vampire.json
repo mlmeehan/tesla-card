@@ -1,0 +1,46 @@
+{
+  "provenance": {
+    "captured_at": "2026-06-19T12:00:00Z",
+    "reference_now": "2026-06-19T12:00:00Z",
+    "source_integration": "tesla_fleet",
+    "model": "Energy Site",
+    "scenario": "vampire",
+    "ha_version": "2026.6",
+    "synthesized": true,
+    "capture_method": "SYNTHESIZED for Story 4.5 (not a live capture): an energy-only fixture (the FlowModel consumes only the five *_power sensors + optional grid_status). RAW tesla_fleet/powerwall signs (battery -=charging, grid +=import, others >=0); the dialect normalizes to canonical before the model. Every power sensor stamped at reference_now so the freshness reader reads it fresh (measured) when now=reference_now.",
+    "entity_count": 3,
+    "notes": "State 7 of 7: VAMPIRE DRAIN. A small-but-real parasitic discharge ABOVE the 0.05 deadband (raw battery +0.3 discharging -> canonical -0.3 -> edge +0.3 -> forward, MEASURED/animated) feeding home (reverse, 0.3). This is what separates 'quietly draining' from state 1 'all calm/asleep' (all edges none). grid ~0 -> quiescent; solar/wall_connector absent. Conserves: +0.3 (powerwall) -0.3 (home) +0 (grid) = 0."
+  },
+  "states": {
+    "sensor.battery_power": {
+      "entity_id": "sensor.battery_power",
+      "state": "0.3",
+      "attributes": {
+        "unit_of_measurement": "kW",
+        "device_class": "power"
+      },
+      "last_changed": "2026-06-19T12:00:00Z",
+      "last_updated": "2026-06-19T12:00:00Z"
+    },
+    "sensor.load_power": {
+      "entity_id": "sensor.load_power",
+      "state": "0.3",
+      "attributes": {
+        "unit_of_measurement": "kW",
+        "device_class": "power"
+      },
+      "last_changed": "2026-06-19T12:00:00Z",
+      "last_updated": "2026-06-19T12:00:00Z"
+    },
+    "sensor.grid_power": {
+      "entity_id": "sensor.grid_power",
+      "state": "0.0",
+      "attributes": {
+        "unit_of_measurement": "kW",
+        "device_class": "power"
+      },
+      "last_changed": "2026-06-19T12:00:00Z",
+      "last_updated": "2026-06-19T12:00:00Z"
+    }
+  }
+}

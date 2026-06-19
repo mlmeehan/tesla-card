@@ -1,0 +1,53 @@
+{
+  "provenance": {
+    "captured_at": "2026-06-19T12:00:00Z",
+    "reference_now": "2026-06-19T12:00:00Z",
+    "source_integration": "tesla_fleet",
+    "model": "Energy Site",
+    "scenario": "islanding",
+    "ha_version": "2026.6",
+    "synthesized": true,
+    "capture_method": "SYNTHESIZED for Story 4.5 (not a live capture): an energy-only fixture (the FlowModel consumes only the five *_power sensors + optional grid_status). RAW tesla_fleet/powerwall signs (battery -=charging, grid +=import, others >=0); the dialect normalizes to canonical before the model. Every power sensor stamped at reference_now so the freshness reader reads it fresh (measured) when now=reference_now.",
+    "entity_count": 4,
+    "notes": "State 6 of 7: STORM-WATCH / ISLANDING. Grid tap dead \u2014 grid_power is 'unavailable' (numById -> undefined -> present:false, NO edge); grid_status:'off_grid' is included for honesty but is NOT a flow input (the model is power-only). The Powerwall islands (raw battery +2.0 discharging -> canonical -2 -> edge +2 -> forward, injects) and home draws (reverse, 2.0), so the bus reroutes Powerwall->Home. solar/wall_connector absent. Conserves: +2 (powerwall) -2 (home) = 0."
+  },
+  "states": {
+    "sensor.grid_power": {
+      "entity_id": "sensor.grid_power",
+      "state": "unavailable",
+      "attributes": {
+        "unit_of_measurement": "kW",
+        "device_class": "power"
+      },
+      "last_changed": "2026-06-19T12:00:00Z",
+      "last_updated": "2026-06-19T12:00:00Z"
+    },
+    "sensor.grid_status": {
+      "entity_id": "sensor.grid_status",
+      "state": "off_grid",
+      "attributes": {},
+      "last_changed": "2026-06-19T12:00:00Z",
+      "last_updated": "2026-06-19T12:00:00Z"
+    },
+    "sensor.battery_power": {
+      "entity_id": "sensor.battery_power",
+      "state": "2.0",
+      "attributes": {
+        "unit_of_measurement": "kW",
+        "device_class": "power"
+      },
+      "last_changed": "2026-06-19T12:00:00Z",
+      "last_updated": "2026-06-19T12:00:00Z"
+    },
+    "sensor.load_power": {
+      "entity_id": "sensor.load_power",
+      "state": "2.0",
+      "attributes": {
+        "unit_of_measurement": "kW",
+        "device_class": "power"
+      },
+      "last_changed": "2026-06-19T12:00:00Z",
+      "last_updated": "2026-06-19T12:00:00Z"
+    }
+  }
+}

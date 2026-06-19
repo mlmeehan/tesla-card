@@ -1,0 +1,46 @@
+{
+  "provenance": {
+    "captured_at": "2026-06-19T12:00:00Z",
+    "reference_now": "2026-06-19T12:00:00Z",
+    "source_integration": "tesla_fleet",
+    "model": "Energy Site",
+    "scenario": "grid-export",
+    "ha_version": "2026.6",
+    "synthesized": true,
+    "capture_method": "SYNTHESIZED for Story 4.5 (not a live capture): an energy-only fixture (the FlowModel consumes only the five *_power sensors + optional grid_status). RAW tesla_fleet/powerwall signs (battery -=charging, grid +=import, others >=0); the dialect normalizes to canonical before the model. Every power sensor stamped at reference_now so the freshness reader reads it fresh (measured) when now=reference_now.",
+    "entity_count": 3,
+    "notes": "State 3 of 7: grid EXPORT (solar surplus pushed to grid). solar forward (5.0), grid bus->grid (reverse, 3.0), home reverse (2.0). powerwall/wall_connector absent. Conserves: +5 (solar) -3 (grid export) -2 (home) = 0."
+  },
+  "states": {
+    "sensor.solar_power": {
+      "entity_id": "sensor.solar_power",
+      "state": "5.0",
+      "attributes": {
+        "unit_of_measurement": "kW",
+        "device_class": "power"
+      },
+      "last_changed": "2026-06-19T12:00:00Z",
+      "last_updated": "2026-06-19T12:00:00Z"
+    },
+    "sensor.grid_power": {
+      "entity_id": "sensor.grid_power",
+      "state": "-3.0",
+      "attributes": {
+        "unit_of_measurement": "kW",
+        "device_class": "power"
+      },
+      "last_changed": "2026-06-19T12:00:00Z",
+      "last_updated": "2026-06-19T12:00:00Z"
+    },
+    "sensor.load_power": {
+      "entity_id": "sensor.load_power",
+      "state": "2.0",
+      "attributes": {
+        "unit_of_measurement": "kW",
+        "device_class": "power"
+      },
+      "last_changed": "2026-06-19T12:00:00Z",
+      "last_updated": "2026-06-19T12:00:00Z"
+    }
+  }
+}
