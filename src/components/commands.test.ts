@@ -18,6 +18,7 @@ import './commands';
 import { TcCommands } from './commands';
 import { STRINGS } from '../strings';
 import { DEFAULT_ENTITIES } from '../const';
+import { WAKE_COOLDOWN_DEFAULT_MS } from '../data/wake';
 import type { HassEntity, HomeAssistant, TeslaCardConfig } from '../types';
 
 type CmdEl = HTMLElement & {
@@ -96,6 +97,7 @@ const shadowText = (el: CmdEl): string => el.shadowRoot!.textContent ?? '';
 
 afterEach(() => {
   document.body.innerHTML = '';
+  vi.useRealTimers();
 });
 
 // ───────────────────────────────────────────────────────────────────────────
@@ -115,7 +117,9 @@ describe('AC1 — six fire-and-forget command buttons', () => {
   });
 
   test('clicking an enabled command fires button.press against the RESOLVED entity id', async () => {
-    const hass = makeHass(makeStates());
+    // An asleep car so the wake button is actionable (an awake/online car gates
+    // wake non-actionable — Story 5.4; covered in the wake-gate suite below).
+    const hass = makeHass(makeStates({ awake: false }));
     const el = await mount(hass);
     cmd(el, IDX.wake).click();
     expect(hass.callService).toHaveBeenCalledWith('button', 'press', {
@@ -159,7 +163,9 @@ describe('AC1 — six fire-and-forget command buttons', () => {
 
 describe('AC1/AC3 — never-pressed buttons stay actionable; only missing/unavailable degrade', () => {
   test('with all commands timestamped (available), every command is ENABLED', async () => {
-    const el = await mount(makeHass(makeStates()));
+    // Asleep car: the availability predicate alone governs (the wake online-gate
+    // does not apply when the car is asleep — Story 5.4).
+    const el = await mount(makeHass(makeStates({ awake: false })));
     for (const b of cmds(el)) expect(b.disabled).toBe(false);
   });
 
@@ -167,7 +173,8 @@ describe('AC1/AC3 — never-pressed buttons stay actionable; only missing/unavai
     // The regression that guards the predicate fix: the OLD isUnavailable-based
     // code treated 'unknown' as unavailable and wrongly disabled this — which on a
     // fresh install / post-restart would disable EVERY command, including wake.
-    const hass = makeHass(makeStates({ cmd: { wake: 'unknown' } }));
+    // Asleep so the wake online-gate is not what's under test here (the predicate is).
+    const hass = makeHass(makeStates({ awake: false, cmd: { wake: 'unknown' } }));
     const el = await mount(hass);
     expect(cmd(el, IDX.wake).disabled).toBe(false);
     cmd(el, IDX.wake).click();
@@ -224,5 +231,160 @@ describe('AC2 — asleep wake-affordance reading (reuses STRINGS.hero.tapToWake)
 
   test('rendering the asleep state does not throw', async () => {
     await expect(mount(makeHass(makeStates({ awake: false })))).resolves.toBeTruthy();
+  });
+});
+
+// ───────────────────────────────────────────────────────────────────────────
+// AC1/AC5 (Story 5.4) — the observed-state gate: never wake an online/waking car
+// ───────────────────────────────────────────────────────────────────────────
+
+describe('AC1/AC5 — wake is non-actionable under observed online/waking', () => {
+  test('online (awake) → wake button is DISABLED and a click does NOT fire button.press', async () => {
+    const hass = makeHass(makeStates({ awake: true }));
+    const el = await mount(hass);
+    expect(cmd(el, IDX.wake).disabled).toBe(true);
+    cmd(el, IDX.wake).click(); // disabled → suppressed
+    await el.updateComplete;
+    expect(hass.callService).not.toHaveBeenCalledWith('button', 'press', { entity_id: ID.wake });
+  });
+
+  test('online → the wake accessible name is state-bearing ("Awake"), never a false "Wake"', async () => {
+    const el = await mount(makeHass(makeStates({ awake: true })));
+    expect(cmd(el, IDX.wake).getAttribute('aria-label')).toBe(STRINGS.wake.online);
+  });
+
+  test('the other five commands stay actionable while online (only wake is gated)', async () => {
+    const hass = makeHass(makeStates({ awake: true }));
+    const el = await mount(hass);
+    expect(cmd(el, IDX.honk).disabled).toBe(false);
+    cmd(el, IDX.honk).click();
+    expect(hass.callService).toHaveBeenCalledWith('button', 'press', { entity_id: ID.honk });
+  });
+});
+
+// ───────────────────────────────────────────────────────────────────────────
+// AC2/AC3 (Story 5.4) — per-instance cooldown + the bundled sparse-data triad
+// ───────────────────────────────────────────────────────────────────────────
+
+describe('AC2/AC3 — cooldown rate-limits repeat taps + the co-located triad', () => {
+  test('asleep → a wake fires once, stamps the last-wake, and arms the cooldown (wake now resting)', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-06-14T10:00:00Z'));
+    const hass = makeHass(makeStates({ awake: false }));
+    const el = await mount(hass);
+    expect(cmd(el, IDX.wake).disabled).toBe(false);
+    cmd(el, IDX.wake).click();
+    expect(hass.callService).toHaveBeenCalledWith('button', 'press', { entity_id: ID.wake });
+    expect(hass.callService).toHaveBeenCalledTimes(1);
+    await el.updateComplete;
+    // In flight (waking) → non-actionable, name carries the countdown.
+    expect(cmd(el, IDX.wake).disabled).toBe(true);
+    expect(cmd(el, IDX.wake).getAttribute('aria-label')).toContain(STRINGS.wake.availableIn);
+  });
+
+  test('a second immediate tap after a wake is rate-limited — button.press fires only once', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-06-14T10:00:00Z'));
+    const hass = makeHass(makeStates({ awake: false }));
+    const el = await mount(hass);
+    cmd(el, IDX.wake).click(); // fires
+    await el.updateComplete;
+    cmd(el, IDX.wake).click(); // waking → disabled → suppressed
+    await el.updateComplete;
+    expect(hass.callService).toHaveBeenCalledTimes(1);
+  });
+
+  test('after the cooldown elapses, an asleep car is wakeable again (window expires, no lock-out)', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-06-14T10:00:00Z'));
+    const hass = makeHass(makeStates({ awake: false }));
+    const el = await mount(hass);
+    cmd(el, IDX.wake).click();
+    await el.updateComplete;
+    expect(cmd(el, IDX.wake).disabled).toBe(true);
+    vi.advanceTimersByTime(WAKE_COOLDOWN_DEFAULT_MS + 1); // one-shot expiry re-render
+    await el.updateComplete;
+    expect(cmd(el, IDX.wake).disabled).toBe(false);
+  });
+
+  test('the sparse-data triad renders together: wake control + cooldown reason/last-wake + last-updated', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-06-14T10:00:00Z'));
+    const hass = makeHass(makeStates({ awake: false }));
+    const el = await mount(hass);
+    cmd(el, IDX.wake).click();
+    await el.updateComplete;
+    const text = shadowText(el);
+    // (a) the wake control exists; (b) cooldown reason + (b') last-wake time;
+    // (c) last-updated — all co-located on the one surface.
+    expect(cmd(el, IDX.wake)).toBeTruthy();
+    expect(text).toContain('Available in'); // (b) the resting reason / countdown
+    expect(text).toContain(STRINGS.wake.wokenJustNow); // (b') last-wake time
+    expect(text).toContain(STRINGS.hero.justNow); // (c) last-updated (battery stamp fresh)
+  });
+
+  test('config.wake_cooldown (minutes) extends the resting window — a custom value rate-limits longer', async () => {
+    // The new wake_cooldown config option (Task 3) converts minutes → ms; without a
+    // test the override path (_cooldownMs) could silently regress to the default.
+    // 2-minute override: after the DEFAULT (60s) window the wake is STILL resting.
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-06-14T10:00:00Z'));
+    const hass = makeHass(makeStates({ awake: false }));
+    const el = await mount(hass, { wake_cooldown: 2 });
+    cmd(el, IDX.wake).click();
+    await el.updateComplete;
+    expect(cmd(el, IDX.wake).disabled).toBe(true); // cooling
+    // Past the default 60s but inside the 2-min override → still resting (proves the override took).
+    vi.advanceTimersByTime(WAKE_COOLDOWN_DEFAULT_MS + 1_000);
+    el.hass = makeHass(makeStates({ awake: false })); // fresh hass → re-render at the new clock
+    await el.updateComplete;
+    expect(cmd(el, IDX.wake).disabled).toBe(true);
+    // Past the full 2-min override → wakeable again (no lock-out).
+    vi.advanceTimersByTime(2 * 60_000);
+    await el.updateComplete;
+    expect(cmd(el, IDX.wake).disabled).toBe(false);
+  });
+
+  test('the last-wake time ages honestly — "Woken Nm ago" once the press is no longer just-now', async () => {
+    // Only the < 1 min "Woken just now" branch was covered; the aged branch (wokenPrefix
+    // + formatAge + hero.ago) is the actual last-wake value in the triad after time passes.
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-06-14T10:00:00Z'));
+    const hass = makeHass(makeStates({ awake: false }));
+    const el = await mount(hass, { wake_cooldown: 10 }); // keep it resting so the triad stays shown
+    cmd(el, IDX.wake).click();
+    await el.updateComplete;
+    vi.advanceTimersByTime(2 * 60_000 + 1_000); // ~2 min since the wake
+    el.hass = makeHass(makeStates({ awake: false })); // fresh hass → re-render recomputes the age
+    await el.updateComplete;
+    // "Woken 2m ago" — composed from wokenPrefix + formatAge('2m') + hero.ago.
+    expect(shadowText(el)).toContain(`${STRINGS.wake.wokenPrefix} 2m ${STRINGS.hero.ago}`);
+    expect(shadowText(el)).not.toContain(STRINGS.wake.wokenJustNow);
+  });
+});
+
+// ───────────────────────────────────────────────────────────────────────────
+// AC4 (Story 5.4) — the no-auto-wake invariant: the card NEVER initiates a wake
+// on its own. Wake is always an explicit user tap (UX-DR23 hard ban; the
+// behavioral peer of a11y.test.ts's setInterval/no-polling scan).
+// ───────────────────────────────────────────────────────────────────────────
+
+describe('AC4 — no auto-wake: rendering never issues button.press without a user tap', () => {
+  test('mounting an asleep car does NOT fire a wake — no button.press before any click', async () => {
+    const hass = makeHass(makeStates({ awake: false }));
+    const el = await mount(hass);
+    // The wake surface is actionable, but the card waits for the explicit tap.
+    expect(cmd(el, IDX.wake).disabled).toBe(false);
+    expect(hass.callService).not.toHaveBeenCalled();
+  });
+
+  test('a hass tick (re-render) on an asleep car still never auto-wakes', async () => {
+    const hass = makeHass(makeStates({ awake: false }));
+    const el = await mount(hass);
+    // A fresh hass reference (a routine HA state push) re-renders the affordance…
+    el.hass = makeHass(makeStates({ awake: false }));
+    await el.updateComplete;
+    // …and STILL no wake is issued on its own (no "wake on load", no retry-behind-the-back).
+    expect((el.hass!.callService as ReturnType<typeof vi.fn>)).not.toHaveBeenCalled();
   });
 });

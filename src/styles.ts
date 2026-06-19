@@ -89,7 +89,7 @@ export const FRESHNESS_STATES = {
     treatment: 'wake affordance reflects pending IMMEDIATELY; surfaces the wake-cooldown with the last-wake time',
     recipe: null,
     copy: 'shows WHY the button is resting and when it is available again',
-    control: 'pending-immediately + where last-wake time renders; the cooldown LOGIC (interval, observed-state gate) is AR-9 / Story 5.4 — out of scope here',
+    control: 'pending-immediately + where last-wake time renders; the cooldown LOGIC (observed-state gate + per-instance cooldown) is realized in Story 5.4 / AR-9 (data/wake.ts + tc-commands) and reuses .tc-stale-copy → --tc-text-dim (no new recipe — recipe stays null)',
     staleness: null,
     gated: false,
   },

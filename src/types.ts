@@ -162,6 +162,14 @@ export interface TeslaCardConfig {
   hide_quick_actions?: boolean;
   /** Hide the command buttons (wake/honk/flash/…) under the panels. */
   hide_commands?: boolean;
+  /**
+   * Per-instance wake cooldown in MINUTES (Story 5.4 / AR-9). After a wake, repeat
+   * taps within this window are rate-limited (treated as in-flight) and the
+   * affordance surfaces "available in Nm" — it never permanently locks the user
+   * out (it expires) and never blocks a wake of a car that has settled back to
+   * asleep. Defaults to a short built-in window (1 min) when unset/≤0.
+   */
+  wake_cooldown?: number;
 }
 
 /** Detail emitted when the hero / quick actions request a panel switch. */

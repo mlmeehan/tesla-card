@@ -82,6 +82,18 @@ export const STRINGS = {
     boombox: 'Boombox',
   },
 
+  // Wake-citizenship affordance copy (Story 5.4 / AR-9 / UX-DR23). Calm + honest
+  // (UX-DR18 — never "Offline"): the wake rests, it does not fail. `availableIn`
+  // composes the state-bearing button name "Wake — available in 2m" and the
+  // resting-reason line "Available in 2m" (capitalized at the call site). `woken…`
+  // is the last-wake time co-located in the sparse-data triad.
+  wake: {
+    online: 'Awake', // car already online → wake non-actionable, no false state
+    availableIn: 'available in', // composed: `${wake} — available in ${n}` / `Available in ${n}`
+    wokenPrefix: 'Woken', // composed: `Woken ${age} ago` (reuses hero.ago)
+    wokenJustNow: 'Woken just now', // last-wake age < 1 min
+  },
+
   quickActions: {
     lock: 'Lock',
     climate: 'Climate',

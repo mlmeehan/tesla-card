@@ -4,13 +4,12 @@ import { mdiLock, mdiLockOpenVariant, mdiFlash } from '@mdi/js';
 import { TcBase } from '../base';
 import { sharedStyles } from '../styles';
 import { STRINGS } from '../strings';
-import { icon, batteryGauge } from '../ui';
+import { icon, batteryGauge, ageHint } from '../ui';
 import { carView, carStyles, CLOSED_APERTURES } from './car';
 import { bindFlowModel } from '../flow/binding';
 import { HeroSvgRenderer, flowOverlayStyles } from '../flow/hero-svg';
 import { resolvePaint } from '../paint';
 import { HERO_VIEWBOX } from '../const';
-import { readKey, referenceNow } from '../data/freshness';
 import { normalizeChargingState } from '../data/dialect';
 import {
   num,
@@ -21,7 +20,6 @@ import {
   fireEvent,
   formatNumber,
   formatHoursToHM,
-  formatAge,
   unit,
 } from '../helpers';
 import type { ApertureState, ChargeVisual, PanelId } from '../types';
@@ -125,17 +123,10 @@ export class TcHero extends TcBase {
    * never "updated NaN"/a fabricated time).
    */
   private _ageHint(): string | undefined {
-    // Compute HA's server time base ONCE and reuse it for both the freshness read
-    // (which classifies staleness against it internally) and the displayed age —
-    // one O(n) scan of hass.states per render, not two, and a single consistent
-    // reference for both derivations.
-    const now = referenceNow(this.hass);
-    const r = readKey(this.hass, this.config, 'battery_level', { now });
-    if (!r.lastUpdated) return undefined;
-    const age = formatAge(now - Date.parse(r.lastUpdated));
-    return age === ''
-      ? STRINGS.hero.justNow
-      : `${STRINGS.hero.updatedPrefix} ${age} ${STRINGS.hero.ago}`;
+    // The single shared last-updated source (ui.ts `ageHint`) — one honest
+    // derivation reused by the Hero status sub-line and the commands wake
+    // affordance (Story 5.4), so they can never disagree on "updated 47m ago".
+    return ageHint(this.hass, this.config);
   }
 
   private _status(asleep: boolean, hint: string | undefined): HeroStatus {

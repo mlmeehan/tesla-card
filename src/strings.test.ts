@@ -102,6 +102,19 @@ describe('centralized strings — voice contract (Story 2.5)', () => {
     expect(STRINGS.hero.tapToWake).toBe('Tap a command to wake');
   });
 
+  test('Story 5.4: wake-citizenship copy is calm + honest (never overstates freshness)', () => {
+    // The resting wake is honest (UX-DR18): it shows "Awake"/"available in Nm"/
+    // last-wake time, never an alarming "Offline"/"No connection".
+    expect(STRINGS.wake.online).toBe('Awake');
+    expect(STRINGS.wake.availableIn).toBe('available in');
+    expect(STRINGS.wake.wokenPrefix).toBe('Woken');
+    expect(STRINGS.wake.wokenJustNow).toBe('Woken just now');
+    // Composes the AC's state-bearing button name verbatim.
+    expect(`${STRINGS.commands.wake} — ${STRINGS.wake.availableIn} 2m`).toBe(
+      'Wake — available in 2m'
+    );
+  });
+
   test('migration backstop: copy-bearing components import from ./strings', () => {
     const consumers = [
       'tesla-card.ts',
