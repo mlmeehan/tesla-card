@@ -115,6 +115,13 @@ export const STRINGS = {
     timeToFull: 'Time to full',
     voltage: 'Voltage',
     chargePort: 'Charge port',
+    // Range-vs-% display toggle (Story 5.5 AC3). The "%" option shows the glyph
+    // (glyph glue, not a string); `percent` is its SR-only accessible name.
+    display: 'Display units', // segmented-toggle group aria-label
+    percent: 'Percent', // % option SR name (visible glyph is "%")
+    range: 'Range', // range option label (visible + SR)
+    // Charge-target line (Story 5.5 AC3): the honest "Target N%" the car stops at.
+    target: 'Target',
   },
 
   closures: {

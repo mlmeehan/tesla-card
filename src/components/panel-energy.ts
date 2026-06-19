@@ -207,7 +207,9 @@ export class TcPanelEnergy extends TcBase {
   private _tiles(): TemplateResult | typeof nothing {
     const hass = this.hass;
     const e = this.entities ?? {};
-    const tiles: TemplateResult[] = [];
+    // Story 5.5: statTile may now return `nothing` (hide-when-missing); these
+    // call-sites only push present-value tiles, but the element type widens.
+    const tiles: Array<TemplateResult | typeof nothing> = [];
 
     const reserve = numById(hass, e.backup_reserve);
     if (reserve !== undefined) {

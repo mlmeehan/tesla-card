@@ -1,5 +1,5 @@
 import { html, css, nothing, type TemplateResult } from 'lit';
-import { customElement } from 'lit/decorators.js';
+import { customElement, state } from 'lit/decorators.js';
 import {
   mdiLightningBolt,
   mdiSpeedometer,
@@ -14,6 +14,7 @@ import { TcBase } from '../base';
 import { sharedStyles } from '../styles';
 import { STRINGS } from '../strings';
 import { icon, batteryGauge, statTile } from '../ui';
+import { normalizeChargingState } from '../data/dialect';
 import './slider';
 import {
   num,
@@ -33,6 +34,14 @@ import type { EntityKey } from '../const';
 
 @customElement('tc-panel-charging')
 export class TcPanelCharging extends TcBase {
+  /**
+   * Battery-headline display mode (Story 5.5 AC3). Presentation-only — the AC
+   * requires the toggle to render + switch live; no config persistence is in
+   * scope. 'percent' shows `battery_level` %, 'range' shows `battery_range` + its
+   * unit. Defaults to percent (the prototype's only prior readout).
+   */
+  @state() private _display: 'percent' | 'range' = 'percent';
+
   private _setNumber(key: EntityKey, value: number): void {
     if (!this.hass) return;
     setNumber(this.hass, entityId(this.config, key), value);
@@ -43,10 +52,27 @@ export class TcPanelCharging extends TcBase {
     toggleEntity(this.hass, entityId(this.config, 'charge_switch'));
   }
 
-  private _timeToFull(): string {
+  private _timeToFull(): string | undefined {
+    // Missing/unavailable entity → hide the tile (AC1). A PRESENT but ≤0 reading
+    // (not charging / already full) is indeterminate, not absent → "—" (reserve
+    // the dash for present-but-indeterminate, per the AC1 predicate split).
+    if (isUnavailable(rawState(this.hass, this.config, 'time_to_full_charge'))) {
+      return undefined;
+    }
     const h = num(this.hass, this.config, 'time_to_full_charge');
     if (h === undefined || h <= 0) return '—';
     return formatHoursToHM(h);
+  }
+
+  /**
+   * A stat tile's value, or `undefined` when the entity is absent so the tile
+   * HIDES (AC1). The predicate mirrors `display`'s "—" trigger (`isUnavailable`):
+   * an asleep/unavailable sensor shows FEWER tiles, not a wall of dashes. A
+   * present-but-non-numeric value still renders (display() prettyTexts it).
+   */
+  private _tileVal(key: EntityKey, opts?: { decimals?: number }): string | undefined {
+    if (isUnavailable(rawState(this.hass, this.config, key))) return undefined;
+    return display(this.hass, this.config, key, opts);
   }
 
   protected override render(): TemplateResult {
@@ -54,13 +80,21 @@ export class TcPanelCharging extends TcBase {
     const battery = num(this.hass, cfg, 'battery_level');
     const limit = num(this.hass, cfg, 'charge_limit');
     const status = rawState(this.hass, cfg, 'charging_status');
-    const charging = status === 'Charging';
+    // Canonical charge-state classifier (AC4) — the one `data/dialect` authority,
+    // identical to the Hero's `_chargeVisual()`. Replaces the retired inline
+    // `status === 'Charging'` (Story 3.4 debt). The live-green cue is `charging`
+    // ONLY — 'starting'/'complete'/etc. read as connected-but-not-drawing, so they
+    // are not the live cue (mirrors the Hero treating them as 'plugged'). NaN-safe:
+    // the normalizer returns 'unknown' for absent/'unavailable'.
+    const charging = normalizeChargingState(status) === 'charging';
     const rangeNum = num(this.hass, cfg, 'battery_range');
     const rangeUnit = attr(this.hass, cfg, 'battery_range', 'unit_of_measurement') || 'mi';
+    const showRange = this._display === 'range';
 
-    const limitMin = num(this.hass, cfg, 'charge_limit') !== undefined
-      ? (attr(this.hass, cfg, 'charge_limit', 'min') ?? 50)
-      : 50;
+    // attr() on a missing/absent entity already yields undefined → the ?? default,
+    // so no separate presence guard is needed (the slider is disabled when
+    // `limit === undefined` regardless of these bounds).
+    const limitMin = attr(this.hass, cfg, 'charge_limit', 'min') ?? 50;
     const limitMax = attr(this.hass, cfg, 'charge_limit', 'max') ?? 100;
     const limitStep = attr(this.hass, cfg, 'charge_limit', 'step') ?? 1;
 
@@ -79,11 +113,38 @@ export class TcPanelCharging extends TcBase {
         <section class="surface block">
           <div class="bsum">
             <div class="bnum">
-              <span class="big">${battery !== undefined ? formatNumber(battery) : '—'}</span>
-              <span class="pct">%</span>
+              <span class="big"
+                >${showRange
+                  ? rangeNum !== undefined
+                    ? formatNumber(rangeNum)
+                    : '—'
+                  : battery !== undefined
+                    ? formatNumber(battery)
+                    : '—'}</span
+              >
+              <span class="pct">${showRange ? rangeUnit : '%'}</span>
             </div>
             <div class="bmeta">
-              <span class="range">${rangeNum !== undefined ? `${formatNumber(rangeNum)} ${rangeUnit}` : '—'}</span>
+              <!-- range-vs-% display toggle (AC3) — presentation-only @state -->
+              <div class="seg" role="group" aria-label=${STRINGS.charging.display}>
+                <button
+                  type="button"
+                  class="seg-opt ${!showRange ? 'sel' : ''}"
+                  aria-pressed=${!showRange}
+                  aria-label=${STRINGS.charging.percent}
+                  @click=${() => (this._display = 'percent')}
+                >
+                  %
+                </button>
+                <button
+                  type="button"
+                  class="seg-opt ${showRange ? 'sel' : ''}"
+                  aria-pressed=${showRange}
+                  @click=${() => (this._display = 'range')}
+                >
+                  ${STRINGS.charging.range}
+                </button>
+              </div>
               <span class="cstatus ${charging ? 'live' : ''}">
                 ${charging ? icon(mdiLightningBolt, { size: 14 }) : nothing}
                 ${status && !isUnavailable(status) ? prettyText(status) : STRINGS.charging.idle}
@@ -91,9 +152,12 @@ export class TcPanelCharging extends TcBase {
             </div>
           </div>
           ${batteryGauge(battery, { limit, charging, height: 18 })}
+          <!-- charge-target line (AC3): honest "Target N%" the car stops at; the
+               --tc-blue gauge tick above marks the same position. Both hide when
+               charge_limit is absent (graceful). -->
           ${limit !== undefined
             ? html`<div class="limit-note">
-                ${STRINGS.charging.chargeLimit} <strong>${formatNumber(limit)}%</strong>
+                ${STRINGS.charging.target} <strong>${formatNumber(limit)}%</strong>
               </div>`
             : nothing}
         </section>
@@ -120,6 +184,7 @@ export class TcPanelCharging extends TcBase {
             .max=${limitMax}
             .step=${limitStep}
             unit="%"
+            label=${STRINGS.charging.chargeLimit}
             accent="var(--tc-blue, #38bdf8)"
             ?disabled=${limit === undefined}
             @value-changed=${(e: CustomEvent<{ value: number }>) =>
@@ -139,6 +204,7 @@ export class TcPanelCharging extends TcBase {
             .max=${ampMax}
             .step=${ampStep}
             unit=" A"
+            label=${STRINGS.charging.chargeCurrent}
             accent="var(--tc-green, #34d399)"
             ?disabled=${amps === undefined}
             @value-changed=${(e: CustomEvent<{ value: number }>) =>
@@ -151,19 +217,19 @@ export class TcPanelCharging extends TcBase {
           ${statTile({
             icon: mdiLightningBolt,
             label: STRINGS.charging.power,
-            value: display(this.hass, cfg, 'charger_power', { decimals: 1 }),
+            value: this._tileVal('charger_power', { decimals: 1 }),
             color: 'var(--tc-green, #34d399)',
           })}
           ${statTile({
             icon: mdiSpeedometer,
             label: STRINGS.charging.rate,
-            value: display(this.hass, cfg, 'charge_rate'),
+            value: this._tileVal('charge_rate'),
             color: 'var(--tc-blue, #38bdf8)',
           })}
           ${statTile({
             icon: mdiBatteryCharging,
             label: STRINGS.charging.added,
-            value: display(this.hass, cfg, 'charge_energy_added', { decimals: 1 }),
+            value: this._tileVal('charge_energy_added', { decimals: 1 }),
             color: 'var(--tc-teal, #2dd4bf)',
           })}
           ${statTile({
@@ -175,13 +241,14 @@ export class TcPanelCharging extends TcBase {
           ${statTile({
             icon: mdiFlashOutline,
             label: STRINGS.charging.voltage,
-            value: display(this.hass, cfg, 'charger_voltage'),
+            value: this._tileVal('charger_voltage'),
             color: 'var(--tc-purple, #a78bfa)',
           })}
           ${statTile({
             icon: mdiEvStation,
             label: STRINGS.charging.chargePort,
-            value: portState && !isUnavailable(portState) ? prettyText(portState) : '—',
+            // Present (open/closed/etc.) → prettyText; missing/unavailable → hide (AC1).
+            value: portState && !isUnavailable(portState) ? prettyText(portState) : undefined,
             color: portState === 'open' ? 'var(--tc-amber, #fbbf24)' : 'var(--tc-text-dim, #9aa7b8)',
           })}
         </div>
@@ -233,11 +300,42 @@ export class TcPanelCharging extends TcBase {
         display: flex;
         flex-direction: column;
         align-items: flex-end;
-        gap: 4px;
+        gap: 6px;
       }
-      .range {
-        font-size: 15px;
-        font-weight: 650;
+      /* range-vs-% segmented toggle (AC3) — calm pill from .surface tokens. */
+      .seg {
+        display: inline-flex;
+        padding: 3px;
+        gap: 2px;
+        border-radius: var(--tc-pill, 999px);
+        background: var(--tc-surface-2, rgba(255, 255, 255, 0.07));
+        border: 1px solid var(--tc-border, rgba(255, 255, 255, 0.09));
+      }
+      .seg-opt {
+        appearance: none;
+        font-family: inherit;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        /* ≥44px hit target (UX-DR21) without bloating the calm pill visually. */
+        min-width: 44px;
+        min-height: 30px;
+        padding: 4px 12px;
+        border: 0;
+        border-radius: var(--tc-pill, 999px);
+        background: transparent;
+        color: var(--tc-text-dim, #9aa7b8);
+        font-size: 12.5px;
+        font-weight: 700;
+        cursor: pointer;
+        transition: background 0.16s var(--tc-ease, cubic-bezier(0.22, 1, 0.36, 1)),
+          color 0.16s var(--tc-ease, cubic-bezier(0.22, 1, 0.36, 1));
+      }
+      .seg-opt:hover {
+        color: var(--tc-text, #f1f5f9);
+      }
+      .seg-opt.sel {
+        background: var(--tc-surface-3, rgba(255, 255, 255, 0.1));
         color: var(--tc-text, #f1f5f9);
       }
       .cstatus {

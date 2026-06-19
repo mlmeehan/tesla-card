@@ -115,6 +115,21 @@ describe('centralized strings — voice contract (Story 2.5)', () => {
     );
   });
 
+  test('Story 5.5: charging panel gains the display-toggle + charge-target copy', () => {
+    // The range/% toggle labels and the honest "Target" line are new user-facing
+    // copy (AC3) — single-sourced here, sentence-case, no duplicate literals.
+    expect(STRINGS.charging.range).toBe('Range');
+    expect(STRINGS.charging.percent).toBe('Percent');
+    expect(STRINGS.charging.display).toBe('Display units');
+    expect(STRINGS.charging.target).toBe('Target');
+    // Sentence-case (first word capitalized, the rest lower) like the other labels.
+    for (const label of [STRINGS.charging.range, STRINGS.charging.target, STRINGS.charging.display]) {
+      const words = label.split(' ');
+      expect(words[0]).toMatch(/^[A-Z]/);
+      for (const w of words.slice(1)) expect(w).toMatch(/^[a-z]/);
+    }
+  });
+
   test('migration backstop: copy-bearing components import from ./strings', () => {
     const consumers = [
       'tesla-card.ts',

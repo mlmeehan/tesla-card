@@ -1,4 +1,4 @@
-import { LitElement, html, css, type TemplateResult } from 'lit';
+import { LitElement, html, css, nothing, type TemplateResult } from 'lit';
 import { customElement, property, state } from 'lit/decorators.js';
 import { sharedStyles } from '../styles';
 import { clamp } from '../helpers';
@@ -18,6 +18,8 @@ export class TcSlider extends LitElement {
   @property({ type: Number }) public decimals?: number;
   @property() public unit = '';
   @property() public accent = 'var(--tc-blue, #38bdf8)';
+  /** State-bearing accessible name (UX-DR21), e.g. "Charge limit". */
+  @property() public label = '';
 
   @state() private _drag?: number;
 
@@ -31,14 +33,18 @@ export class TcSlider extends LitElement {
     return clamp(((v - this.min) / (this.max - this.min)) * 100, 0, 100);
   }
 
+  /** Snap a raw value to the step grid, clamped to [min, max] (drag + keyboard). */
+  private _round(raw: number): number {
+    const stepped = Math.round(raw / this.step) * this.step;
+    return clamp(Number(stepped.toFixed(this._dec)), this.min, this.max);
+  }
+
   private _fromClientX(clientX: number): number {
     const track = this.renderRoot.querySelector('.track') as HTMLElement | null;
     if (!track) return this.value;
     const rect = track.getBoundingClientRect();
     const ratio = clamp((clientX - rect.left) / rect.width, 0, 1);
-    const raw = this.min + ratio * (this.max - this.min);
-    const stepped = Math.round(raw / this.step) * this.step;
-    return clamp(Number(stepped.toFixed(this._dec)), this.min, this.max);
+    return this._round(this.min + ratio * (this.max - this.min));
   }
 
   private _down = (e: PointerEvent): void => {
@@ -53,14 +59,20 @@ export class TcSlider extends LitElement {
     this._drag = this._fromClientX(e.clientX);
   };
 
-  private _up = (e: PointerEvent): void => {
+  // The ONE release/commit path — shared by pointer-up/cancel AND keyboard
+  // keyup/blur. Holding the lone `value-changed` dispatch here (never in `_move`
+  // or `_key`) keeps the commit-on-release contract identical across input modes
+  // and the a11y static gate (exactly one dispatch, in `_up`) intact. `e` is
+  // `Event` so a KeyboardEvent/FocusEvent can settle the same pending value; the
+  // pointer-capture release is wrapped (a no-op / throw for non-pointer events).
+  private _up = (e: Event): void => {
     if (this._drag === undefined) return;
     const v = this._drag;
     this._drag = undefined;
     try {
-      (e.target as HTMLElement).releasePointerCapture(e.pointerId);
+      (e.target as HTMLElement).releasePointerCapture((e as PointerEvent).pointerId);
     } catch {
-      /* capture may already be released */
+      /* capture may already be released, or `e` is not a pointer event */
     }
     if (v !== this.value) {
       this.dispatchEvent(
@@ -71,6 +83,37 @@ export class TcSlider extends LitElement {
         })
       );
     }
+  };
+
+  // Keyboard operability (AC2 / UX-DR21, SC 2.1.1): arrow keys = ±step, Home/End
+  // = bounds. Mirrors the drag contract — each keydown moves the DISPLAYED value
+  // (`_drag`) live, but the commit waits for `_up` on keyup/blur. NEVER one
+  // `value-changed` per keydown: that would flood the metered Fleet API (the whole
+  // reason the slider is commit-on-release). Disabled → inert (and not focusable).
+  private _key = (e: KeyboardEvent): void => {
+    if (this.disabled) return;
+    const base = this._drag ?? this.value;
+    let next: number;
+    switch (e.key) {
+      case 'ArrowRight':
+      case 'ArrowUp':
+        next = base + this.step;
+        break;
+      case 'ArrowLeft':
+      case 'ArrowDown':
+        next = base - this.step;
+        break;
+      case 'Home':
+        next = this.min;
+        break;
+      case 'End':
+        next = this.max;
+        break;
+      default:
+        return; // ignore non-slider keys (Tab, etc.) — no preventDefault, no commit
+    }
+    e.preventDefault();
+    this._drag = this._round(next);
   };
 
   protected override render(): TemplateResult {
@@ -86,7 +129,12 @@ export class TcSlider extends LitElement {
         @pointermove=${this._move}
         @pointerup=${this._up}
         @pointercancel=${this._up}
+        @keydown=${this._key}
+        @keyup=${this._up}
+        @blur=${this._up}
         role="slider"
+        tabindex=${this.disabled ? nothing : '0'}
+        aria-label=${this.label || nothing}
         aria-valuenow=${shown}
         aria-valuemin=${this.min}
         aria-valuemax=${this.max}
@@ -134,15 +182,19 @@ export class TcSlider extends LitElement {
       .track.dragging .fill {
         transition: none;
       }
+      /* ~18px circular white thumb (DESIGN.md §Slider / decision-log D9) — the
+         legacy 5px sliver was illegible at wall-kiosk distance. Soft shadow +
+         hairline ring; the 46px .track stays the hit-area (handle is inert). */
       .handle {
         position: absolute;
         top: 50%;
         transform: translate(-50%, -50%);
-        width: 5px;
-        height: 26px;
-        border-radius: 3px;
+        width: 18px;
+        height: 18px;
+        border-radius: 50%;
         background: #fff;
         box-shadow: 0 2px 8px rgba(0, 0, 0, 0.5);
+        border: 1px solid var(--tc-border-strong, rgba(255, 255, 255, 0.16));
         pointer-events: none;
         transition: left 0.12s linear;
       }
@@ -159,6 +211,16 @@ export class TcSlider extends LitElement {
         color: var(--tc-text, #f1f5f9);
         text-shadow: 0 1px 4px rgba(0, 0, 0, 0.55);
         pointer-events: none;
+      }
+      /* Reduced motion (NFR-6 / UX-DR23): the fill/thumb ease is decoration that
+         tracks the VALUE (keyboard step + hass reconcile). Drag is already instant
+         via .track.dragging; this makes the non-drag value change an instant set
+         too — "kill the motion, keep the data". No keyframes here, only transitions. */
+      @media (prefers-reduced-motion: reduce) {
+        .fill,
+        .handle {
+          transition: none;
+        }
       }
     `,
   ];

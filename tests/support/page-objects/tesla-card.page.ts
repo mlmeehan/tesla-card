@@ -133,6 +133,52 @@ export class TeslaCardPage {
     return this.commands.locator('.wake-hint');
   }
 
+  // ── Charging panel (Story 5.5) — the default open panel ────────────────────
+  /** The charging panel root (`tc-panel-charging`). */
+  get chargingPanel(): Locator {
+    return this.card.locator('tc-panel-charging');
+  }
+
+  /** The battery headline number ("72" in % mode / "235" in range mode). */
+  get chargeHeadline(): Locator {
+    return this.chargingPanel.locator('.bnum .big');
+  }
+
+  /** Every charge `tc-slider` in render order: [charge limit, charge current]. */
+  get chargeSliders(): Locator {
+    return this.chargingPanel.locator('tc-slider');
+  }
+
+  /** A charge slider addressed by its state-bearing aria-label ("Charge limit"/"Charge current"). */
+  chargeSlider(label: 'Charge limit' | 'Charge current'): Locator {
+    return this.chargingPanel.locator(`tc-slider[label="${label}"]`);
+  }
+
+  /** The range-vs-% segmented toggle (AC3). */
+  get displayToggle(): Locator {
+    return this.chargingPanel.locator('.seg');
+  }
+
+  /** Both toggle options in render order: ["%", "Range"]. */
+  get displayOptions(): Locator {
+    return this.chargingPanel.locator('.seg-opt');
+  }
+
+  /** The honest "Target N%" charge-target line (AC3) — present only when charge_limit resolves. */
+  get chargeTargetLine(): Locator {
+    return this.chargingPanel.locator('.limit-note');
+  }
+
+  /** Every live stat tile in the charging grid — hides individually when its entity is missing (AC1). */
+  get chargeStatTiles(): Locator {
+    return this.chargingPanel.locator('.grid.g3 .stat');
+  }
+
+  /** The live charge-state cue ("Charging"/"Idle") — `.live` when canonical state is charging (AC4). */
+  get chargeStatusCue(): Locator {
+    return this.chargingPanel.locator('.cstatus');
+  }
+
   async setEnv(env: 'default' | 'renamed'): Promise<void> {
     // Harness env toggles live in the page's light DOM (stable ids), not the card.
     await this.page.locator(env === 'renamed' ? '#b-renamed' : '#b-default').click();

@@ -23,13 +23,23 @@ export const icon = (
 export interface StatTileOpts {
   icon: string;
   label: string;
-  value: string;
+  /**
+   * The readout value. OPTIONAL by contract (Story 5.5 AC1): an `undefined`
+   * value means the backing entity is missing, so the tile HIDES (renders
+   * `nothing`) rather than showing a lone "—". Callers pass `undefined` (not a
+   * baked "—") to opt into the hide; any present string renders unchanged, so
+   * existing call-sites are unaffected.
+   */
+  value?: string;
   color?: string;
   onClick?: (e: Event) => void;
 }
 
-/** Compact icon + label + value readout tile. */
-export const statTile = (o: StatTileOpts): TemplateResult => html`
+/** Compact icon + label + value readout tile; hides when `value` is absent (AC1). */
+export const statTile = (o: StatTileOpts): TemplateResult | typeof nothing =>
+  o.value === undefined
+    ? nothing
+    : html`
   <div
     class="stat"
     role=${o.onClick ? 'button' : nothing}
