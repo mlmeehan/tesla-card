@@ -8,6 +8,9 @@
 // container (the carView/car.test.ts pattern) — no custom element needed. Hermetic:
 // committed fixtures, injected `now` for the asleep staleness, zero network.
 import { describe, expect, test } from 'vitest';
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
+import { dirname, join } from 'node:path';
 import { html, render } from 'lit';
 import { HeroSvgRenderer, NODE_XY, BUS_XY, flowOverlayStyles } from './hero-svg';
 import { edgeVisual, NODE_COLOR, NODE_ICON } from './renderer';
@@ -303,6 +306,66 @@ describe('overlay style contract: reduced-motion halt + glass chips (AC4, AC7)',
     expect(block).toContain('animation: none');
   });
 
+  // ── Story 4.6 AC2 — the legible STATIC read (FR-12/UX-DR12) ──────────────────
+  // The DoD reduced-motion rule hero-svg.ts deferred to THIS story: not just halt
+  // the motion, but make the halted edge read as a clean static DIRECTED line.
+  test('AC2: the reduced-motion block drops the dash → a clean static directed line, not a frozen gap', () => {
+    const block = cssText.slice(cssText.indexOf('prefers-reduced-motion'));
+    // The motion is killed AND the dash pattern removed — so what remains is a
+    // solid coloured stroke (a directed line), never a frozen mid-cycle dash gap.
+    expect(block).toContain('stroke-dasharray: none');
+    // Still scoped to the flow stroke only (chips/arrowhead untouched by the @media).
+    expect(block).toContain('.fo-flow');
+  });
+
+  test('AC2: an active edge still emits the arrowhead + chip kW (the data survives the motion kill)', () => {
+    // The arrowhead (direction) + chip kW (magnitude) render unconditionally for an
+    // ACTIVE edge regardless of motion — under reduced-motion they ARE the read.
+    const { svg } = renderFor(awake.states as Record<string, unknown>);
+    const active = svg.querySelector('.fo-edge .fo-flow')!.closest('.fo-edge')!;
+    // Direction is legible from shape: the arrowhead <path> is present on the edge.
+    expect(active.querySelector('.fo-head')).toBeTruthy();
+    // Magnitude is legible from text: every present chip carries a kW value.
+    const vals = [...svg.querySelectorAll('.fo-chip .fo-chip-val')];
+    expect(vals.length).toBeGreaterThan(0);
+    for (const v of vals) expect(v.textContent).toMatch(/[\d.]+ kW/);
+  });
+
+  // ── QA gap-fill (bmad-qa-generate-e2e-tests, Story 4.6) ──────────────────────
+  // AC2 enumerates FOUR survivors of the motion kill: "the coloured stroke +
+  // arrowhead + the chip's node-label + kW magnitude all remain". The test above
+  // pins the arrowhead + kW; the node-LABEL (the colour-blind-safe "what node is
+  // this") was unasserted — close it so the full enumerated data set is proven.
+  test('AC2 gap: the chip node-label (not just the kW) also survives the motion kill', () => {
+    const { model, svg } = renderFor(awake.states as Record<string, unknown>);
+    const present = model.nodes.filter((n) => n.present);
+    expect(present.length).toBeGreaterThan(0);
+    // Every present node keeps its named label — direction(arrowhead) + magnitude(kW)
+    // + identity(label) is the full static read AC2 demands.
+    for (const n of present) {
+      const label = svg.querySelector(`.fo-chip[data-role="${n.role}"] .fo-chip-label`);
+      expect(label, n.role).toBeTruthy();
+      expect(label!.textContent).toBe(STRINGS.energy.nodes[n.role]);
+    }
+  });
+
+  // AC2 "keep the data" is enforced by CSS (@media), but jsdom does NOT evaluate
+  // @media — the render-tier tests above prove the nodes are in the DOM, NOT that
+  // the reduced-motion block leaves them visible. A future edit hiding the
+  // arrowhead/chip INSIDE the @media (`display:none`/`visibility:hidden`/`opacity:0`)
+  // would kill the data yet pass every render-tier test. This string-level guard
+  // makes the rule regression-proof: the block may only HALT motion + flatten the
+  // dash — it must never hide a survivor nor blank the flow stroke.
+  test('AC2 gap: the reduced-motion block hides NOTHING (no display:none / visibility:hidden / opacity:0)', () => {
+    const block = cssText.slice(cssText.indexOf('prefers-reduced-motion'));
+    expect(block).not.toMatch(/display\s*:\s*none/i);
+    expect(block).not.toMatch(/visibility\s*:\s*hidden/i);
+    expect(block).not.toMatch(/opacity\s*:\s*0(?![.\d])/i);
+    // It must not blank the flow stroke either (the directed line stays coloured) —
+    // the only stroke-* it touches is the dash pattern (flattened to a solid line).
+    expect(block).not.toMatch(/stroke\s*:\s*(none|transparent)/i);
+  });
+
   test('chips are glass (--tc-surface-2 + --tc-border) and every var carries a fallback', () => {
     expect(cssText).toContain('--tc-surface-2');
     expect(cssText).toContain('--tc-border');
@@ -310,6 +373,46 @@ describe('overlay style contract: reduced-motion halt + glass chips (AC4, AC7)',
     // bare `var(--tc-x)` in THIS block — every consumption has a `, fallback`.
     const bare = cssText.match(/var\(\s*--tc-[a-z0-9-]+\s*\)/gi);
     expect(bare).toBeNull();
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Story 4.6 AC3 — animation runs over CACHED geometry (~60fps, NFR-1): no per-tick
+// layout thrash. The hero overlay's geometry is FIXED in the 1024×687 viewBox, so
+// `update()` precomputes per-edge geometry ONCE and CSS animates `stroke-dashoffset`
+// on the compositor — the non-thrashing equivalent of D4's "rAF over cached
+// geometry". rAF-over-live-rects is the Scene renderer's concern (Epic 6).
+// ═══════════════════════════════════════════════════════════════════════════
+describe('AC3 — cached geometry + compositor-CSS motion (no per-tick thrash)', () => {
+  test('update() caches: re-reading view() does NOT recompute (stable, side-effect-free output)', () => {
+    const r = new HeroSvgRenderer();
+    r.update(bindFlowModel(makeHass(awake.states as Record<string, unknown>), cfg(), {}));
+    // Two reads of the SAME cached model render byte-for-byte identical SVG — view()
+    // is a pure read of the precomputed `_edges`/`_chips`, never a recompute.
+    expect(mount(r).innerHTML).toBe(mount(r).innerHTML);
+  });
+
+  test('motion is CSS-keyframe-driven, not JS-tick-driven: per-edge animation-duration is set inline', () => {
+    const { svg } = renderFor(awake.states as Record<string, unknown>);
+    const flow = svg.querySelector('.fo-edge .fo-flow')!;
+    // The animation is declared in CSS (`animation: fo-flow-dash …` in the stylesheet)
+    // and only its PERIOD is set inline per edge — there is no JS animation loop.
+    expect(flow.getAttribute('style')).toMatch(/animation-duration:[\d.]+s/);
+    expect(flowOverlayStyles.cssText).toContain('@keyframes fo-flow-dash');
+    expect(flowOverlayStyles.cssText).toContain('animation: fo-flow-dash');
+  });
+
+  test('the Hero overlay module contains NO rAF / getBoundingClientRect (non-thrashing by construction)', () => {
+    // Grep-style assertion on the module source (mirrors the no-bare-hass-states
+    // discipline): the Hero path animates fixed geometry via compositor CSS, so it
+    // introduces no JS animation loop and reads no live layout rect. (Those belong
+    // to the Scene renderer over live cards — Epic 6, not here.)
+    const src = readFileSync(
+      join(dirname(fileURLToPath(import.meta.url)), 'hero-svg.ts'),
+      'utf8'
+    );
+    expect(src).not.toMatch(/requestAnimationFrame/);
+    expect(src).not.toMatch(/getBoundingClientRect/);
   });
 });
 

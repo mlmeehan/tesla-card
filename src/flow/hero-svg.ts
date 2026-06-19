@@ -289,9 +289,11 @@ export class HeroSvgRenderer implements FlowRenderer {
  * (the `styles.test.ts` hard gate). The `fo-flow-dash` keyframe lives OUTSIDE the
  * locked `sharedStyles` `{tc-pulse, tc-shimmer}` a11y corpus.
  *
- * Reduced-motion (AC4): the dash MOTION halts (`animation: none`) while the
- * coloured stroke, arrowhead, label + kW stay legible — kill the motion, keep the
- * data. (The full FR-12 static-read AC is Story 4.6 — not pulled forward here.)
+ * Reduced-motion (FR-12 / UX-DR12, Story 4.6): the dash MOTION halts
+ * (`animation: none`) AND the dash pattern is dropped (`stroke-dasharray: none`) so
+ * the active edge reads as a clean STATIC directed line — not a frozen mid-cycle
+ * dash gap. The coloured stroke, the always-on arrowhead (`.fo-head`) and the chip's
+ * node-label + kW (`.fo-chip-val`) all stay legible — kill the motion, keep the data.
  */
 export const flowOverlayStyles = css`
   .tc-flow-overlay {
@@ -348,8 +350,15 @@ export const flowOverlayStyles = css`
   }
 
   @media (prefers-reduced-motion: reduce) {
+    /* AC2 (FR-12/UX-DR12 "kill the motion, keep the data") — the full static read
+       hero-svg.ts deferred to THIS story. Halting the dash alone froze a mid-cycle
+       dash GAP; also drop the dash pattern so the active edge reads as a clean SOLID
+       directed line. Direction is then carried by the always-on arrowhead (fo-head)
+       and magnitude by the chip kW (fo-chip-val) — both render unconditionally for
+       an active edge, so the data survives the motion kill. */
     .tc-flow-overlay .fo-flow {
       animation: none;
+      stroke-dasharray: none;
     }
   }
 `;

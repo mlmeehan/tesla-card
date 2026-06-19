@@ -18,6 +18,8 @@ import { formatAge } from '../helpers';
 import { STRINGS } from '../strings';
 import { DEFAULT_ENTITIES } from '../const';
 import { flowOverlayStyles } from '../flow/hero-svg';
+import chargingFx from '../fixtures/flow-charging.json';
+import pluggedIdleFx from '../fixtures/flow-plugged-idle.json';
 import type { HassEntity, HomeAssistant, TeslaCardConfig } from '../types';
 
 type HeroEl = HTMLElement & {
@@ -640,5 +642,135 @@ describe('Story 4.3 — energy-flow overlay composites into .car-stage', () => {
     const el = await mountHero(withEnergy({ asleep: true }), ENERGY_OVER);
     expect(el.shadowRoot!.querySelector('.car-stage')!.classList.contains('tc-asleep')).toBe(true);
     expect(overlay(el)).toBeTruthy();
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Story 4.6 AC1 — the SAME flow overlay composites over ALL THREE Epic-3 Hero
+// render modes (bundled-EV / image / body-layers) with NO per-Hero rework. The
+// overlay is Hero-agnostic BY CONSTRUCTION: it lives in the fixed 1024×687 viewBox
+// z-stacked over whichever silhouette carView produces, and never reads the render
+// mode. We mount tc-hero once per mode with the SAME energy states and assert the
+// overlay's chip/edge set is byte-for-byte identical across modes.
+// (Live-Scene reuse via SceneBusRenderer is Epic 6 — NOT exercised here.)
+// ═══════════════════════════════════════════════════════════════════════════
+
+/** A minimal CONFORMING BodyLayers (color/shade/mask present) → body render mode. */
+const BODY: NonNullable<TeslaCardConfig['body']> = {
+  color: '/local/c.webp',
+  shade: '/local/s.webp',
+  mask: '/local/m.png',
+};
+
+describe('Story 4.6 AC1 — overlay identical over bundled / image / body render modes', () => {
+  const MODES: Array<{ name: string; over: Partial<TeslaCardConfig> }> = [
+    { name: 'bundled-EV', over: {} },
+    { name: 'image', over: { image: '/local/foo.png' } },
+    { name: 'body-layers', over: { body: BODY } },
+  ];
+
+  /** Canonical signature of the overlay content: present chips + edge directions. */
+  const overlaySig = (el: HeroEl): string => {
+    const ov = overlay(el)!;
+    const chips = [...ov.querySelectorAll('.fo-chip')]
+      .map((c) => c.getAttribute('data-role'))
+      .sort()
+      .join(',');
+    const edges = [...ov.querySelectorAll('.fo-edge')]
+      .map((e) => `${e.getAttribute('data-role')}:${e.getAttribute('data-direction')}`)
+      .sort()
+      .join(',');
+    return `chips[${chips}] edges[${edges}]`;
+  };
+
+  test('same FlowModel → byte-identical chip + edge set (and innerHTML) across all three modes', async () => {
+    const sigs: string[] = [];
+    const htmls: string[] = [];
+    for (const m of MODES) {
+      const el = await mountHero(withEnergy(), { ...ENERGY_OVER, ...m.over });
+      expect(overlay(el), m.name).toBeTruthy();
+      sigs.push(overlaySig(el));
+      htmls.push(overlay(el)!.innerHTML);
+    }
+    // The renderer consumes ONLY the model — so the overlay output is invariant to
+    // the car layer rendered beneath it.
+    expect(new Set(sigs).size, sigs.join(' | ')).toBe(1);
+    expect(new Set(htmls).size).toBe(1);
+  });
+
+  test('control: the three modes really DO render different car layers below the overlay', async () => {
+    // Guard against a false pass — prove "identical overlay" is real invariance, not
+    // three accidentally-identical renders. Each mode emits a distinct car element.
+    const bundled = await mountHero(withEnergy(), ENERGY_OVER);
+    const image = await mountHero(withEnergy(), { ...ENERGY_OVER, image: '/local/foo.png' });
+    const body = await mountHero(withEnergy(), { ...ENERGY_OVER, body: BODY });
+    expect(bundled.shadowRoot!.querySelector('svg.tc-ev')).toBeTruthy(); // bundled generic EV
+    expect(image.shadowRoot!.querySelector('img.car-img')).toBeTruthy(); // flat <img>
+    expect(body.shadowRoot!.querySelector('svg.tc-car:not(.tc-ev)')).toBeTruthy(); // recolor stack
+    // …and the bundled EV is NOT present in the other two (modes are mutually exclusive).
+    expect(image.shadowRoot!.querySelector('svg.tc-ev')).toBeNull();
+    expect(body.shadowRoot!.querySelector('svg.tc-ev')).toBeNull();
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Story 4.6 AC4 — composed view CONSISTENCY: the discrete charging_status entity
+// owns the Hero halo (`_chargeVisual` via normalizeChargingState, never signed
+// power); the FlowModel owns the wall_connector edge (the WC IS the car-charging
+// edge — no 6th vehicle node). They must never visibly contradict. We bind the
+// Story-4.5 charging / plugged-idle fixtures (WC edge via the PRODUCTION
+// bindFlowModel — no private sign math) AND drive _chargeVisual from a real
+// charging_status alongside, then assert the two derivations AGREE.
+// ═══════════════════════════════════════════════════════════════════════════
+
+describe('Story 4.6 AC4 — Hero halo (discrete entity) and WC edge (FlowModel) agree', () => {
+  /** Merge a fixture's energy sensors with a vehicle states map carrying charging_status. */
+  const heroStates = (
+    fixtureStates: Record<string, unknown>,
+    chargeStatus: string
+  ): Record<string, HassEntity> => ({
+    ...makeStates({ chargeStatus }),
+    ...(fixtureStates as Record<string, HassEntity>),
+  });
+
+  const wcEdge = (el: HeroEl): Element | null =>
+    overlay(el)?.querySelector('.fo-edge[data-role="wall_connector"]') ?? null;
+
+  test('charging fixture: halo "Charging" (green) AND the WC edge draws into the car (active, reverse)', async () => {
+    const el = await mountHero(heroStates(chargingFx.states, 'Charging'));
+    // Discrete entity wins the halo.
+    expect(labelOf(el)).toBe(STRINGS.status.charging);
+    expect(dotOf(el)).toContain('var(--tc-green');
+    // FlowModel wins the WC edge: active + reverse (bus → car = charging the car).
+    const wc = wcEdge(el);
+    expect(wc).toBeTruthy();
+    expect(wc!.getAttribute('data-direction')).toBe('reverse');
+    expect(wc!.querySelector('.fo-flow')).toBeTruthy(); // an active animated dash
+    // No contradiction: halo says charging ⇔ WC edge is actively drawing.
+  });
+
+  test('plugged-idle fixture: halo "Plugged-idle" (blue) AND the WC edge is present-but-quiescent (none)', async () => {
+    const el = await mountHero(heroStates(pluggedIdleFx.states, 'Complete'));
+    expect(labelOf(el)).toBe(STRINGS.status.pluggedIdle);
+    expect(dotOf(el)).toContain('var(--tc-blue');
+    const wc = wcEdge(el);
+    expect(wc).toBeTruthy(); // connected — the node IS present…
+    expect(wc!.getAttribute('data-direction')).toBe('none'); // …but not drawing
+    expect(wc!.querySelector('.fo-flow')).toBeNull(); // no active dash
+    // No contradiction: halo says plugged-idle ⇔ WC edge present but quiescent.
+  });
+
+  test('parked (WC absent): halo "Parked" AND no actively-drawing WC edge', async () => {
+    // Plugged-idle energy MINUS the wall_connector sensor → WC node absent, but the
+    // overlay still draws (grid/home present), so this is a real "no WC edge" proof.
+    // Drop the WC sensor by its function-slug (never an inlined literal id).
+    const states = heroStates(pluggedIdleFx.states, 'Disconnected');
+    for (const id of Object.keys(states)) {
+      if (id.includes('wall_connector')) delete states[id];
+    }
+    const el = await mountHero(states);
+    expect(labelOf(el)).toBe(STRINGS.status.parked);
+    expect(overlay(el)).toBeTruthy(); // overlay present (other roles)…
+    expect(wcEdge(el)).toBeNull(); // …with NO wall_connector edge at all
   });
 });
