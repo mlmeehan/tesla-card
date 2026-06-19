@@ -1,5 +1,6 @@
 import { html, svg, css, nothing, type TemplateResult } from 'lit';
 import type { BodyLayers } from '../types';
+import { HERO_VIEWBOX } from '../const';
 
 /** Neutral silver — matches a typical source render, reads as "no tint applied". */
 const DEFAULT_PAINT = '#c6c8c9';
@@ -39,8 +40,10 @@ export function carView(opts: CarViewOpts): TemplateResult {
   const paint = opts.paint ?? DEFAULT_PAINT;
 
   if (body) {
-    const w = body.width ?? 1024;
-    const h = body.height ?? 687;
+    // Per-vehicle overrides win; otherwise the body layers fill the shared
+    // 1024×687 coordinate contract (HERO_VIEWBOX) every render mode anchors to.
+    const w = body.width ?? HERO_VIEWBOX.width;
+    const h = body.height ?? HERO_VIEWBOX.height;
 
     // id is scoped to this card's shadow root, so multiple cards never collide.
     return html`
@@ -121,15 +124,27 @@ function genericCar(
   name: string,
   charging: boolean,
 ): TemplateResult {
+  // The hand-tuned artwork is authored in its own intrinsic 1024×480 space; we
+  // do NOT redraw those ~80 coordinates. Instead the outer <svg> adopts the
+  // shared 1024×687 coordinate contract (HERO_VIEWBOX) and a nested <svg> places
+  // the 1024×480 art inside it with `preserveAspectRatio="xMidYMid meet"` — so it
+  // is centred and aspect-preserved (never stretched), sharing the same
+  // coordinate space the body layers and Epic 4's overlays anchor to.
   return html`
     <svg
       class="car-img tc-car tc-ev ${charging ? 'charging' : ''}"
-      viewBox="0 0 1024 480"
+      viewBox="0 0 ${HERO_VIEWBOX.width} ${HERO_VIEWBOX.height}"
       style="--tc-paint:${paint}"
       role="img"
       aria-label=${name}
       xmlns="http://www.w3.org/2000/svg"
     >
+      <svg
+        viewBox="0 0 1024 480"
+        width=${HERO_VIEWBOX.width}
+        height=${HERO_VIEWBOX.height}
+        preserveAspectRatio="xMidYMid meet"
+      >
       <defs>
         <linearGradient id="tc-ev-hi" x1="0" y1="0" x2="0" y2="1">
           <stop offset="0" stop-color="#ffffff" stop-opacity="0.30" />
@@ -200,6 +215,7 @@ function genericCar(
         </g>
         <circle cx="792" cy="350" r="15" fill="#82888f" />
       </g>
+      </svg>
     </svg>
   `;
 }

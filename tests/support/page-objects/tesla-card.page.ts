@@ -53,14 +53,24 @@ export class TeslaCardPage {
     return this.card.getByText(needle, { exact: false }).first();
   }
 
+  /** The hero shell root — carries `class="hero surface"` (the .surface/xl elevation stage, AC1). */
+  get hero(): Locator {
+    return this.card.locator('.hero');
+  }
+
   /** The hero stage — holds the car svg (default/paint/recolor) or flat <img> (image mode). */
   get heroStage(): Locator {
     return this.card.locator('.car-stage');
   }
 
-  /** The recolorable hero <svg> (bundled generic-EV default or body stack; viewBox 0 0 1024…). */
+  /** The recolorable hero <svg> (bundled generic-EV default or body stack; the 1024×687 contract). */
   get heroSvg(): Locator {
     return this.heroStage.locator('svg').first();
+  }
+
+  /** The inner <svg> nested inside the bundled generic-EV — keeps its intrinsic 1024×480 art, fitted. */
+  get heroInnerSvg(): Locator {
+    return this.heroSvg.locator('svg').first();
   }
 
   /** The legacy flat hero image (?image=1). */

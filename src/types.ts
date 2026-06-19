@@ -68,7 +68,7 @@ export interface BodyLayers {
   highlight?: string;
   /** Luminance mask (white = the paint region) confining the recolor to the body. */
   mask: string;
-  /** Intrinsic layer size for the SVG viewBox (defaults to 1024×687). */
+  /** Intrinsic layer size for the SVG viewBox (defaults to the `HERO_VIEWBOX` contract, 1024×687). */
   width?: number;
   height?: number;
 }

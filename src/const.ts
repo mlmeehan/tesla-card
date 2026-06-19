@@ -3,6 +3,17 @@ import type { VehicleKey } from './data/registry';
 export const CARD_VERSION = '0.1.0';
 
 /**
+ * The hero's fixed coordinate contract: the 1024×687 SVG viewBox every hero
+ * render mode shares. This is the single source of truth the body-layers default
+ * size references, the bundled generic EV is fitted within, and — going forward —
+ * Epic 4's `HeroSvgRenderer` (`flow/hero-svg.ts`) and the Story 3.5 aperture
+ * overlays anchor to, so every render composites over the same coordinate space
+ * (architecture.md:49 "fixed SVG viewBox 1024×687", :394, :749). Do NOT pick a
+ * different number — Epic 4 treats 1024×687 as fixed.
+ */
+export const HERO_VIEWBOX = { width: 1024, height: 687 } as const;
+
+/**
  * Complete default entity map for a Tesla Fleet "Model Y".
  *
  * IMPORTANT: Tesla Fleet entity IDs are NOT uniformly prefixed — ~30 live on
