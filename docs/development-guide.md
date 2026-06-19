@@ -1,9 +1,12 @@
 # tesla-card — Development Guide
 
 **Part:** `[card]` · **Path:** `tesla-card/` (separate nested git repo) · **Date:** 2026-06-14
+**Last reviewed:** 2026-06-19 (Epic 4 retro doc audit)
 
-How to build, verify, preview, and release the card. There is **no unit-test suite** — verification
-is **gate-based** (`typecheck` + `build` + the demo harness).
+How to build, verify, preview, and release the card. Verification is **gate-based** (`typecheck` +
+the **5-gate `npm run lint` chain** + `build`) **and**, since Epic 1, a co-located **Vitest** unit
+suite (`npm run test`, `src/**/*.test.ts` incl. jsdom element tests) that complements the gates —
+it does not replace them. The demo harness (§3) provides visual verification.
 
 ---
 
@@ -27,10 +30,12 @@ Runtime dependencies are only `lit` + `@mdi/js`; keep it that way.
 |---|---|
 | `npm run typecheck` | `tsc --noEmit` — full strict type-check. **Must stay clean.** |
 | `npm run build` | `rollup -c` — bundles `src/tesla-card.ts` → `dist/tesla-card.js`. **Must emit the bundle.** |
+| `npm run test` | `vitest run` — the co-located Vitest unit suite (`src/**/*.test.ts`, jsdom). **Must stay green.** |
+| `npm run lint` | the 5-gate node-script chain (`no-bare-hass-states` → `no-cycle` → `trade-dress-denylist` → `import-allowlist` → `no-network-egress`) — **not** ESLint; all merge-blocking. |
 | `npm run watch` | `rollup -c --watch` — rebuild on change (terser skipped; sourcemaps on) |
 | `npm run demo` | builds, then echoes a reminder to open `demo/index.html` (does **not** start a server) |
 
-> ⚠️ Both `typecheck` **and** `build` must be green before any release — these are the tests.
+> ⚠️ `typecheck`, `test`, `lint`, **and** `build` must all be green before any release.
 
 ---
 

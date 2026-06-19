@@ -2,9 +2,10 @@
 
 A Tesla-app-inspired vehicle card for Home Assistant, built for the
 **Tesla Fleet** / **Teslemetry** integrations. Centred car render, circular
-quick-action controls, and six purpose-built detail panels — a tappable
+quick-action controls, and purpose-built detail panels — a tappable
 closures diagram, live charging controls, climate with seat heaters, tyre
-pressures, a map, and the media player.
+pressures, a map, the media player, and — when an energy site is detected —
+a live energy-flow overlay.
 
 ![Tesla Card — charging](docs/screenshot-charging.png)
 
