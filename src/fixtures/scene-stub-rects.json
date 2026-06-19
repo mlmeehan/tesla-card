@@ -1,0 +1,18 @@
+{
+  "provenance": {
+    "synthetic": true,
+    "scenario": "scene-bus-stub-rects",
+    "purpose": "Story 4.4 (D5 §5d) — the shared fixture corpus's synthetic stub rects for the D1.1d renderer-first proof. SceneBusRenderer is anchored to THESE static rects (node-id -> RectLike) instead of a live getBoundingClientRect(), so the interface-conformance proof never depends on real card layout/reflow (that is Epic 6).",
+    "synthetic_note": "INVENTED screen-px layout coordinates — NOT a live DOM capture. They stand in for where the six Epic-6 ecosystem cards WILL sit; only their being static + hermetic matters here. Deliberately DIFFERENT from HeroSvg's 1024x687 NODE_XY/BUS_XY so the R1 proof can show the two renderers share derivation while differing in coordinates.",
+    "units": "CSS pixels (a getBoundingClientRect()-shaped {left, top, width, height} subset)",
+    "covers": ["solar", "powerwall", "grid", "home", "wall_connector", "bus"]
+  },
+  "rects": {
+    "solar": { "left": 80, "top": 40, "width": 160, "height": 96 },
+    "grid": { "left": 80, "top": 220, "width": 160, "height": 96 },
+    "powerwall": { "left": 560, "top": 40, "width": 160, "height": 96 },
+    "home": { "left": 560, "top": 220, "width": 160, "height": 96 },
+    "wall_connector": { "left": 320, "top": 400, "width": 160, "height": 96 },
+    "bus": { "left": 360, "top": 200, "width": 80, "height": 56 }
+  }
+}

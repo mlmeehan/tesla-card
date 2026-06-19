@@ -4,7 +4,13 @@ import { HERO_VIEWBOX } from '../const';
 import { STRINGS } from '../strings';
 import { formatNumber } from '../helpers';
 import type { FlowEdge, FlowModel } from './model';
-import { edgeVisual, NODE_COLOR, NODE_ICON, type FlowRenderer } from './renderer';
+import {
+  edgeVisuals,
+  NODE_COLOR,
+  NODE_ICON,
+  type FlowRenderer,
+  type RoleVisual,
+} from './renderer';
 
 /**
  * D1 — the live {@link FlowRenderer} for the Hero (Story 4.3, AR-7 HeroSvg). It
@@ -107,6 +113,7 @@ function kwText(kW: number): string {
 export class HeroSvgRenderer implements FlowRenderer {
   private _edges: EdgeRender[] = [];
   private _chips: ChipRender[] = [];
+  private _visuals: RoleVisual[] = [];
 
   /**
    * Cache the model and precompute per-edge geometry + per-chip data (pure — no
@@ -118,6 +125,12 @@ export class HeroSvgRenderer implements FlowRenderer {
     const edgeByRole = new Map<string, FlowEdge>();
     for (const e of model.edges) edgeByRole.set(e.from, e);
 
+    // The renderer-INDEPENDENT visual half (width/durSec/direction/colour/active)
+    // comes from the ONE shared `edgeVisuals` derivation (R1: never a private copy);
+    // SceneBus calls the identical function. Only the coordinates + STROKE_SCALE are
+    // this renderer's local presentation.
+    this._visuals = model.edges.map((e) => ({ role: e.from as EnergyRole, ...edgeVisuals(e) }));
+
     this._edges = model.edges.map((e) => {
       const role = e.from as EnergyRole;
       const nodePt = NODE_XY[role];
@@ -125,17 +138,17 @@ export class HeroSvgRenderer implements FlowRenderer {
       // (quiescent/idle) draws only the calm base track (source/sink unused for
       // the arrowhead). Colour is ALWAYS the `from` (role) node's accent (AC3).
       const forward = e.direction === 'forward';
-      const { width, durSec } = edgeVisual(e.kW);
+      const v = edgeVisuals(e);
       return {
         role,
         source: forward ? nodePt : BUS_XY,
         sink: forward ? BUS_XY : nodePt,
-        color: NODE_COLOR[role],
-        width: width * STROKE_SCALE,
-        durSec,
-        direction: e.direction,
+        color: v.color,
+        width: v.width * STROKE_SCALE,
+        durSec: v.durSec,
+        direction: v.direction,
         kwText: kwText(e.kW),
-        active: e.direction !== 'none',
+        active: v.active,
       };
     });
 
@@ -161,6 +174,16 @@ export class HeroSvgRenderer implements FlowRenderer {
    */
   get empty(): boolean {
     return this._chips.length === 0;
+  }
+
+  /**
+   * The per-edge SHARED derived visuals (`{role, width, durSec, direction, color,
+   * active}`) — the PRE-presentation half (no `STROKE_SCALE`). Exposed so the Story
+   * 4.4 R1 proof can compare this renderer's derivation against `SceneBusRenderer`'s
+   * directly and assert they are IDENTICAL (only coordinates differ).
+   */
+  get visuals(): readonly RoleVisual[] {
+    return this._visuals;
   }
 
   /**

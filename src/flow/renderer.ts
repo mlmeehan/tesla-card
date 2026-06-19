@@ -6,7 +6,7 @@ import {
   mdiEvStation,
 } from '@mdi/js';
 import type { EnergyRole } from '../data/registry';
-import type { FlowModel } from './model';
+import type { Direction, FlowEdge, FlowModel } from './model';
 
 /**
  * D1 — the renderer SEAM (Story 4.3). `interface FlowRenderer { update(model) }`
@@ -61,6 +61,47 @@ export function edgeVisual(kW: number): EdgeVisual {
     durSec: Math.max(0.5, 1.7 - mag * 0.16),
   };
 }
+
+/**
+ * The full per-edge DERIVED visual — the renderer-INDEPENDENT half of drawing an
+ * edge (everything EXCEPT the `source`/`sink` coordinates, which are the ONE thing
+ * a renderer owns locally). `width`/`durSec` are the canonical {@link edgeVisual}
+ * output (PRE any renderer presentation scale — HeroSvg's `STROKE_SCALE`, SceneBus's
+ * none); `color` is the source-node accent; `direction` is the model's resolved
+ * sense (never re-derived); `active` is `direction !== 'none'` (quiescent ⇒ calm).
+ */
+export interface EdgeVisuals {
+  width: number;
+  durSec: number;
+  direction: Direction;
+  /** SOURCE-node accent (`NODE_COLOR[edge.from]`) — hue says where power comes from. */
+  color: string;
+  /** `false` for `direction:'none'` (quiescent/idle) → calm base track, no motion. */
+  active: boolean;
+}
+
+/**
+ * The ONE shared per-edge visual derivation (Story 4.4, R1 "consume the one
+ * constant" discipline). BOTH `HeroSvgRenderer` and `SceneBusRenderer` call THIS —
+ * never a private re-implementation — so the AC3 "two renderers derive identically"
+ * property holds STRUCTURALLY (one call site), not by parallel formulas that could
+ * silently drift. The coordinate `source`/`sink` points stay renderer-local; this
+ * derives only the model-dependent visual (a function of the edge alone). A sign bug
+ * here would flip every renderer at once — which is exactly why it lives in one place.
+ */
+export function edgeVisuals(edge: FlowEdge): EdgeVisuals {
+  const { width, durSec } = edgeVisual(edge.kW);
+  return {
+    width,
+    durSec,
+    direction: edge.direction,
+    color: NODE_COLOR[edge.from as EnergyRole],
+    active: edge.direction !== 'none',
+  };
+}
+
+/** A {@link EdgeVisuals} tagged with its source role — the shape both renderers expose. */
+export type RoleVisual = { role: EnergyRole } & EdgeVisuals;
 
 /**
  * Node → accent colour (FR-9, the {@link import('../styles').ACCENT_SEMANTICS}
