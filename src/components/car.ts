@@ -1,12 +1,68 @@
 import { html, svg, css, nothing, type TemplateResult, type SVGTemplateResult } from 'lit';
 import type { BodyLayers, ChargeVisual, ApertureState } from '../types';
 import { HERO_VIEWBOX } from '../const';
+import { LAYER_CONTRACT } from '../layer-contract';
+import { log } from '../log';
 import { STRINGS } from '../strings';
 
 /** Neutral silver — matches a typical source render, reads as "no tint applied". */
 const DEFAULT_PAINT = '#c6c8c9';
 /** Dark cavity behind an opened panel — reuses the generic EV's glass/shadow neutral. */
 const APERTURE_CAVITY = '#10141a';
+
+/**
+ * Default charge-port anchor for the body-layers render (Story 3.6), in the
+ * 1024×687 (`HERO_VIEWBOX`) coordinate contract. The body contract assumes a
+ * front-right 3/4 camera (aperture-render-spec.md:15) — a DIFFERENT coordinate
+ * space from the generic EV's nested 1024×480 left-profile art, so this is its
+ * own constant, NOT the generic EV's `(900, 300)`. A Tesla charge port is
+ * rear-driver-side, so in a front-right 3/4 view it reads at the rear-left
+ * quarter. A body pack whose port sits elsewhere overrides via `body.chargePort`;
+ * tune this default against a real 3/4 render in the demo.
+ */
+const DEFAULT_BODY_CHARGE_PORT = { x: 180, y: 470 } as const;
+
+/**
+ * Is `body` a CONFORMING render per the published Layer contract (AC3)? True only
+ * when every `LAYER_CONTRACT.requiredLayers` key (`color`/`shade`/`mask`) is a
+ * non-empty string. Driven off the contract map (single source of truth) — if the
+ * contract grows a required layer, this guard follows automatically. A non-
+ * conforming body must NOT reach the recolor render (it would emit a broken
+ * `<image href=undefined>`); `carView` falls it through the render-mode priority.
+ */
+function isConformingBody(body: BodyLayers | undefined): body is BodyLayers {
+  return (
+    !!body &&
+    LAYER_CONTRACT.requiredLayers.every(
+      (k) => typeof body[k] === 'string' && body[k] !== ''
+    )
+  );
+}
+
+/**
+ * Charge-port overlay node (glow + cable + core) — Story 3.4's `.tc-port` markup,
+ * factored into a shared helper (Story 3.6) so BOTH the bundled generic EV and the
+ * body-layers render emit the SAME node (DRY — never a second charge overlay).
+ * Colour is driven entirely by the `.tc-car.<state>` CSS hook in `carStyles` (blue
+ * plugged / green charging), so the node carries NO inline colour and the `--tc-*`
+ * fallback gate stays satisfied (one place owns the colours). Anchored at `(x, y)`
+ * in the caller's coordinate space (the generic EV's nested 1024×480 art, or the
+ * body's 1024×687 viewBox). The cable path is built RELATIVE to `(x, y)`, so at the
+ * generic EV's `(900, 300)` it reproduces the original Story 3.4 path byte-for-byte
+ * (behaviour-preserving extraction).
+ */
+function chargePortOverlay(x: number, y: number): SVGTemplateResult {
+  return svg`
+      <g class="tc-port">
+        <circle class="tc-port-glow" cx=${x} cy=${y} r="34" />
+        <path
+          class="tc-port-cable"
+          d="M ${x} ${y + 8} C ${x + 12} ${y + 60} ${x + 2} ${y + 108} ${x - 28} ${y + 152}"
+          fill="none"
+        />
+        <circle class="tc-port-core" cx=${x} cy=${y} r="13" />
+      </g>`;
+}
 
 /** All-closed aperture state — the default, and what an asleep car shows (Story 3.5). */
 export const CLOSED_APERTURES: ApertureState = {
@@ -99,11 +155,13 @@ export function carView(opts: CarViewOpts): TemplateResult {
   const paint = opts.paint ?? DEFAULT_PAINT;
   const label = carLabel(name, apertures);
 
-  if (body) {
+  if (body && isConformingBody(body)) {
     // Per-vehicle overrides win; otherwise the body layers fill the shared
     // 1024×687 coordinate contract (HERO_VIEWBOX) every render mode anchors to.
     const w = body.width ?? HERO_VIEWBOX.width;
     const h = body.height ?? HERO_VIEWBOX.height;
+    // Charge-port anchor — a named contract NODE (Story 3.6); default when omitted.
+    const port = body.chargePort ?? DEFAULT_BODY_CHARGE_PORT;
 
     // id is scoped to this card's shadow root, so multiple cards never collide.
     return html`
@@ -153,8 +211,30 @@ export function carView(opts: CarViewOpts): TemplateResult {
         </g>
 
         ${bodyApertureLayers(body, w, h)}
+
+        ${charge !== 'parked'
+          ? // Body-mode charge overlay (Story 3.6 — fulfils the Story 3.4 body-
+            // layers deferral at car.ts genericCar). Z-order: TOPMOST cue, rendered
+            // AFTER bodyApertureLayers (aperture-render-spec.md:58-59 — apertures
+            // above the recolor stack, charge above apertures). Same shared node +
+            // .tc-car.<state> colour hook as the generic EV (DRY), anchored at the
+            // body's chargePort node (or the contract default) in 1024×687 space.
+            chargePortOverlay(port.x, port.y)
+          : nothing}
       </svg>
     `;
+  }
+
+  // AC3 — a body that is PRESENT but missing a required named layer must never
+  // reach the recolor render (it would emit a broken <image href=undefined>).
+  // Fall THROUGH the render-mode priority (body → image → bundled EV) and warn
+  // ONCE, naming the missing layer(s) — honest, never silent (UX-DR18). A fully-
+  // absent body is the normal zero-config path (→ bundled EV), so it never warns.
+  if (body) {
+    const missing = LAYER_CONTRACT.requiredLayers.filter(
+      (k) => typeof body[k] !== 'string' || body[k] === ''
+    );
+    log.warn('body render ignored — missing required layer(s):', missing.join(', '));
   }
 
   if (opts.image) {
@@ -336,27 +416,14 @@ function genericCar(
         <path d="M 410 188 L 466 118 L 556 118 L 556 188 Z" fill=${APERTURE_CAVITY} opacity="0.92" />
       </g>
 
-      ${charge !== 'parked'
-        ? svg`
       <!-- Charge-port glow + cable (Story 3.4, AC1/AC2). Anchored at the rear
-           quarter just aft of the rear wheel (cx≈792) in the art's coordinate
-           space. Colour is driven by the .tc-car.<state> CSS hook in carStyles
-           (blue plugged / green charging) so the --tc-* fallback gate stays
-           satisfied and the recolor lives in one place. Present for BOTH plugged
-           and charging — charging ⇒ plugged (AC2), green is a superset of blue.
-           NOTE: only the bundled generic EV carries this overlay; the body-layers
-           render mode (different intrinsic geometry) gets it in Story 3.6 — see
-           the carView body branch. -->
-      <g class="tc-port">
-        <circle class="tc-port-glow" cx="900" cy="300" r="34" />
-        <path
-          class="tc-port-cable"
-          d="M 900 308 C 912 360 902 408 872 452"
-          fill="none"
-        />
-        <circle class="tc-port-core" cx="900" cy="300" r="13" />
-      </g>`
-        : nothing}
+           quarter just aft of the rear wheel (cx≈900) in the art's nested 1024×480
+           coordinate space. The node + its .tc-car.<state> colour hook live in the
+           shared chargePortOverlay() helper (Story 3.6 extraction) so the body-
+           layers render emits the SAME node (DRY); colour stays in carStyles (blue
+           plugged / green charging) so the --tc-* fallback gate is satisfied.
+           Present for BOTH plugged and charging — charging ⇒ plugged (AC2). -->
+      ${charge !== 'parked' ? chargePortOverlay(900, 300) : nothing}
       </svg>
     </svg>
   `;

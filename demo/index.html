@@ -73,6 +73,13 @@
         Unresolved
       </button>
       <span class="sep"></span>
+      <button id="b-body-charge" title="Body-layers render + charging — green charge-port glow over the body (Story 3.6; needs demo/local art)">
+        Body · charging
+      </button>
+      <button id="b-body-broken" title="Non-conforming body (mask dropped) — must fall through to the bundled EV (Story 3.6 AC3)">
+        Body · broken
+      </button>
+      <span class="sep"></span>
       <button id="b-default" class="active" title="Device named “Garage Model Y”, garage_model_y_* entities">
         garage_model_y_*
       </button>
@@ -251,9 +258,13 @@
       }
 
       const params = new URLSearchParams(location.search);
+      // ?charge=charging|plugged|parked — pick the charge state for the body-charge
+      // demo (Story 3.6) without a scenario button; reuses the existing scenario
+      // state builders. 'charging' is the awake default (no flag needed).
+      const chargeParam = params.get('charge');
       let asleep = params.get('scenario') === 'asleep';
-      let parked = params.get('scenario') === 'parked';
-      let plugged = params.get('scenario') === 'plugged';
+      let parked = params.get('scenario') === 'parked' || chargeParam === 'parked';
+      let plugged = params.get('scenario') === 'plugged' || chargeParam === 'plugged';
       let apertures = params.get('scenario') === 'apertures';
       let unresolved = params.get('scenario') === 'unresolved';
       // Per-aperture flags (Story 3.5 independence/degrade harness). When any is
@@ -300,8 +311,13 @@
       //   default          → bundled generic-EV silhouette (recolours via ?paint=)
       //   ?image=1         → a custom flat <img> (the legacy ./car.svg fallback)
       //   ?recolor=1 / ?colorentity=… → photoreal recolor stack from ./local/
-      //                       (gitignored, bring-your-own art)
-      const recolor = params.get('recolor') === '1' || !!colorEntity;
+      //                       (gitignored, bring-your-own art). Combine with the
+      //                       scenario / ?charge= flags for the body-charge overlay.
+      //   ?recolor=broken  → a NON-CONFORMING body (mask dropped, Story 3.6 AC3):
+      //                       carView must fall THROUGH to the bundled EV, never a
+      //                       broken <image>. Needs no art (the body never renders).
+      const recolorBroken = params.get('recolor') === 'broken';
+      const recolor = params.get('recolor') === '1' || !!colorEntity || recolorBroken;
       const wantImage = params.get('image') === '1';
       const paint = params.get('paint');
 
@@ -317,12 +333,15 @@
         cardConfig.paint = colorEntity
           ? { entity: 'sensor.tesla_exterior_color', default: '#9aa3ad' }
           : paint || '#23519e';
-        cardConfig.body = {
-          color: './local/color.webp',
-          shade: './local/shade.webp',
-          highlight: './local/highlight.webp',
-          mask: './local/paintmask.png',
-        };
+        cardConfig.body = recolorBroken
+          ? // mask + highlight dropped → isConformingBody() rejects it → fall-through.
+            { color: './local/color.webp', shade: './local/shade.webp' }
+          : {
+              color: './local/color.webp',
+              shade: './local/shade.webp',
+              highlight: './local/highlight.webp',
+              mask: './local/paintmask.png',
+            };
       } else if (wantImage) {
         cardConfig.image = './car.svg';
       } else if (paint) {
@@ -418,6 +437,15 @@
       bRenamed.addEventListener('click', () => {
         envKey = 'renamed';
         apply();
+      });
+
+      // Body-render demos (Story 3.6). The body/recolor mode is URL-driven (the
+      // card config is built once at load), so these navigate rather than re-push.
+      document.getElementById('b-body-charge').addEventListener('click', () => {
+        location.search = '?recolor=1&charge=charging';
+      });
+      document.getElementById('b-body-broken').addEventListener('click', () => {
+        location.search = '?recolor=broken';
       });
 
       syncButtons();

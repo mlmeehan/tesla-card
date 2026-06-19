@@ -409,3 +409,46 @@ test.describe('hero — aperture overlays (Story 3.5)', () => {
     await expect(demo.heroSvg).not.toHaveAttribute('aria-label', /open:/);
   });
 });
+
+// Story 3.6 — the body-mode charge overlay (fulfilling the Story 3.4 deferral) and
+// the AC3 non-conforming-body fall-through, locked in a real browser against the
+// built bundle. jsdom proves the node presence + class hooks (car.test.ts); only
+// here can the resolved GREEN glow be measured, and the fall-through silhouette be
+// confirmed end-to-end against the shipped dist.
+test.describe('hero — body-mode charge overlay + fall-through (Story 3.6)', () => {
+  // AC2 — a CONFORMING body render + charging shows the green charge-port glow OVER
+  // the body render (not only the bundled EV). Needs the gitignored demo/local art,
+  // so it is GUARDED like the recolor render test above (runs on a dev machine with
+  // the art, skips on a fresh checkout / CI).
+  test('AC2: body render + charging shows the green port glow over the body', async ({
+    demo,
+  }) => {
+    test.skip(!hasRecolorArt, 'demo/local/ recolor art absent (gitignored / CI checkout)');
+    await demo.open({ recolor: true, charge: 'charging' });
+    await expect(demo.heroSvg).toBeVisible();
+    // It is the body render (the recolor paint mask is present), not the bundled EV.
+    await expect(demo.heroStage.locator('mask#tc-paintmask')).toHaveCount(1);
+    // The charge-port overlay renders over the body and resolves GREEN (charging).
+    await expect(demo.heroPort).toBeVisible();
+    await expect(demo.heroStage.locator('.tc-port-core')).toHaveCSS('fill', 'rgb(52, 211, 153)');
+    await expect(demo.heroSvg).toHaveClass(/\bcharging\b/);
+  });
+
+  // AC3 — a NON-CONFORMING body (mask dropped) falls THROUGH to the bundled EV:
+  // never a broken <image>, the .tc-ev silhouette renders. Needs NO art (the body
+  // never renders, so its ./local images are never requested, no 404) → runs
+  // UNGUARDED, including in CI. The honest log.warn is a console.warn (not an
+  // error), so the console guard does not trip on it.
+  test('AC3: a non-conforming body falls through to the bundled EV (no broken image)', async ({
+    demo,
+  }) => {
+    await demo.open({ recolor: 'broken' });
+    // The bundled EV silhouette is what renders (the body fell through cleanly).
+    await expect(demo.heroSvg).toBeVisible();
+    await expect(demo.heroSvg).toHaveClass(/\btc-ev\b/);
+    // No body recolor stack, and NO <image> element on the stage — so no broken /
+    // 404 href can exist (the exact AR-13/FR-2 failure AC3 forbids).
+    await expect(demo.heroStage.locator('mask#tc-paintmask')).toHaveCount(0);
+    await expect(demo.heroStage.locator('image')).toHaveCount(0);
+  });
+});

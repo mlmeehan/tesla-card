@@ -9,7 +9,7 @@
 // intrinsic-480 bundled EV is fitted within it (nested viewBox + meet), never
 // stretched. jsdom opt-in like the other element tests; Lit `render` drives the
 // pure render function with no custom element needed.
-import { describe, expect, test } from 'vitest';
+import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import { render } from 'lit';
 import { carView } from './car';
 import { HERO_VIEWBOX } from '../const';
@@ -314,5 +314,134 @@ describe('Story 3.5 a11y — state-bearing aria-label (open apertures read as wo
     const img = mount({ image: '/local/car.png', name: 'Model Y', apertures: AP({ window: true }) })
       .querySelector('img')!;
     expect(img.getAttribute('alt')).toContain('window');
+  });
+});
+
+// Story 3.6 AC2 — the body-mode charge overlay fulfils the Story 3.4 deferral: the
+// .tc-port node now renders in the BODY <svg> too (not only the bundled EV), via
+// the shared chargePortOverlay() helper, anchored at body.chargePort (or the
+// contract default). jsdom can't measure the glow colour (that's e2e) — assert the
+// node presence, the class hook, the anchor coords, and that the recolor stack is
+// unchanged (no 3.2 regression).
+describe('Story 3.6 AC2 — body-mode charge overlay', () => {
+  test('charging → .tc-port renders inside the body <svg> with glow/core/cable', () => {
+    const svg = mount({ body: BODY, charge: 'charging' }).querySelector('svg.tc-car')!;
+    const port = svg.querySelector('.tc-port');
+    expect(port).toBeTruthy();
+    expect(port!.querySelector('.tc-port-glow')).toBeTruthy();
+    expect(port!.querySelector('.tc-port-core')).toBeTruthy();
+    expect(port!.querySelector('.tc-port-cable')).toBeTruthy();
+    // The body <svg> carries the .charging halo hook (mode-agnostic carStyles).
+    expect(svg.classList.contains('charging')).toBe(true);
+  });
+
+  test('plugged → .tc-port present in body mode too (charging ⇒ plugged)', () => {
+    expect(mount({ body: BODY, charge: 'plugged' }).querySelector('svg.tc-car .tc-port')).toBeTruthy();
+  });
+
+  test('parked (default) → NO .tc-port in body mode', () => {
+    expect(mount({ body: BODY, charge: 'parked' }).querySelector('svg.tc-car .tc-port')).toBeNull();
+    expect(mount({ body: BODY }).querySelector('svg.tc-car .tc-port')).toBeNull();
+  });
+
+  test('port anchors at body.chargePort when supplied, the contract default when omitted', () => {
+    // Supplied override → glow centred at that coordinate.
+    const glow = mount({ body: { ...BODY, chargePort: { x: 333, y: 222 } }, charge: 'charging' })
+      .querySelector('svg.tc-car .tc-port-glow')!;
+    expect(glow.getAttribute('cx')).toBe('333');
+    expect(glow.getAttribute('cy')).toBe('222');
+    // Omitted → the DEFAULT_BODY_CHARGE_PORT (rear-left quarter in 1024×687 space).
+    const dft = mount({ body: BODY, charge: 'charging' }).querySelector('svg.tc-car .tc-port-glow')!;
+    expect(dft.getAttribute('cx')).toBe('180');
+    expect(dft.getAttribute('cy')).toBe('470');
+  });
+
+  test('port nodes carry NO inline colour hex (colour driven by the CSS state hook)', () => {
+    const port = mount({ body: BODY, charge: 'charging' }).querySelector('svg.tc-car .tc-port')!;
+    expect(port.outerHTML).not.toMatch(/fill="#|stroke="#/);
+  });
+
+  test('the recolor stack is unchanged when the charge overlay is present (no 3.2 regression)', () => {
+    const svg = mount({ body: BODY, paint: '#23519e', charge: 'charging' }).querySelector('svg.tc-car')!;
+    // Paint mask + --tc-paint + the masked recolor group all still present.
+    expect(svg.querySelector('mask#tc-paintmask')).toBeTruthy();
+    expect(svg.getAttribute('style')).toContain('--tc-paint:#23519e');
+    expect(svg.querySelector('g[mask="url(#tc-paintmask)"]')).toBeTruthy();
+  });
+
+  // The generic-EV port is byte-identical after the helper extraction (the shared
+  // chargePortOverlay reproduces Story 3.4's (900,300) node exactly).
+  test('the generic-EV port still anchors at (900, 300) after the helper extraction', () => {
+    const glow = mount({ charge: 'charging' }).querySelector('svg.tc-ev .tc-port-glow')!;
+    expect(glow.getAttribute('cx')).toBe('900');
+    expect(glow.getAttribute('cy')).toBe('300');
+  });
+});
+
+// Story 3.6 AC3 — a body missing a REQUIRED named layer (color/shade/mask) must
+// fall THROUGH the render-mode priority (body → image → bundled EV) — never a
+// crash, a broken <image href=undefined>, or a blank recolor stack — and emit ONE
+// honest log.warn naming the missing layer. A fully-absent body (zero-config) and
+// missing OPTIONAL nodes stay quiet and graceful.
+describe('Story 3.6 AC3 — non-conforming body degrades gracefully', () => {
+  let warn: ReturnType<typeof vi.spyOn>;
+  beforeEach(() => {
+    warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+  });
+  afterEach(() => {
+    warn.mockRestore();
+  });
+
+  // Each row drops/blanks exactly one required layer → non-conforming.
+  const missing: Array<[string, BodyLayers]> = [
+    ['color undefined', { ...BODY, color: undefined } as unknown as BodyLayers],
+    ['shade empty string', { ...BODY, shade: '' }],
+    ['mask undefined', { ...BODY, mask: undefined } as unknown as BodyLayers],
+  ];
+
+  for (const [name, body] of missing) {
+    test(`${name} → falls through to the bundled EV, no recolor stack, no broken <image>`, () => {
+      const root = mount({ body });
+      // No body recolor render: no paint mask, no SVG <image> with an empty href.
+      expect(root.querySelector('mask#tc-paintmask')).toBeNull();
+      for (const img of Array.from(root.querySelectorAll('image'))) {
+        const href = img.getAttribute('href');
+        expect(href === null || href === '' || href === 'undefined').toBe(false);
+      }
+      // With no flat image supplied it lands on the bundled generic EV.
+      expect(root.querySelector('svg.tc-ev')).toBeTruthy();
+    });
+
+    test(`${name} → falls through to a flat <img> when one is supplied`, () => {
+      const root = mount({ body, image: '/local/car.png' });
+      expect(root.querySelector('img')!.getAttribute('src')).toBe('/local/car.png');
+      expect(root.querySelector('mask#tc-paintmask')).toBeNull();
+    });
+
+    test(`${name} → emits exactly ONE log.warn naming the missing layer`, () => {
+      mount({ body });
+      expect(warn).toHaveBeenCalledTimes(1);
+      const msg = warn.mock.calls[0].join(' ');
+      expect(msg).toContain('[tesla-card]');
+      expect(msg).toMatch(/missing required layer/i);
+      expect(msg).toContain(name.split(' ')[0]); // color / shade / mask
+    });
+  }
+
+  test('a fully-absent body does NOT warn (the normal zero-config → bundled EV path)', () => {
+    mount({});
+    mount({ image: '/local/car.png' });
+    expect(warn).not.toHaveBeenCalled();
+  });
+
+  test('a missing OPTIONAL node still renders the body, no warn (graceful by construction)', () => {
+    // highlight omitted (optional layer) — body still renders, screen layer absent.
+    const root = mount({ body: { ...BODY, highlight: undefined } });
+    expect(root.querySelector('svg.tc-car mask#tc-paintmask')).toBeTruthy();
+    expect(warn).not.toHaveBeenCalled();
+    // chargePort omitted (optional node) — body still renders too.
+    const root2 = mount({ body: BODY, charge: 'charging' });
+    expect(root2.querySelector('svg.tc-car .tc-port')).toBeTruthy();
+    expect(warn).not.toHaveBeenCalled();
   });
 });

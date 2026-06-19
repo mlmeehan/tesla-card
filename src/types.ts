@@ -54,10 +54,21 @@ export interface EnergyConfig {
 }
 
 /**
- * Layered render for the recolorable body. Four flat images served by HA (e.g.
+ * @unstable — the published Layer contract (FR-7). PUBLIC SURFACE; its freeze is
+ * a one-way door (architecture.md D6), so this shape MAY change before it freezes
+ * — bring-your-own pack authors (Story 3.7) must expect it to shift. The
+ * machine-checkable half is {@link LAYER_CONTRACT} (`src/layer-contract.ts`); the
+ * human contract is `docs/layer-contract.md`. The required/optional split here
+ * (`color`/`shade`/`mask` required; `highlight?`/`apertureLayers?`/`chargePort?`
+ * optional) MUST match `LAYER_CONTRACT` — `layer-contract.test.ts` asserts it.
+ *
+ * Layered render for the recolorable body. Flat images served by HA (e.g.
  * `/local/tesla-card/color.webp`). No vehicle artwork ships with the card —
  * bring your own render (the build pipeline lives in the project docs). The card
- * needs zero per-vehicle geometry: it just composites these four layers.
+ * needs zero per-vehicle geometry: it just composites these layers + named nodes.
+ * Every layer/overlay must be IDENTICAL pixel size and ALIGNED (registration),
+ * shot from a front-right 3/4 camera, anchored to the 1024×687 coordinate
+ * contract (`HERO_VIEWBOX`). See `docs/layer-contract.md`.
  */
 export interface BodyLayers {
   /** Base layer — glass, wheels, lights and ground shadow keep their real pixels. */
@@ -85,6 +96,15 @@ export interface BodyLayers {
    * charge overlay.
    */
   apertureLayers?: { frunk?: string; liftgate?: string; door?: string; window?: string };
+  /**
+   * Named contract NODE (not a paint layer): the charge-port anchor in 1024×687
+   * space (`HERO_VIEWBOX`) for the body-mode charge overlay (Story 3.6 — fulfils
+   * the Story 3.4 body-layers deferral). When omitted, `carView` uses a contract
+   * default (`DEFAULT_BODY_CHARGE_PORT`, a sensible rear-quarter point for a
+   * front-right 3/4 view); a pack whose port reads elsewhere overrides it. Absent
+   * ⇒ no failure — the default anchors the cue (graceful by construction).
+   */
+  chargePort?: { x: number; y: number };
 }
 
 export interface TeslaCardConfig {

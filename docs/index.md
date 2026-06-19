@@ -36,6 +36,8 @@ without hard-coded entity IDs.
 - [CI Pipeline](./ci.md) — workflows (validate / test / release), quality gates, local-parity scripts, secrets, troubleshooting
 - [Source Tree Analysis](./source-tree-analysis.md) — annotated `src/` and project layout
 - [Privacy](./privacy.md) — no-network-egress / no-telemetry affirmation, the merge-blocking gate, and the sanctioned HA channel
+- [Layer contract (`@unstable`)](./layer-contract.md) — the published body-render contract: named layers/nodes, registration, the 3/4 camera, the 1024×687 anchor, and the one-way-door freeze warning
+- [Recolorable body](./recolorable-body.md) — how to bake the four layers the Layer contract composites (bring-your-own render)
 
 ## Existing Project Docs
 

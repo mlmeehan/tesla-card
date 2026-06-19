@@ -10,6 +10,8 @@
 //   paint=<css|tesla-name>     tint the bundled generic-EV hero
 //   image=1                    legacy flat <img> (demo/car.svg, committed)
 //   recolor=1 | colorentity=…  photoreal recolor stack from demo/local/ (GITIGNORED)
+//   recolor=broken             non-conforming body (mask dropped) — AC3 fall-through (needs NO art)
+//   charge=charging|plugged|parked  pick the charge state (body-charge demo, Story 3.6)
 //   frunk|liftgate|door|window=1  (apertures scenario) open ONLY those — independence check
 //   unavail=<aperture>         (apertures scenario) force one entity unavailable — graceful-degrade check
 
@@ -31,7 +33,8 @@ export interface DemoOptions {
   panel?: PanelId; // default: harness uses 'charging'
   paint?: string; // tint the generic-EV default
   image?: boolean; // ?image=1 — flat car.svg
-  recolor?: boolean; // ?recolor=1 — REQUIRES demo/local art (see hasRecolorArt)
+  recolor?: boolean | 'broken'; // ?recolor=1 (REQUIRES demo/local art) | 'broken' (non-conforming, no art)
+  charge?: 'charging' | 'plugged' | 'parked'; // body-charge demo — pick the charge state (Story 3.6)
   colorentity?: string; // entity-driven paint (also implies recolor in the harness)
   apertures?: ApertureName[]; // (apertures scenario) open ONLY these — independence check
   unavail?: ApertureName; // (apertures scenario) force one entity unavailable — degrade check
@@ -51,7 +54,9 @@ export function buildDemoUrl(opts: DemoOptions = {}): string {
   if (opts.panel) q.set('panel', opts.panel);
   if (opts.paint) q.set('paint', opts.paint);
   if (opts.image) q.set('image', '1');
-  if (opts.recolor) q.set('recolor', '1');
+  if (opts.recolor === 'broken') q.set('recolor', 'broken');
+  else if (opts.recolor) q.set('recolor', '1');
+  if (opts.charge) q.set('charge', opts.charge);
   if (opts.colorentity) q.set('colorentity', opts.colorentity);
   for (const a of opts.apertures ?? []) q.set(a, '1'); // open only these (independence)
   if (opts.unavail) q.set('unavail', opts.unavail); // force one unavailable (degrade)

@@ -1,5 +1,9 @@
 # Recolorable car body — baking the layers
 
+> This bakes the layers of the **[Layer contract](./layer-contract.md)** — see it
+> for the formal `@unstable` published surface (named layers, registration, the
+> 3/4 camera, the 1024×687 anchor, and the named overlay nodes).
+
 The hero can recolour a single car render to **any paint colour** instead of
 needing one PNG per colour. This is optional and advanced: if you just want a
 fixed image, set `image:` and skip all of this.
@@ -116,6 +120,13 @@ body:
   # If your layers aren't 1024×687, set the intrinsic size so the viewBox matches:
   # width: 1600
   # height: 900
+  # Optional named NODES (see the Layer contract) — both default sensibly if omitted:
+  # chargePort: { x: 180, y: 470 }   # charge-port glow anchor, in 1024×687 space
+  # apertureLayers:                   # per-aperture neutral-silver inpainted overlays
+  #   frunk: /local/tesla-card/aperture-frunk.webp
+  #   liftgate: /local/tesla-card/aperture-liftgate.webp
+  #   door: /local/tesla-card/aperture-door.webp
+  #   window: /local/tesla-card/aperture-window.webp
 ```
 
 See [README → Paint](../README.md#paint) for the colour forms (`paint` accepts a
