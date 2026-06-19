@@ -1,5 +1,5 @@
-import { html, css, nothing, type TemplateResult } from 'lit';
-import { customElement } from 'lit/decorators.js';
+import { html, css, nothing, type TemplateResult, type PropertyValues } from 'lit';
+import { customElement, state } from 'lit/decorators.js';
 import {
   mdiMinus,
   mdiPlus,
@@ -25,13 +25,111 @@ import {
   selectOption,
   toggleEntity,
   clamp,
+  srState,
+  prettyText,
 } from '../helpers';
+// The per-tap reconcile fence is single-sourced in quick-actions (Story 5.2) —
+// reuse the exported constant rather than copy a second magic number.
+import { RECONCILE_TIMEOUT_MS } from './quick-actions';
 import type { EntityKey } from '../const';
+
+/** Distinct optimistic-override slot for the numeric setpoint (the 'climate'
+ * entity also backs the on/off BOOLEAN slot, so the setpoint needs its own key). */
+const TEMP_KEY = 'temperature';
 
 @customElement('tc-panel-climate')
 export class TcPanelClimate extends TcBase {
+  /**
+   * Optimistic overrides (Story 5.6, AC2) — control-key → requested value, one
+   * shape across all three kinds: boolean (on/off pill, defrost, cabin-overheat),
+   * number (the setpoint, under {@link TEMP_KEY}), string (seat/wheel cycler
+   * levels). Generalizes the proven quick-actions pattern. The SIGHTED render
+   * reads `optimistic ?? settled` so a control feels instant; the SCREEN-READER
+   * name/`aria-pressed` ignores it and always reflects the settled `hass` truth
+   * (UX-DR21 — never announce a change that may not have landed). An entry drops
+   * when the live state catches up (reconcile IS the feedback) or its per-tap
+   * fence expires (honest revert).
+   */
+  @state() private _optimistic: Record<string, boolean | number | string> = {};
+
+  /** One-shot reconcile-fence timer per pending key (cleared on reconcile/disconnect). */
+  private _timers = new Map<string, ReturnType<typeof setTimeout>>();
+
+  override disconnectedCallback(): void {
+    super.disconnectedCallback();
+    // No orphaned reconcile fences once we leave the DOM (UX-DR23).
+    for (const t of this._timers.values()) clearTimeout(t);
+    this._timers.clear();
+  }
+
+  /**
+   * Reconcile on every `hass` tick: when a pending control's LIVE value now
+   * equals its optimistic request, the round-trip landed → drop the override (and
+   * its fence). Re-derived from the live state, never a tap-time snapshot, so a
+   * change made elsewhere reconciles correctly. A still-disagreeing tick is the
+   * expected in-flight window; only a matching tick or the fence clears it.
+   */
+  protected override willUpdate(changed: PropertyValues): void {
+    if (!changed.has('hass')) return;
+    for (const key of Object.keys(this._optimistic)) {
+      if (this._liveValue(key) === this._optimistic[key]) this._reconcile(key);
+    }
+  }
+
+  /** The current settled value for a pending override key (boolean | number | string). */
+  private _liveValue(key: string): boolean | number | string | undefined {
+    switch (key) {
+      case 'climate':
+        return this._climateOn();
+      case 'cabin_overheat_protection':
+        return this._copOn();
+      case 'defrost':
+        return isOn(this.hass, this.config, 'defrost');
+      case TEMP_KEY:
+        return attr(this.hass, this.config, 'climate', 'temperature');
+      default:
+        return rawState(this.hass, this.config, key as EntityKey); // seat/wheel selects
+    }
+  }
+
+  /** Typed read of an optimistic override (undefined when none pending — so a
+   * stored `false`/`0`/`''` survives a `?? settled` fallthrough). */
+  private _opt<T extends boolean | number | string>(key: string): T | undefined {
+    return key in this._optimistic ? (this._optimistic[key] as T) : undefined;
+  }
+
+  /** Write an optimistic request + arm a fresh single-shot fence for the key. */
+  private _arm(key: string, value: boolean | number | string): void {
+    this._optimistic = { ...this._optimistic, [key]: value };
+    this._clearTimer(key);
+    this._timers.set(key, setTimeout(() => this._reconcile(key), RECONCILE_TIMEOUT_MS));
+  }
+
+  /** Drop a pending override + its fence (reconciled or expired → back to truth). */
+  private _reconcile(key: string): void {
+    this._clearTimer(key);
+    if (!(key in this._optimistic)) return;
+    const next = { ...this._optimistic };
+    delete next[key];
+    this._optimistic = next;
+  }
+
+  private _clearTimer(key: string): void {
+    const t = this._timers.get(key);
+    if (t !== undefined) {
+      clearTimeout(t);
+      this._timers.delete(key);
+    }
+  }
+
   private _climateOn(): boolean {
     const s = rawState(this.hass, this.config, 'climate');
+    return s !== undefined && s !== 'off' && !isUnavailable(s);
+  }
+
+  /** Cabin-overheat-protection is a `climate`-domain entity → on = not off/unavailable. */
+  private _copOn(): boolean {
+    const s = rawState(this.hass, this.config, 'cabin_overheat_protection');
     return s !== undefined && s !== 'off' && !isUnavailable(s);
   }
 
@@ -39,19 +137,28 @@ export class TcPanelClimate extends TcBase {
     if (!this.hass) return;
     const min = attr(this.hass, this.config, 'climate', 'min_temp') ?? 15;
     const max = attr(this.hass, this.config, 'climate', 'max_temp') ?? 28;
+    const target = clamp(next, min, max);
+    this._arm(TEMP_KEY, target); // optimistic: the readout jumps to the requested temp instantly
     this.hass.callService('climate', 'set_temperature', {
       entity_id: entityId(this.config, 'climate'),
-      temperature: clamp(next, min, max),
+      temperature: target,
     });
   }
 
   private _toggleClimate(): void {
     if (!this.hass) return;
+    if (isUnavailable(rawState(this.hass, this.config, 'climate'))) return; // never optimistic when disabled
+    this._arm('climate', !this._climateOn());
     toggleEntity(this.hass, entityId(this.config, 'climate'));
   }
 
+  /** Toggle a boolean control (defrost switch, cabin-overheat climate entity). */
   private _toggle(key: EntityKey): void {
     if (!this.hass) return;
+    if (isUnavailable(rawState(this.hass, this.config, key))) return;
+    const cur =
+      key === 'cabin_overheat_protection' ? this._copOn() : isOn(this.hass, this.config, key);
+    this._arm(key, !cur);
     toggleEntity(this.hass, entityId(this.config, key));
   }
 
@@ -60,24 +167,33 @@ export class TcPanelClimate extends TcBase {
     if (!this.hass) return;
     const options: string[] | undefined = attr(this.hass, this.config, key, 'options');
     const cur = rawState(this.hass, this.config, key);
-    if (!options || options.length === 0 || cur === undefined) return;
-    const i = options.indexOf(cur);
+    if (!options || options.length === 0 || isUnavailable(cur)) return;
+    // Advance from the DISPLAYED level (optimistic ?? settled) so rapid taps step.
+    const displayed = this._opt<string>(key) ?? cur;
+    const i = displayed !== undefined ? options.indexOf(displayed) : -1;
     const next = options[(i + 1) % options.length];
+    this._arm(key, next); // optimistic: the tile shows the requested level instantly
     selectOption(this.hass, entityId(this.config, key), next);
   }
 
   private _seatTile(key: EntityKey, label: string, glyph = mdiCarSeatHeater): TemplateResult {
     const options: string[] | undefined = attr(this.hass, this.config, key, 'options');
-    const cur = rawState(this.hass, this.config, key);
-    const unavailable = isUnavailable(cur) || !options;
+    const settled = rawState(this.hass, this.config, key);
+    const unavailable = isUnavailable(settled) || !options;
+    // Sighted level is optimistic; SR name is the settled level (UX-DR21).
+    const displayed = this._opt<string>(key) ?? settled;
     const levels = options ? options.length - 1 : 3;
-    const idx = options && cur ? Math.max(0, options.indexOf(cur)) : 0;
+    const idx = options && displayed ? Math.max(0, options.indexOf(displayed)) : 0;
     const intensity = levels > 0 ? idx / levels : 0;
     const active = idx > 0;
+    const name = `${label} ${STRINGS.climate.heater}`;
+    const srLabel =
+      unavailable || settled === undefined ? name : srState(name, prettyText(settled));
     return html`
       <button
         class="seat ${active ? 'on' : ''}"
         ?disabled=${unavailable}
+        aria-label=${srLabel}
         style=${active
           ? `--lvl:${intensity};background:color-mix(in srgb, var(--tc-orange, #fb923c) ${8 + intensity * 26}%, transparent);border-color:color-mix(in srgb, var(--tc-orange, #fb923c) ${40 + intensity * 30}%, transparent)`
           : nothing}
@@ -85,7 +201,7 @@ export class TcPanelClimate extends TcBase {
       >
         ${icon(glyph, { size: 22, color: active ? 'var(--tc-orange, #fb923c)' : undefined })}
         <span class="seat-name">${label}</span>
-        <span class="bars">
+        <span class="bars" aria-hidden="true">
           ${[0, 1, 2].map(
             (b) => html`<span class="bar ${b < idx ? 'fill' : ''}"></span>`
           )}
@@ -96,16 +212,29 @@ export class TcPanelClimate extends TcBase {
 
   protected override render(): TemplateResult {
     const cfg = this.config;
-    const on = this._climateOn();
-    const targetTemp: number | undefined = attr(this.hass, cfg, 'climate', 'temperature');
-    const step = attr(this.hass, cfg, 'climate', 'target_temp_step') ?? 0.5;
     const climateAvail = !isUnavailable(rawState(this.hass, cfg, 'climate'));
+    const settledOn = this._climateOn();
+    const on = this._opt<boolean>('climate') ?? settledOn; // sighted = optimistic
+    // An unavailable climate has no confident setpoint → "—", never a stale figure.
+    const settledTemp: number | undefined = climateAvail
+      ? attr(this.hass, cfg, 'climate', 'temperature')
+      : undefined;
+    const targetTemp = this._opt<number>(TEMP_KEY) ?? settledTemp; // sighted readout value
+    const step = attr(this.hass, cfg, 'climate', 'target_temp_step') ?? 0.5;
 
-    const defrostOn = isOn(this.hass, cfg, 'defrost');
-    const copOn = (() => {
-      const s = rawState(this.hass, cfg, 'cabin_overheat_protection');
-      return s !== undefined && s !== 'off' && !isUnavailable(s);
-    })();
+    const defrostSettled = isOn(this.hass, cfg, 'defrost');
+    const defrostOn = this._opt<boolean>('defrost') ?? defrostSettled;
+    const defrostAvail = !isUnavailable(rawState(this.hass, cfg, 'defrost'));
+    const copSettled = this._copOn();
+    const copOn = this._opt<boolean>('cabin_overheat_protection') ?? copSettled;
+    const copAvail = !isUnavailable(rawState(this.hass, cfg, 'cabin_overheat_protection'));
+
+    // Ambient temps HIDE when missing (Story 5.5 statTile contract / EXPERIENCE.md
+    // L117): pass `undefined` (not a baked "—") so the tile renders `nothing`.
+    const ambient = (key: EntityKey): string | undefined =>
+      isUnavailable(rawState(this.hass, cfg, key))
+        ? undefined
+        : display(this.hass, cfg, key, { decimals: 0 });
 
     return html`
       <div class="wrap">
@@ -115,18 +244,19 @@ export class TcPanelClimate extends TcBase {
             ${statTile({
               icon: mdiThermometer,
               label: STRINGS.climate.inside,
-              value: display(this.hass, cfg, 'inside_temp', { decimals: 0 }),
+              value: ambient('inside_temp'),
               color: 'var(--tc-amber, #fbbf24)',
             })}
             ${statTile({
               icon: mdiThermometerLow,
               label: STRINGS.climate.outside,
-              value: display(this.hass, cfg, 'outside_temp', { decimals: 0 }),
+              value: ambient('outside_temp'),
               color: 'var(--tc-blue, #38bdf8)',
             })}
           </div>
 
-          <div class="stepper">
+          <!-- role=group names the readout the live region announces (UX-DR21). -->
+          <div class="stepper" role="group" aria-label=${STRINGS.climate.setpoint}>
             <button
               class="step"
               ?disabled=${!on || targetTemp === undefined}
@@ -135,7 +265,7 @@ export class TcPanelClimate extends TcBase {
             >
               ${icon(mdiMinus, { size: 26 })}
             </button>
-            <div class="readout ${on ? '' : 'off'}">
+            <div class="readout ${on ? '' : 'off'}" aria-live="polite">
               <span class="t">${targetTemp !== undefined ? targetTemp.toFixed(targetTemp % 1 ? 1 : 0) : '—'}</span>
               <span class="deg">°</span>
             </div>
@@ -153,6 +283,10 @@ export class TcPanelClimate extends TcBase {
             class="bigpill ${on ? 'on' : ''}"
             ?disabled=${!climateAvail}
             @click=${this._toggleClimate}
+            aria-pressed=${settledOn}
+            aria-label=${climateAvail
+              ? srState(STRINGS.climate.climate, settledOn ? STRINGS.climate.stateOn : STRINGS.climate.stateOff)
+              : STRINGS.climate.climate}
           >
             ${icon(mdiPower, { size: 19 })}
             <span>${on ? STRINGS.climate.on : STRINGS.climate.off}</span>
@@ -177,8 +311,12 @@ export class TcPanelClimate extends TcBase {
           <button
             class="toggle-tile ${defrostOn ? 'on' : ''}"
             style="--accent:var(--tc-blue, #38bdf8)"
-            ?disabled=${isUnavailable(rawState(this.hass, cfg, 'defrost'))}
+            ?disabled=${!defrostAvail}
             @click=${() => this._toggle('defrost')}
+            aria-pressed=${defrostSettled}
+            aria-label=${defrostAvail
+              ? srState(STRINGS.climate.defrost, defrostSettled ? STRINGS.climate.stateOn : STRINGS.climate.stateOff)
+              : STRINGS.climate.defrost}
           >
             ${icon(mdiCarDefrostFront, { size: 22 })}
             <span>${STRINGS.climate.defrost}</span>
@@ -186,8 +324,12 @@ export class TcPanelClimate extends TcBase {
           <button
             class="toggle-tile ${copOn ? 'on' : ''}"
             style="--accent:var(--tc-teal, #2dd4bf)"
-            ?disabled=${isUnavailable(rawState(this.hass, cfg, 'cabin_overheat_protection'))}
+            ?disabled=${!copAvail}
             @click=${() => this._toggle('cabin_overheat_protection')}
+            aria-pressed=${copSettled}
+            aria-label=${copAvail
+              ? srState(STRINGS.climate.cabinOverheat, copSettled ? STRINGS.climate.stateOn : STRINGS.climate.stateOff)
+              : STRINGS.climate.cabinOverheat}
           >
             ${icon(mdiSnowflake, { size: 22 })}
             <span>${STRINGS.climate.cabinOverheat}</span>

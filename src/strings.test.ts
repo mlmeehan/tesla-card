@@ -130,6 +130,20 @@ describe('centralized strings — voice contract (Story 2.5)', () => {
     }
   });
 
+  test('Story 5.6: climate panel gains the accessible-name fragments (toggles + cyclers + setpoint)', () => {
+    // The optimistic toggles announce a settled boolean ("Climate, on"), the seat
+    // cyclers a settled level ("Front L heater, High"), and the stepper group is
+    // named — all new user-facing copy (DoD a11y), single-sourced here.
+    expect(STRINGS.climate.climate).toBe('Climate');
+    expect(STRINGS.climate.heater).toBe('heater');
+    expect(STRINGS.climate.stateOn).toBe('on');
+    expect(STRINGS.climate.stateOff).toBe('off');
+    expect(STRINGS.climate.setpoint).toBe('Target temperature');
+    // Composes the AC's state-bearing names verbatim.
+    expect(`${STRINGS.climate.defrost}, ${STRINGS.climate.stateOn}`).toBe('Defrost, on');
+    expect(`${STRINGS.climate.seats.fl} ${STRINGS.climate.heater}`).toBe('Front L heater');
+  });
+
   test('migration backstop: copy-bearing components import from ./strings', () => {
     const consumers = [
       'tesla-card.ts',

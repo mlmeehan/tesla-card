@@ -159,8 +159,13 @@ export const STRINGS = {
   climate: {
     lowerTemp: 'Lower temperature', // stepper aria
     raiseTemp: 'Raise temperature',
+    setpoint: 'Target temperature', // stepper group aria-label (Story 5.6 — names the readout the live region announces)
     on: 'Climate on',
     off: 'Climate off',
+    climate: 'Climate', // base noun for the on/off pill's state-bearing accessible name ("Climate, on")
+    heater: 'heater', // seat/wheel cycler accessible-name suffix ("Front L heater, High") — lower-case, mid-name
+    stateOn: 'on', // settled boolean state word for aria (toggles) — sentence-flow
+    stateOff: 'off',
     seatHeating: 'Seat & wheel heating',
     inside: 'Inside',
     outside: 'Outside',
