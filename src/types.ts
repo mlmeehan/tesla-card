@@ -77,7 +77,12 @@ export interface TeslaCardConfig {
   type: string;
   /** Displayed vehicle name (defaults to "Model Y"). */
   name?: string;
-  /** URL of the flat car render image (defaults to /local/model_y.png). Used when `body` is unset. */
+  /**
+   * URL of the flat car render image. Has NO default — used only when `body` is
+   * unset; when both are absent the card shows the bundled generic-EV silhouette
+   * (never a `/local/...` fallback that 404s on a fresh install). The flat `image`
+   * mode ignores `paint` (only the recolorable `body`/bundled renders recolour).
+   */
   image?: string;
   /**
    * Recolorable body render. When set, the hero paints the body to `paint`

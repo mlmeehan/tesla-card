@@ -39,7 +39,6 @@ const STATE_MEMBERS = new Set(['states', 'entities', 'devices']);
 const BASELINE = [
   'src/energy.ts', // → Epic 4 / Story 4.1: energy reads→data/, math→flow/ split
   'src/helpers.ts', // → legacy (hass,config,EntityKey) state-read helpers fold into data/
-  'src/paint.ts', // → Epic 3 / Story 3.2: PaintSource live read routes through the data/ freshness reader
   'src/tesla-card.ts', // → fold the parent's registry (hass.entities/devices) reads into data/ resolve
 ];
 const BASELINE_SET = new Set(BASELINE);

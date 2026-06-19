@@ -17,6 +17,7 @@ import {
   isQuiescent,
   read,
   readKey,
+  readRaw,
   referenceNow,
   type FreshnessRead,
   type Staleness,
@@ -213,6 +214,32 @@ describe('AC3 — quiescent derivation (forward-enabling, pure)', () => {
     for (const s of ['stale', 'asleep', 'unavailable'] as Staleness[]) {
       expect(isQuiescent(mk(s))).toBe(true);
     }
+  });
+});
+
+describe('readRaw — attribute-aware raw reader for arbitrary entities (Story 3.2)', () => {
+  const hass = makeHass({
+    'sensor.car_colour': {
+      entity_id: 'sensor.car_colour',
+      state: 'Deep Blue',
+      attributes: { hex: '#2a4f93', missing: 42 },
+    } as HassEntity,
+  });
+
+  test('returns the entity state when no attribute is requested', () => {
+    expect(readRaw(hass, 'sensor.car_colour')).toBe('Deep Blue');
+  });
+
+  test('returns the named attribute string when `attribute` is set', () => {
+    expect(readRaw(hass, 'sensor.car_colour', 'hex')).toBe('#2a4f93');
+  });
+
+  test('returns undefined for an absent entity, absent hass, or non-string value', () => {
+    expect(readRaw(hass, 'sensor.missing')).toBeUndefined();
+    expect(readRaw(undefined, 'sensor.car_colour')).toBeUndefined();
+    expect(readRaw(hass, 'sensor.car_colour', 'absent')).toBeUndefined();
+    // non-string attribute → undefined (NaN/type-safe, never throws)
+    expect(readRaw(hass, 'sensor.car_colour', 'missing')).toBeUndefined();
   });
 });
 

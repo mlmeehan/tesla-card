@@ -136,4 +136,15 @@ describe('paint plumbing — applied to both SVG render paths', () => {
     const img = mount({ image: '/local/car.png', paint: '#23519e' }).querySelector('img')!;
     expect(img.getAttribute('style')).toBeNull();
   });
+
+  // AC2 final link in the degradation chain: resolvePaint → undefined (nothing
+  // resolved, no source.default) → carView's `paint ?? DEFAULT_PAINT` supplies
+  // the neutral silver. Render with NO paint and assert the silver reaches
+  // --tc-paint on both recolorable renders (body + bundled EV).
+  test('no paint → neutral silver #c6c8c9 reaches --tc-paint on both SVG renders', () => {
+    expect(mount({ body: BODY }).querySelector('svg.tc-car')!
+      .getAttribute('style')).toContain('--tc-paint:#c6c8c9');
+    expect(mount({}).querySelector('svg.tc-ev')!
+      .getAttribute('style')).toContain('--tc-paint:#c6c8c9');
+  });
 });

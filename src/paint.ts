@@ -1,4 +1,5 @@
 import type { HomeAssistant, TeslaCardConfig } from './types';
+import { readRaw } from './data/freshness';
 
 /**
  * Resolve the body paint colour for the recolorable hero.
@@ -114,15 +115,11 @@ export function resolvePaint(
     return colorFromName(paint) ?? paint;
   }
 
-  // PaintSource: read live, map, or fall back.
-  const st = hass?.states?.[paint.entity];
-  const raw = st
-    ? paint.attribute
-      ? st.attributes?.[paint.attribute]
-      : st.state
-    : undefined;
-
-  if (typeof raw === 'string' && !UNUSABLE.has(raw.trim().toLowerCase())) {
+  // PaintSource: read live (via the data/ reader — the sole sanctioned home for
+  // hass.states), then map, pass through, or fall back. paint.ts keeps all the
+  // colour-domain logic; only the raw state access lives in data/.
+  const raw = readRaw(hass, paint.entity, paint.attribute);
+  if (raw && !UNUSABLE.has(raw.trim().toLowerCase())) {
     const mapped = colorFromName(raw, paint.map);
     if (mapped) return mapped;
     if (looksLikeCss(raw)) return raw;

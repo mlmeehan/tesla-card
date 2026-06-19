@@ -199,6 +199,30 @@ export function read(
 }
 
 /**
+ * Raw state-or-attribute string for an ARBITRARY user-named entity — the only
+ * sanctioned home for an `hass.states` read outside the freshness model itself
+ * (AR-1 / `no-bare-hass-states` gate; `data/` is the sole reader subtree). Used
+ * by the paint resolver's `PaintSource` branch, whose `entity` is user-supplied
+ * (not a function-key), so it cannot route through the registry-aware `readKey`.
+ *
+ * Returns `st.attributes?.[attribute]` when `attribute` is set, else `st.state`;
+ * `undefined` when `hass`/the entity is absent or the value is not a string.
+ * Never throws — the editor preview supplies a partial `hass` and first paint may
+ * have none. This is a RAW read: no staleness, no `UNUSABLE` filtering — the
+ * caller owns colour-domain interpretation.
+ */
+export function readRaw(
+  hass: HomeAssistant | undefined,
+  entity: string,
+  attribute?: string
+): string | undefined {
+  const st = hass?.states?.[entity];
+  if (!st) return undefined;
+  const raw = attribute ? st.attributes?.[attribute] : st.state;
+  return typeof raw === 'string' ? raw : undefined;
+}
+
+/**
  * Key-aware convenience: resolve the function-key (registry-aware, via
  * `resolve.ts` — never re-implemented here) then delegate to {@link read}. The
  * per-key threshold override is consulted unless the caller passes an explicit

@@ -187,4 +187,17 @@ describe('resolvePaint — PaintSource (live entity)', () => {
     const src: PaintSource = { entity: 'sensor.car' };
     expect(resolvePaint(hass, cfg(src))).toBeUndefined();
   });
+
+  // Story 3.2: the live read now routes through the data/ readRaw reader. It must
+  // stay total on the partial/absent `hass` the editor preview & first paint can
+  // supply — never throw, just degrade to the source default (or undefined).
+  test('never throws on an absent or partial hass; degrades to default', () => {
+    const src: PaintSource = { entity: 'sensor.car', default: '#333333' };
+    expect(() => resolvePaint(undefined, cfg(src))).not.toThrow();
+    expect(resolvePaint(undefined, cfg(src))).toBe('#333333');
+    // partial hass with no states map at all
+    const partial = {} as unknown as HomeAssistant;
+    expect(() => resolvePaint(partial, cfg(src))).not.toThrow();
+    expect(resolvePaint(partial, cfg(src))).toBe('#333333');
+  });
 });
