@@ -27,9 +27,9 @@ IDs) and a **single energy sign-convention** that drives both the Hero overlay a
 - **Entry Point:** `src/tesla-card.ts` → `dist/tesla-card.js`
 - **Architecture Pattern:** single `@customElement('tesla-card')` orchestrating flat `tc-*` children (shadow-DOM component tree)
 - **Build:** `npm run build` (Rollup → single inlined ES bundle)
-- **Gates:** `npm run typecheck` + `npm run test` (Vitest unit suite) + `npm run lint` (5-gate chain) + `npm run build` + Playwright E2E + demo harness — see [CI Pipeline](./ci.md)
+- **Gates:** `npm run typecheck` + `npm run test` (Vitest unit suite) + `npm run lint` (6-gate chain) + `npm run build` + Playwright E2E + demo harness — see [CI Pipeline](./ci.md)
 - **Min HA:** `2024.4.0` · **CI runtime:** Node 20
-- **Version source:** `CARD_VERSION` in `src/const.ts` (kept in sync with `package.json` + git tag)
+- **Version source:** `CARD_VERSION` in `src/const.ts` (kept in sync with `package.json` + git tag — **CI-enforced** by the `version-sync` lint gate + a `release.yml` tag assertion, Story 7.4)
 
 ## Generated Documentation
 
