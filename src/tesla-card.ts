@@ -42,6 +42,14 @@ import './components/panel-closures';
 import './components/panel-tyres';
 import './components/panel-location';
 import './components/panel-media';
+// Epic 6 — standalone ecosystem cards (Story 6.2). Side-effect imports register
+// the custom elements + their window.customCards picker entries. These are
+// STANDALONE cards (their own LovelaceCard contract); tesla-card.ts does NOT host
+// them — the Scene that composes them is Story 6.5.
+import './components/solar';
+import './components/powerwall';
+import './components/grid';
+import './components/home';
 
 type Tab = { id: PanelId; name: string; icon: string };
 

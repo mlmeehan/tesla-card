@@ -35,21 +35,39 @@ import { ACCENT_SEMANTICS } from '../styles';
 export type Accent = keyof typeof ACCENT_SEMANTICS;
 
 /**
- * Resolve an {@link Accent} key to a fallback-carrying CSS custom-property read,
- * e.g. `green → "var(--tc-green, #34d399)"`. Pure + unit-testable, and the ONE
- * place the accent token is composed: no literal accent hex lives in this file —
- * the fallback hex comes from the `ACCENT_SEMANTICS` contract, so the accent-hex
- * gate (styles.test.ts) only ever sees a sanctioned `var(--tc-*, <hex>)` form,
- * never a raw decorative hex.
+ * Shell accent — the 7-accent vocabulary plus a single `'neutral'` sentinel
+ * (Story 6.2, Grid-accent option A). The Scene's `NODE_COLOR.grid` is
+ * deliberately a NEUTRAL (`var(--tc-text-dim, #9aa7b8)`), NOT one of the 7
+ * `ACCENT_SEMANTICS` keys — so the `tc-grid` card can stay faithful to the
+ * Scene's grid node, the one neutral exception is centralized here in the shell
+ * (no per-card raw hex). Backward-compatible: no existing caller passes
+ * `'neutral'`, so every prior {@link Accent} value behaves exactly as before.
  */
-export function accentVar(accent: Accent): string {
-  return `var(--tc-${accent}, ${ACCENT_SEMANTICS[accent].hex})`;
+export type ShellAccent = Accent | 'neutral';
+
+/** The one neutral source-node colour (mirrors `flow/renderer.ts` `NODE_COLOR.grid`). */
+const NEUTRAL_ACCENT = 'var(--tc-text-dim, #9aa7b8)';
+
+/**
+ * Resolve a {@link ShellAccent} to a fallback-carrying CSS custom-property read,
+ * e.g. `green → "var(--tc-green, #34d399)"`, `neutral → "var(--tc-text-dim,
+ * #9aa7b8)"`. Pure + unit-testable, and the ONE place the accent token is
+ * composed: no literal accent hex lives in this file — the fallback hex comes
+ * from the `ACCENT_SEMANTICS` contract (or the single sanctioned `--tc-text-dim`
+ * fallback for `'neutral'`), so the accent-hex gate (styles.test.ts) only ever
+ * sees a sanctioned `var(--tc-*, <hex>)` form, never a raw decorative hex.
+ */
+export function accentVar(accent: ShellAccent): string {
+  return accent === 'neutral'
+    ? NEUTRAL_ACCENT
+    : `var(--tc-${accent}, ${ACCENT_SEMANTICS[accent].hex})`;
 }
 
 /** Options for {@link EcosystemCard.renderShell}. Copy/values are the concrete card's job. */
 export interface ShellOpts {
-  /** Source-node accent — sets `--node-accent` on the surface. */
-  accent: Accent;
+  /** Source-node accent — sets `--node-accent` on the surface. Accepts the
+   * 7-accent vocabulary plus the single `'neutral'` sentinel (grid node). */
+  accent: ShellAccent;
   /** Optional uppercase section label (`.label`). Per-card copy is 6.2/6.3. */
   label?: string | TemplateResult;
   /**
@@ -137,5 +155,13 @@ export const ecosystemShellStyles: CSSResult = css`
     flex-direction: column;
     gap: var(--tc-space-2, 8px);
     min-width: 0;
+  }
+  /* Calm, specific empty-state sentence (the concrete cards' AC2 fall-through):
+     a quiet trust-copy line, never a blank body or a fabricated "0 kW". */
+  .eco-empty {
+    margin: 0;
+    color: var(--tc-text-dim, #9aa7b8);
+    font-size: var(--tc-fs-body, 13.5px);
+    font-weight: var(--tc-fw-body, 600);
   }
 `;

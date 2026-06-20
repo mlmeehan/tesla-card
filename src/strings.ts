@@ -254,6 +254,41 @@ export const STRINGS = {
     },
   },
 
+  // Standalone ecosystem cards (Epic 6 — Solar/Powerwall/Grid/Home). Per-card
+  // description + calm empty-state sentence (UX: "a calm, specific sentence, not
+  // a generic stub") + the human-readable RAW-sign direction labels. Card TITLES
+  // and node names reuse `STRINGS.energy.nodes.*` (Solar/Powerwall/Grid/Home —
+  // identical, not duplicated here); stat labels reuse `STRINGS.energy.reserve`/
+  // `.mode`. The direction words live per-card because each card's flow means a
+  // different thing (grid import/export vs Powerwall charge/discharge).
+  ecosystem: {
+    solar: {
+      description: 'Standalone solar production card.',
+      empty: 'No solar production reported yet.',
+      production: 'Production',
+    },
+    powerwall: {
+      description: 'Standalone Powerwall charge & flow card.',
+      empty: 'No Powerwall data reported yet.',
+      charging: 'Charging',
+      discharging: 'Discharging',
+      idle: 'Idle',
+      charge: 'Charge', // SoC ring sub-label
+    },
+    grid: {
+      description: 'Standalone grid import/export card.',
+      empty: 'No grid data reported yet.',
+      importing: 'Importing',
+      exporting: 'Exporting',
+      idle: 'Idle',
+    },
+    home: {
+      description: 'Standalone home consumption card.',
+      empty: 'No home consumption reported yet.',
+      consumption: 'Consumption',
+    },
+  },
+
   editor: {
     vehicleName: 'Vehicle name',
     namePlaceholder: 'Model Y',

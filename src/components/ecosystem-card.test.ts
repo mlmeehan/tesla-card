@@ -140,6 +140,13 @@ describe('AC1 — shared shell is the .surface recipe at xl with a source-node a
     expect(accentVar('green')).toBe(`var(--tc-green, ${ACCENT_SEMANTICS.green.hex})`);
   });
 
+  test('accentVar maps the neutral sentinel (Story 6.2, grid node) → --tc-text-dim', () => {
+    // The Scene's NODE_COLOR.grid is a deliberate neutral, NOT one of the 7
+    // accents — the shell centralizes that one exception as a fallback-carrying
+    // var read so the tc-grid card stays faithful to the Scene without a raw hex.
+    expect(accentVar('neutral')).toBe('var(--tc-text-dim, #9aa7b8)');
+  });
+
   test('radius resolves to --tc-radius-xl and --tc-shadow rides via .surface (not re-declared in the shell)', () => {
     const surfaceRule = (sharedStyles as unknown as { cssText: string }).cssText.match(
       /\.surface\s*\{[^}]*\}/

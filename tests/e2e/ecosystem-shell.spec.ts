@@ -27,23 +27,26 @@ test.describe('ecosystem shell (6.1) — deliberate no-runtime-surface contract'
 
   test('no stray ecosystem element is registered in the production runtime', async ({ demo }) => {
     await demo.open(AWAKE.open);
-    // The base is unregistered by design; the jsdom test-only fixtures
-    // (tc-eco-fixture / tc-eco-raw) must never leak into the shipped bundle, and no
-    // concrete ecosystem card lands until 6.2/6.3.
-    const registered = await demo.page.evaluate(() =>
-      [
-        'ecosystem-card',
-        'tc-ecosystem-card',
-        'tc-eco-fixture',
-        'tc-eco-raw',
-        'tc-solar',
-        'tc-powerwall',
-        'tc-grid',
-        'tc-home',
-        'tc-wall-connector',
-      ].filter((tag) => customElements.get(tag) !== undefined),
+    // The abstract base stays unregistered by design and the jsdom test-only
+    // fixtures (tc-eco-fixture / tc-eco-raw) must never leak into the shipped
+    // bundle. Story 6.2 registered the four concrete ecosystem cards (tc-solar /
+    // tc-powerwall / tc-grid / tc-home); tc-wall-connector lands in 6.3.
+    const strays = await demo.page.evaluate(() =>
+      ['ecosystem-card', 'tc-ecosystem-card', 'tc-eco-fixture', 'tc-eco-raw'].filter(
+        (tag) => customElements.get(tag) !== undefined,
+      ),
     );
-    expect(registered).toEqual([]);
+    expect(strays).toEqual([]);
+
+    // The 6.2 concrete cards ARE registered now (side-effect imported in
+    // tesla-card.ts) — assert they landed, so a regression that drops a
+    // registration is caught here too.
+    const registered62 = await demo.page.evaluate(() =>
+      ['tc-solar', 'tc-powerwall', 'tc-grid', 'tc-home'].filter(
+        (tag) => customElements.get(tag) !== undefined,
+      ),
+    );
+    expect(registered62).toEqual(['tc-solar', 'tc-powerwall', 'tc-grid', 'tc-home']);
   });
 
   test('the shell ships no inter-card messaging on the page (shared-hass-only interlink)', async ({
