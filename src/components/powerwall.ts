@@ -2,6 +2,7 @@ import { html, nothing, type PropertyValues, type TemplateResult } from 'lit';
 import { customElement } from 'lit/decorators.js';
 import { mdiHomeBattery, mdiBatteryLock, mdiCogOutline, mdiBatteryPlus, mdiBatteryMinus } from '@mdi/js';
 import { EcosystemCard, ecosystemShellStyles, accentVar } from './ecosystem-card';
+import { nodeHero, nodeHeroStyles } from './node-hero';
 import { sharedStyles } from '../styles';
 import { STRINGS } from '../strings';
 import { statTile, ring, formatAgeHint } from '../ui';
@@ -147,7 +148,7 @@ export class TcPowerwall extends EcosystemCard implements LovelaceCard {
     // land in 8.4; here mode/reserve remain read-only telemetry tiles (AC3).
     return this.renderDetail(
       { accent, label, stamp, state, subStatus: dir, kind: 'sensor', ariaLabel },
-      { readout: html`${soc}${flow}`, tiles }
+      { hero: nodeHero('powerwall'), readout: html`${soc}${flow}`, tiles }
     );
   }
 
@@ -166,7 +167,7 @@ export class TcPowerwall extends EcosystemCard implements LovelaceCard {
     });
   }
 
-  static override styles = [sharedStyles, ecosystemShellStyles];
+  static override styles = [sharedStyles, ecosystemShellStyles, nodeHeroStyles];
 }
 
 declare global {

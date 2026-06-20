@@ -2,6 +2,7 @@ import { html, nothing, type PropertyValues, type TemplateResult } from 'lit';
 import { customElement } from 'lit/decorators.js';
 import { mdiPowerPlug, mdiFlash, mdiCounter, mdiCurrentAc, mdiSineWave, mdiThermometer } from '@mdi/js';
 import { EcosystemCard, ecosystemShellStyles, accentVar } from './ecosystem-card';
+import { nodeHero, nodeHeroStyles } from './node-hero';
 import { sharedStyles } from '../styles';
 import { STRINGS } from '../strings';
 import { statTile, formatAgeHint } from '../ui';
@@ -160,7 +161,7 @@ export class TcWallConnector extends EcosystemCard implements LovelaceCard {
 
     return this.renderDetail(
       { accent, label, stamp, state, subStatus: stateLabel, kind: 'sensor', ariaLabel },
-      { readout: html`${stateTile}${powerTile}${sessionTile}`, tiles }
+      { hero: nodeHero('wall_connector'), readout: html`${stateTile}${powerTile}${sessionTile}`, tiles }
     );
   }
 
@@ -182,7 +183,7 @@ export class TcWallConnector extends EcosystemCard implements LovelaceCard {
     });
   }
 
-  static override styles = [sharedStyles, ecosystemShellStyles];
+  static override styles = [sharedStyles, ecosystemShellStyles, nodeHeroStyles];
 }
 
 declare global {

@@ -2,6 +2,7 @@ import { html, type PropertyValues, type TemplateResult } from 'lit';
 import { customElement } from 'lit/decorators.js';
 import { mdiHomeLightningBolt } from '@mdi/js';
 import { EcosystemCard, ecosystemShellStyles, accentVar } from './ecosystem-card';
+import { nodeHero, nodeHeroStyles } from './node-hero';
 import { sharedStyles } from '../styles';
 import { STRINGS } from '../strings';
 import { statTile, formatAgeHint } from '../ui';
@@ -70,6 +71,7 @@ export class TcHome extends EcosystemCard implements LovelaceCard {
     return this.renderDetail(
       { accent, label, stamp, state, kind: 'sensor', ariaLabel: `${label} ${kw}` },
       {
+        hero: nodeHero('home'),
         readout: statTile({
           icon: mdiHomeLightningBolt,
           label: STRINGS.ecosystem.home.consumption,
@@ -80,7 +82,7 @@ export class TcHome extends EcosystemCard implements LovelaceCard {
     );
   }
 
-  static override styles = [sharedStyles, ecosystemShellStyles];
+  static override styles = [sharedStyles, ecosystemShellStyles, nodeHeroStyles];
 }
 
 declare global {

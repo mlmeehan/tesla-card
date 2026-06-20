@@ -230,6 +230,20 @@ describe('Story 8.1 — detail layout: V/Hz/° measurement tiles (live units), d
   });
 });
 
+describe('Story 8.2 — per-node hero art (live path only)', () => {
+  test('the live detail render shows the wall-unit hero SVG in the .eco-hero slot', async () => {
+    const el = await mount(makeHass(states(detailFx)));
+    expect(sr(el).querySelector('.eco-hero svg.nh-art')).not.toBeNull();
+    expect(sr(el).querySelector('.eco-hero .nh-wc-face')).not.toBeNull(); // the wall-unit signature
+  });
+
+  test('the calm-empty render has NO hero (additive to the live path only, AC4)', async () => {
+    const el = await mount(makeHass(states(allUnresolvedFx)));
+    expect(sr(el).querySelector('.eco-empty')).not.toBeNull();
+    expect(sr(el).querySelector('svg.nh-art')).toBeNull();
+  });
+});
+
 describe('AC1/AC2 — partial presence: hide-when-missing, never a fabricated reading', () => {
   test('only wc_session present → session tile renders, no fabricated 0 kW power tile, not empty', async () => {
     // A WC reporting session energy but no live power must NOT invent a `0 kW`

@@ -2,6 +2,7 @@ import { html, css, nothing, type PropertyValues, type TemplateResult } from 'li
 import { customElement } from 'lit/decorators.js';
 import { mdiTransmissionTower, mdiImport, mdiExport } from '@mdi/js';
 import { EcosystemCard, ecosystemShellStyles, accentVar } from './ecosystem-card';
+import { nodeHero, nodeHeroStyles } from './node-hero';
 import { sharedStyles } from '../styles';
 import { STRINGS } from '../strings';
 import { statTile, formatAgeHint } from '../ui';
@@ -110,7 +111,7 @@ export class TcGrid extends EcosystemCard implements LovelaceCard {
 
     return this.renderDetail(
       { accent, label, stamp, state, subStatus: dir, kind: 'sensor', ariaLabel: `${label} ${dir}` },
-      { readout: html`${chip}${tile}`, tiles }
+      { hero: nodeHero('grid'), readout: html`${chip}${tile}`, tiles }
     );
   }
 
@@ -142,6 +143,7 @@ export class TcGrid extends EcosystemCard implements LovelaceCard {
   static override styles = [
     sharedStyles,
     ecosystemShellStyles,
+    nodeHeroStyles,
     css`
       .gchip {
         display: inline-flex;

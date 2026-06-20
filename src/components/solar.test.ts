@@ -261,6 +261,16 @@ describe('Story 6.4 — live weather vignette (AC1/AC2/AC4)', () => {
   });
 });
 
+describe('Story 8.2 — Solar keeps its weather vignette hero (NO duplicate node art)', () => {
+  test('the hero remains the weather vignette, never the nodeHero node art', async () => {
+    const s = withState(withState(states(awakeFx), 'weather.home', 'cloudy'), 'sun.sun', 'above_horizon');
+    const el = await mount(makeHass(s));
+    const hero = sr(el).querySelector('.eco-hero')!;
+    expect(hero.querySelector('.wx-art')).not.toBeNull(); // vignette is Solar's hero
+    expect(sr(el).querySelector('.nh-art')).toBeNull(); // no per-node art on Solar
+  });
+});
+
 describe('Story 8.1 — detail layout: stat grid, deep-link, sensor honesty', () => {
   test('AC2 — present telemetry renders its tile (Generated / Exported), values shown', async () => {
     const el = await mount(makeHass(states(detailFx)));

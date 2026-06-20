@@ -159,6 +159,20 @@ describe('Story 8.1 — detail layout: charge/discharge tiles, read-only, deep-l
   });
 });
 
+describe('Story 8.2 — per-node hero art (live path only)', () => {
+  test('the live detail render shows the node hero SVG in the .eco-hero slot', async () => {
+    const el = await mount(makeHass(states(detailFx)));
+    expect(sr(el).querySelector('.eco-hero svg.nh-art')).not.toBeNull();
+    expect(sr(el).querySelector('.eco-hero .nh-pw-fill')).not.toBeNull(); // the battery-stack signature
+  });
+
+  test('the calm-empty render has NO hero (additive to the live path only, AC4)', async () => {
+    const el = await mount(makeHass(states(allUnresolvedFx)));
+    expect(sr(el).querySelector('.eco-empty')).not.toBeNull();
+    expect(sr(el).querySelector('svg.nh-art')).toBeNull();
+  });
+});
+
 describe('AC3 — standalone registered element', () => {
   test('tc-powerwall is defined; getCardSize is a number; customCards entry present', async () => {
     expect(customElements.get('tc-powerwall')).toBeDefined();
