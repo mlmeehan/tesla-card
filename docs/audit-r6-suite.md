@@ -255,3 +255,245 @@ An R6 audit reports what it finds. The 5.11 vehicle-card audit records the
 image-mode, `commands.spec.ts` asleep wake-hint) — those are the vehicle-card layer's
 findings, unchanged here; see `docs/audit-r6-vehicle-card.md`. This checkpoint adds
 no new red; the suite-audit Vitest + E2E specs are green.
+
+---
+---
+
+# R6 — Epic-8 DEPTH audit (Story 8.8)
+
+> **What this is.** Story 8.8 is the depth-level R6 checkpoint that **closes Epic 8**.
+> 6.8 (above) swept the suite at **MVP depth**; 8.8 extends that SAME pass to **only
+> the richness Epic 8 added** — the six ecosystem cards now carrying detail shells +
+> stat grids + per-node hero art + inline history charts + the Powerwall control
+> surface, the Vehicle node in the Scene, the enriched Gateway bus, and the
+> self-powered ribbon — layered over the already-passing 6.8 audit. It is the peer of
+> 6.8 (suite) and `docs/audit-r6-vehicle-card.md` (5.11, vehicle card) **one level
+> deeper**. It does **not** fork a parallel artifact — it extends this one, the
+> `audit-r6-suite.test.ts` jsdom harness, and the `audit-r6-suite.spec.ts` E2E harness.
+>
+> Same honesty discipline: evaluative items route to **[HUMAN]**; the heavier
+> ~60fps budget is a **[PROFILER]** task on physical kiosk hardware. Where a surface
+> needed no remediation it is recorded as a **proof, not a fix**. One concrete
+> cross-cutting defect WAS found and fixed (see AC2) — an R6 audit reports what it
+> finds, and a fabricated fix is the dishonesty this checkpoint exists to prevent.
+
+**Scope reality:** an audit-and-document checkpoint, NOT a feature build. No new card,
+panel, flow node, control, chart, config field, or engine edit. The artifacts are the
+extended suite-audit tests + this section + one surgical token remediation.
+
+**Merge baseline.** All of Epic 8 (8.1–8.7) is merged before this pass — confirmed at
+HEAD: 8.1 `1f4d987` → 8.2 `570914f` → 8.3 `d8132df` → 8.4 `07c9397` → 8.5 `fed8e77`
+→ 8.6 `4c5c9f6` (enriched bus) → 8.7 `1ded860` (ribbon). **No AC item lacked a new
+source; nothing was deferred.** The DAG `8.8 → all of Epic 8 + the Epic-6 Scene` holds.
+
+## NEW surface enumeration (the Epic-8 depth the audit owns)
+
+The composed whole = the **6.8-audited MVP suite** *plus*:
+
+| Story | NEW surface | Files |
+|---|---|---|
+| 8.1 | detail shells + stat grids + **deep-link chip** | `components/ecosystem-card.ts` (`_deepLinkChip`/`_openEnergy`/`_onDeepLinkKey`, `.eco-deeplink`) |
+| 8.2 | **per-node hero art** (`nhPulse` WC-dot) | `components/node-hero.ts` |
+| 8.3 | **inline history charts** (`chartIn` draw-on) + on-demand recorder fetch | `components/chart.ts`, `data/history.ts` |
+| 8.4 | **Powerwall controls** (segmented op-mode `.seg` + backup-reserve `tc-slider`) | `components/powerwall.ts`, `components/slider.ts` |
+| 8.5 | **Vehicle cell** in the Scene + the WC→Vehicle edge | `components/my-home.ts`, `flow/my-home.ts` (`wcVehicleEdge`/`VEHICLE_NODE_ID`) |
+| 8.6 | **enriched Gateway bus** (kW pills · terminals · focus-highlight) | `components/my-home.ts` (`_pill`/`_terminal`/`_legs`), `flow/my-home.ts` |
+| 8.7 | **self-powered % ribbon** + per-node tiles | `components/my-home.ts` (`_ribbon`), `flow/my-home.ts` (`selfPowered`/`ribbonTiles`) |
+
+Frozen / read-only (confirmed un-touched): `flow/{model,balance,binding,renderer,hero-svg,scene-bus}.ts`, `data/{registry,resolve,dialect,energy,freshness}.ts`.
+
+---
+
+## AC1 — cross-control keyboard + reduced-motion sweep across the NEW surfaces
+
+### Reduced-motion: the NEW Epic-8 animation inventory → behaviour → gate
+
+Rule unchanged: **kill the motion, keep the data.** Every NEW source below was
+**already `prefers-reduced-motion`-gated by its own story** — the AC1 gap 8.8 closes is
+the **composed sweep** (no test drove `reduced-motion` over *all the new sources at
+once*) and the **cross-control keyboard traversal** *through* the new controls.
+
+| Surface | Animation | Reduced-motion | Gated in | Asserted (composed, NEW) |
+|---|---|---|---|---|
+| Per-node hero art | `.nh-wc-dot` `nhPulse` pulse | `animation: none`; the dot stays visible | `node-hero.ts` `@media` (L271–278) | `audit-r6-suite.test.ts` (stylesheet) + `.spec.ts` (runtime, composed) |
+| Inline charts | `.spark`/`.bars` `chartIn` fade-in | `animation: none`; the final static curve renders | `chart.ts` `@media` (L260–266) | `audit-r6-suite.test.ts` + `.spec.ts` (composed) |
+| Powerwall controls | `.seg` `transition: background/color` | `transition: none` (instant) | `powerwall.ts` `@media` (L456–460) | `audit-r6-suite.test.ts` + `.spec.ts` (composed) |
+| Gateway bus (enriched) | `.sb-flow` dash (`sb-flow-dash`) | `animation: none`; arrowheads + kW pills survive | `scene-bus.ts` `@media` (L353–358) | `audit-r6-suite.spec.ts` (composed) |
+| Bus focus-highlight | `.scene.focus` cell/`.gw-leg` opacity **transition** | `transition: none` (instant cut) | `my-home.ts` `@media` (L1211–1214) | `audit-r6-suite.test.ts` + `.spec.ts` (6.8 + depth) |
+| **8.6 bus pills / terminals / taps** | — (**deliberately STATIC SVG**) | n/a — already the static "keep the data" read | `my-home.ts` L1181 (no keyframe by design) | proof: nothing to gate (recorded, not fixed) |
+
+**Finding:** like 6.8 (and unlike 5.11's Flow-overlay dash), the Epic-8 depth had
+**no uncovered animation** — every NEW source was already gated by its own story, and
+the 8.6 enriched-bus decorations are static by design. 8.8 adds the **composed
+machined inventory** (`audit-r6-suite.test.ts` — every NEW source's stylesheet carries
+its `prefers-reduced-motion` kill) **and** the **composed runtime sweep**
+(`audit-r6-suite.spec.ts` — hero art + charts + the segmented control freeze
+*together* in one deepened Scene render while the dot/curve/labels survive). ✅ automated.
+
+### Keyboard navigation / focus order across the NEW controls
+
+| Check | How | Status |
+|---|---|---|
+| Tab reaches the deep-link chip, Powerwall segmented control, backup-reserve slider AND the scene cells in the composed Scene | E2E `audit-r6-suite.spec.ts` (composed walk) | ✅ automated |
+| The shared-outline controls (deep-link / seg / scene-cell) paint the 2px `--tc-blue` `:focus-visible` ring on keyboard focus | E2E `audit-r6-suite.spec.ts` | ✅ automated |
+| Every new affordance clears the ≥44×44 tap-target floor (incl. the 46px slider track) | E2E `audit-r6-suite.spec.ts` | ✅ automated |
+| Focus is NOT trapped — it leaves the control/cell set after the last | E2E `audit-r6-suite.spec.ts` (escape proof) | ✅ automated |
+| Per-control a11y in isolation (seg `aria-pressed`-settled; slider commit-on-release; deep-link Enter/Space; ring) | `powerwall-controls.spec.ts` / `a11y-interaction.spec.ts` / `node-hero.spec.ts` / `inline-charts.spec.ts` | ✅ automated (per-story) |
+| **"Focus order through the new controls reads naturally; no surprising jumps"** | manual sweep vs EXPERIENCE.md | **[HUMAN]** |
+| **"The deepened Scene reads at a glance with motion off; charts read calmly static"** | manual sweep vs DESIGN.md/EXPERIENCE.md | **[HUMAN]** |
+
+The slider's focus affordance is its thumb/track (commit-on-release, UX-DR8), not the
+shared outline recipe — its keyboard a11y is pinned in `powerwall-controls.spec.ts` +
+`a11y-interaction.spec.ts`; the depth sweep asserts its reachability + ≥44px track.
+
+---
+
+## AC2 — freshness honesty across the NEW surfaces
+
+| Surface | Mechanism | Honest read | Pinned |
+|---|---|---|---|
+| Inline charts | **structural calm-empty** | short/absent/all-NaN history ⇒ the muted empty caption, **never a fabricated flat line / zero bars**; a genuinely-fetched zero is real | `chart.test.ts`, `history.test.ts` (helper) + per-card suites/`inline-charts.spec.ts` (standalone) + **`audit-r6-suite.test.ts` (COMPOSED-Scene: an empty recorder ⇒ `.ct-empty` inside the embedded cards, NO `svg.spark`/`.bcol` anywhere, fetch stays id-gated composed, NEW)** |
+| Self-powered % lead | **structural `—`** | no/sub-deadband live load ⇒ `selfPowered.pct === undefined` ⇒ the lead reads `—`, **never a divide-by-zero `0%`/`100%`** | `flow/my-home.test.ts` (math) + **`audit-r6-suite.test.ts` (composed render `.rib-big` = `—`, NEW)** |
+| Ribbon (quiescent) | **`.dim` + stamped** | fully-quiescent Scene ⇒ `.dim` + a last-known "updated Nm ago" stamp (`referenceNow`/`formatAgeHint`, never `Date.now()`) | `my-home.test.ts` + `audit-r6-suite.test.ts` (composed, NEW) |
+| Stat-grid tiles | **hide-when-missing + stamped** | absent ⇒ hidden (no fabricated `0`); stale ⇒ last-known + `.tc-stale-copy` stamp | per-card suites |
+| Vehicle cell (asleep) | **last-known + `—` battery** | asleep ⇒ calm asleep word + `—` SoC/range + stamp; **never a false "Charging"** | `my-home.test.ts` (8.5 AC3) |
+
+Staleness copy uses `--tc-text-dim` (the freshness-honest 4.5:1 tone), **never**
+`--tc-text-mute`. A new composed pin (`audit-r6-suite.test.ts`) enforces this on the
+NEW surfaces.
+
+### Concrete defect found + fixed (a fix, not a fabrication)
+
+The depth review surfaced **one** genuine cross-cutting honesty defect the per-story
+ACs missed in isolation: **`.ribbon-age`** — the Gateway-ribbon "updated Nm ago"
+staleness stamp (`my-home.ts`) — rendered at **`var(--tc-text-mute, #64748b)`**, the
+lowest-contrast tone the DoD honesty rule (UX-DR18) **explicitly forbids for staleness
+copy** ("`--tc-text-dim`, never `--tc-text-mute`"). Every peer stamp (`.veh-age`,
+`.eco-stamp` via `.tc-stale-copy`) already used `--tc-text-dim`; `.ribbon-age` was the
+lone outlier — a freshness *disclosure* rendered as if it were a decorative caption.
+The bare-`var(--tc-*)` gate did not catch it (it checks a fallback EXISTS, not that the
+*right* token is used — the Epic-6 gate-blind-spot lesson), so only a depth review
+could. **Remediation:** one token change (`--tc-text-mute` → `--tc-text-dim`),
+behavior-preserving (visual legibility only), aligning the code to the contract the
+6.8 audit's own prose already claimed. Pinned by `audit-r6-suite.test.ts` so it cannot
+regress. ✅ fixed + pinned.
+
+---
+
+## AC3 — the HEAVIER composed ~60fps budget ([PROFILER] residue — NOT a CI assertion)
+
+Unchanged in kind from 6.8 (epics.md:398: a named reference device, the browser
+performance profiler, a ~10s steady-state read — **not** a Vitest assertion), but the
+Scene is now **heavier**: **6 *detail* cards + inline charts + per-node hero art + the
+enriched Gateway bus + the weather vignette** simultaneously visible/animating (vs.
+6.8's MVP cards + bus + vignette).
+
+### The enabling precondition (machined) holds at the new depth
+
+The no-thrash architecture is unchanged and re-confirmed: geometry runs on **rAF over
+cached anchors** decoupled from the `hass`-tick (`RafCoalescer` + `ResizeObserver`), so
+a live tick re-renders values but does NOT thrash layout; the **chart fetch is
+gated/cached** (id-keyed — `_lastChartKey`; an unrelated tick does not refire
+`fetchCardHistory`, pinned in `powerwall.test.ts`/`inline-charts.spec.ts`); the chart
+**render is static SVG** (no rAF). So the depth added telemetry surfaces (charts, hero
+art) **without** adding a per-tick layout/fetch cost.
+
+| Check | How | Status |
+|---|---|---|
+| An unrelated `hass` tick does NOT recompute geometry | `my-home.test.ts` | ✅ automated |
+| The chart fetch is id-gated/cached — same resolved ids ⇒ no refire | `powerwall.test.ts`, `inline-charts.spec.ts` | ✅ automated |
+| The chart render is static SVG (the `chartIn` is content-free, frozen under reduced-motion) | `chart.test.ts` + `audit-r6-suite.*` | ✅ automated |
+
+### The profiler procedure (for the human to run) — [PROFILER]
+
+1. **Device:** the NFR-1 reference device — the low-end tablet-kiosk class.
+2. **Build + serve the DEEPENED Scene:** `npm run build`, serve `demo/`, open the full
+   six-*detail*-card Scene (each with hero art + stat grid + inline charts) + the
+   enriched Gateway bus + the weather vignette, composed with the live vehicle cell —
+   the awake/charging + energy-site scenario, weather injected so the vignette animates
+   and history present so the charts draw. Confirm all are simultaneously visible/animating.
+3. **Capture:** profiler, **~10s steady-state** (no interaction), read the sustained FPS.
+4. **Pass bar:** **~60fps sustained** over the 10s window (first-paint dips are not the target).
+5. **On a miss:** apply the extended degradation ladder below — a missed budget
+   **degrades motion, it is NOT a release blocker**.
+
+**Status: [PROFILER] — not measured this session (no kiosk hardware). The procedure +
+pass bar + the heavier-Scene load are recorded for the human to run.**
+
+---
+
+## AC5 — the EXTENDED graceful-degradation ladder (heavier Scene)
+
+The AC3 wording adds **"freeze charts/vignette first"** to the 6.8 ladder. Ordered,
+cheap, motion-only; at **every** rung the data stays (arrowheads + kW pills + the
+chart's final curve survive):
+
+1. **Reduce bus-animation density** — fewer simultaneously-animated edges / longer dash
+   period. The static read (arrowheads + kW pills) is unchanged.
+2. **Cap simultaneously-animated edges** — clamp the **shared** `edgeVisual` output
+   (`flow/renderer.ts`; the `BUS_WIDTH_MAX` ceiling in `flow/my-home.ts` is the existing
+   precedent for clamping the shared output). **Clamp the shared output — never fork the
+   kW→visual formula** (R1). A capped edge keeps its arrowhead + kW pill.
+3. **Freeze the charts + the weather vignette first** — the **lowest-cost** rung: both
+   already freeze via the reduced-motion path (`chart.ts` `chartIn`,
+   `weather-vignette.ts` `wx-*`). Force them into their `animation:none` state while the
+   bus still animates. A frozen chart still shows its final static curve; a frozen sky
+   still shows the condition art.
+
+**Wiring status:** no rung is wired this session — there is **no measurement** to
+trigger one (physical hardware only). The deliverable is the **documented policy + the
+reuse hooks** (the chart/vignette freeze paths + the `edgeVisual`/`BUS_WIDTH_MAX` clamp
+seam already exist). Any actual cap wiring is **follow-up**, driven by a real profiler miss.
+
+---
+
+## Depth-level invariants (the composed authority the deepened view introduces)
+
+- **Vehicle cell ↔ WC-edge agreement (8.5).** The in-Scene vehicle cell's charge read
+  and the Scene's Wall-Connector → Vehicle edge both derive from the ONE `wcVehicleEdge()`
+  view (FlowModel-owned). The WC edge **is** the car-charging edge: **no 6th vehicle flow
+  node, no second sign convention**. Pinned: the numeric "Charging · N.N kW" = `|wcVehicleEdge.kW|`
+  in `my-home.test.ts` (8.5 AC2); the **structural** invariant (the bound model carries no
+  `vehicle` node; `ENERGY_ROLES` is exactly five; `wcVehicleEdge` active when charging) in
+  **`audit-r6-suite.test.ts` (NEW)**. The frozen engine has **zero Epic-8 diff** (verified:
+  `git diff c3503a0..HEAD -- src/flow/{model,balance,binding,renderer,hero-svg,scene-bus}.ts`
+  is empty).
+- **Bus / ribbon / cell agree by construction (8.7).** The self-powered %, the per-node
+  tiles, and the bus segments all read the **same** `computeBalance(model).net` (computed
+  once per `_ribbon` render, threaded). No second balance, no re-signed net. Pinned in
+  `flow/my-home.test.ts` + the composed `.rib-big` honesty pin.
+- **One model serves both renderers (R1).** `SceneBusRenderer` derives edge visuals from
+  the **shared** `edgeVisual`/`edgeVisuals` (`flow/renderer.ts`); the vehicle edge reuses
+  the unforked helper; any degradation cap clamps the shared output, never re-implements it.
+
+---
+
+## Cross-cutting DoD (deltas verified by this depth checkpoint)
+
+- **Graceful degradation / NaN-safety:** the deepened suite renders calm against 0-data,
+  asleep, short/empty-history, and the non-default `acme_*` dialect — no throw, blank, or
+  false state / NaN (`audit-r6-suite.test.ts` composed degradation sweep, unchanged + the
+  chart/ribbon honesty pins). Absent control entities ⇒ Powerwall stays a read-only Sensor;
+  absent history ⇒ calm empty chart; absent vehicle ⇒ omitted cell + edge.
+- **Data boundary (AR-1):** `hass.states` only inside `src/data/`; the on-demand history
+  fetch (`data/history.ts`) rides `callWS` (NOT `hass.states`, sanctioned by
+  `no-network-egress`) and is id-gated/cached (never background-polled, UX-DR23).
+  `data/ ← flow/ ← components/` acyclic. `no-bare-hass.states` + `no-cycle` green.
+- **Trade-dress (AR-12):** the hero art is hand-rolled token SVG; the non-default fixture
+  is synthetic data (ids/states only). The added audit tests are **functional fixture-driven**
+  (no define-to-assert-absence file) ⇒ **no `CONTENT_SKIP` entry needed**; `trade-dress` green.
+- **Token fallbacks on REAL tokens; no second 180° gradient** (`styles.test.ts` green —
+  the `.ribbon-age` fix uses the real `--tc-text-dim` token). No new strings/logging literals.
+- **Registration contract unchanged — 7 elements** (`node-hero.ts`/`chart.ts` register
+  nothing); `tesla-card.contract.test.ts` green.
+- **No `CARD_VERSION` bump** — `0.2.0` synced across `package.json`/`const.ts`/`hacs.json`
+  (`version-sync` 6th gate green); **`dist/` uncommitted** (CI-built).
+
+## Pre-existing findings (flagged, NOT introduced by Story 8.8)
+
+The 5.11 vehicle-card layer's pre-existing red E2E specs are unchanged (see
+`docs/audit-r6-vehicle-card.md`). This depth checkpoint adds **no new red**: the
+extended `audit-r6-suite.test.ts` (jsdom) + `audit-r6-suite.spec.ts` (Playwright) are
+green, all per-story suites stay green (behavior-preserving), and the single remediation
+(`.ribbon-age` tone) is pinned. The evaluative AC1/AC2 residue is **[HUMAN]**; the
+heavier ~60fps budget is **[PROFILER]** — neither is claimed as automated.

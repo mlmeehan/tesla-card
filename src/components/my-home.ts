@@ -1007,7 +1007,13 @@ export class TcMyHome extends LitElement implements LovelaceCard {
       }
       .ribbon-age {
         font-size: var(--tc-fs-label, 11.5px);
-        color: var(--tc-text-mute, #64748b);
+        /* Staleness copy uses --tc-text-dim, NEVER --tc-text-mute (UX-DR18 / DoD
+           honesty rule) — the freshness-honest 4.5:1 tone every other stale stamp
+           (.tc-stale-copy → .veh-age/.eco-stamp) already uses. Story 8.8 R6 depth
+           audit closed this lone outlier: the "updated Nm ago" stamp is a freshness
+           disclosure, not a decorative caption, so it must not render at the lowest-
+           contrast mute tone. */
+        color: var(--tc-text-dim, #9aa7b8);
         margin-left: auto;
         align-self: center;
       }

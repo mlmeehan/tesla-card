@@ -165,11 +165,14 @@ test.describe('tc-my-home Scene — Gateway bus, ribbon, focus & reflow (6.6)', 
     expect(gb).not.toBeNull();
     expect(rb!.y + rb!.height).toBeLessThanOrEqual(gb!.y + 1); // ribbon ends at/above the grid top
 
-    // The three whole-home aggregates are present (copy from STRINGS, not inlined).
+    // The ribbon leads with the self-powered cap and carries the per-node aggregate
+    // tiles (copy from STRINGS, not inlined). NB: Story 8.7 REPLACED the original
+    // Generation/Consumption/Net aggregates with the "Self-powered now" % lead + the
+    // per-node tiles (Solar/Battery/Grid/Home/Car); this 6.6 assertion was left stale
+    // by that change and is corrected to the current copy by the Story 8.8 R6 depth audit.
     const txt = (await ribbon(page).textContent()) ?? '';
-    expect(txt).toMatch(/Generation/i);
-    expect(txt).toMatch(/Consumption/i);
-    expect(txt).toMatch(/Net/i);
+    expect(txt).toMatch(/Self-powered/i); // the 8.7 lead cap
+    expect(txt).toMatch(/Solar|Battery|Grid|Home|Car/i); // ≥1 per-node aggregate tile label
     expect(txt).toMatch(/kW/); // the magnitude carries its unit (colour-blind-safe)
   });
 

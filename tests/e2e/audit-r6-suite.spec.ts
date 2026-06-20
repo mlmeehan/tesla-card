@@ -17,8 +17,18 @@
 //   • AC4 — the composed Scene driven against a NON-DEFAULT install prefix renders
 //     cleanly (the console guard fails on any uncaught error) — the runtime echo of
 //     the jsdom function-name-resolution proof.
+import { readFileSync } from 'node:fs';
 import { test, expect, AWAKE } from '../support/fixtures';
 import type { Page } from '@playwright/test';
+
+// Story 8.8 — the energy-detail fixture carries the FULL deepened surface: the five
+// energy roles + the Powerwall operation-mode select + backup-reserve number (so the
+// embedded Powerwall renders its 8.4 controls) + the cumulative counters the 8.3
+// charts bucket. Driving the composed Scene against it exercises the WHOLE Epic-8
+// richness at once (the depth the 6.8 MVP-suite sweep did not reach).
+const ENERGY_DETAIL = JSON.parse(
+  readFileSync(new URL('../../src/fixtures/energy-detail.json', import.meta.url), 'utf8'),
+) as { states: Record<string, unknown> };
 
 // Mount a fresh `tc-my-home` into a sized, in-viewport host, fed the SAME `hass` the
 // demo already built — optionally re-prefixed (AC4) and always with a weather/sun
@@ -217,5 +227,210 @@ test.describe('R6 suite — the composed Scene under a non-default install prefi
     // No 'NaN' painted anywhere under the strange prefix.
     expect(await scene(page).textContent()).not.toContain('NaN');
     // The console-guard fixture fails the test at teardown on any uncaught error.
+  });
+});
+
+// ════════════════════════════════════════════════════════════════════════════
+// STORY 8.8 — Epic-8 DEPTH runtime sweep (the deepened Scene the 6.8 sweep didn't
+// reach). 6.8 froze the three MVP animations (bus dash, vignette, focus-highlight);
+// this freezes the NEW Epic-8 sources TOGETHER in one composed render — per-node
+// hero art (`nhPulse`) + inline charts (`chartIn`) + the segmented control (`.seg`)
+// — and walks the keyboard through the NEW controls (deep-link → seg → slider →
+// scene cells) with the ring and no trap. The per-story specs verified each source
+// in isolation; this is the composed proof the cross-component pass demands.
+// ════════════════════════════════════════════════════════════════════════════
+
+// Mount a DEEPENED tc-my-home: the energy-detail hass (Powerwall controls + counters)
+// + injected weather/sun (the Solar vignette) + a mock callWS that returns a real
+// history series (so the embedded cards draw charts) + a callService spy. First child
+// of <body> ⇒ the Scene leads the tab order.
+async function mountDeepScene(page: Page): Promise<void> {
+  await page.evaluate(
+    ({ fixtureStates }) => {
+      const w = window as unknown as { __wsCalls?: number; __svc?: unknown[] };
+      w.__wsCalls = 0;
+      w.__svc = [];
+      // A 2-day, 4-sample series per requested id → ≥2 today points ⇒ a real spark.
+      const now = Date.now();
+      const day = 86_400_000;
+      const sample = (id: string) => ({
+        [id]: [
+          { s: '10', lu: (now - day - 3_600_000) / 1000 },
+          { s: '13', lu: (now - day - 1000) / 1000 },
+          { s: '20', lu: (now - 3_600_000) / 1000 },
+          { s: '26', lu: (now - 1000) / 1000 },
+        ],
+      });
+
+      const card = document.querySelector('tesla-card') as unknown as { hass: Record<string, unknown> };
+      const states: Record<string, unknown> = {
+        ...(fixtureStates as Record<string, unknown>),
+        'weather.home': { entity_id: 'weather.home', state: 'cloudy', attributes: {}, last_updated: '2026-06-15T14:41:00Z', last_changed: '2026-06-15T14:41:00Z' },
+        'sun.sun': { entity_id: 'sun.sun', state: 'above_horizon', attributes: {}, last_updated: '2026-06-15T14:41:00Z', last_changed: '2026-06-15T14:41:00Z' },
+      };
+      const hass = {
+        ...card.hass,
+        states,
+        callWS: (msg: { entity_ids: string[] }) => {
+          w.__wsCalls = (w.__wsCalls ?? 0) + 1;
+          return Promise.resolve(sample(msg.entity_ids[0]));
+        },
+        callService: (domain: string, service: string, data: Record<string, unknown>) => {
+          (w.__svc as unknown[]).push({ domain, service, data });
+          return Promise.resolve();
+        },
+      };
+
+      document.getElementById('scene-host')?.remove();
+      const host = document.createElement('div');
+      host.id = 'scene-host';
+      host.style.cssText = 'width:1100px;padding:16px;box-sizing:border-box;';
+      document.body.prepend(host);
+      window.scrollTo(0, 0);
+
+      const sceneEl = document.createElement('tc-my-home') as unknown as { setConfig(c: unknown): void; hass: unknown };
+      sceneEl.setConfig({ type: 'tc-my-home' });
+      sceneEl.hass = hass;
+      host.appendChild(sceneEl as unknown as HTMLElement);
+    },
+    { fixtureStates: ENERGY_DETAIL.states },
+  );
+}
+
+const animOf = (locator: ReturnType<Page['locator']>) =>
+  locator.evaluate((el) => getComputedStyle(el).animationName);
+
+test.describe('R6 depth — composed reduced-motion over the NEW Epic-8 animation sources (AC1)', () => {
+  test.beforeEach(async ({ demo }) => {
+    await demo.open(AWAKE.open);
+  });
+
+  test('AC1 control — the NEW sources animate by default in the deepened Scene', async ({ page }) => {
+    await mountDeepScene(page);
+    // The embedded cards draw their charts via the async callWS → wait for the spark.
+    await expect(page.locator('tc-my-home svg.spark').first()).toBeVisible();
+    expect(await animOf(page.locator('tc-my-home svg.spark').first()), 'chart draw-on runs by default').toBe('chartIn');
+    expect(await animOf(scene(page).locator('.nh-wc-dot').first()), 'WC status dot pulses by default').toBe('nhPulse');
+  });
+
+  test('AC1 — reduced-motion FREEZES hero art + charts + the segmented control together, data cues survive', async ({ page }) => {
+    await page.emulateMedia({ reducedMotion: 'reduce' });
+    await mountDeepScene(page);
+
+    // 1) Inline charts: the draw-on freezes to none, the final static curve stays drawn.
+    await expect(page.locator('tc-my-home svg.spark').first()).toBeVisible();
+    expect(await animOf(page.locator('tc-my-home svg.spark').first()), 'chartIn must halt under reduced-motion').toBe('none');
+    await expect(page.locator('tc-my-home svg.spark path.ct-line').first(), 'the final curve stays drawn (data survives)').toBeAttached();
+
+    // 2) Per-node hero art: the WC status-dot pulse freezes; the dot stays visible.
+    const dot = scene(page).locator('.nh-wc-dot').first();
+    await expect(dot).toBeAttached();
+    expect(await animOf(dot), 'nhPulse must halt under reduced-motion').toBe('none');
+
+    // 3) The Powerwall segmented control: its transition is an instant cut; labels stay.
+    const seg = scene(page).locator('.seg').first();
+    await expect(seg, 'the embedded Powerwall renders its operation-mode segments').toBeAttached();
+    const segDur = await seg.evaluate((el) => getComputedStyle(el).transitionDuration);
+    expect(segDur, 'the .seg transition must be killed under reduced-motion').toBe('0s');
+
+    // 4) And the 6.8 trio still freezes composed (the bus dash) — the data cue survives.
+    expect(await animOf(scene(page).locator('.sb-flow').first()), 'bus dash still halts at depth').toBe('none');
+    await expect(scene(page).locator('.gw-head').first(), 'arrowheads survive (the colour-blind-safe cue)').toBeAttached();
+  });
+});
+
+// Probe the DEEP active element across nested open shadow roots → a stable signature
+// (which NEW affordance is focused) + the focus-ring computed style. Mirrors the 6.8
+// onCell probe, generalized to the new control set.
+async function deepFocusKind(page: Page) {
+  return page.evaluate(() => {
+    let el: Element | null = document.activeElement;
+    while (el && (el as HTMLElement).shadowRoot?.activeElement) {
+      el = (el as HTMLElement).shadowRoot!.activeElement;
+    }
+    if (!el) return null;
+    const cl = el.classList;
+    // The slider's focusable node is its inner `<div role="slider">` (tabindex 0),
+    // not the tc-slider host — detect it by role, the others by class.
+    const kind = cl.contains('eco-deeplink')
+      ? 'deeplink'
+      : cl.contains('seg')
+        ? 'seg'
+        : el.getAttribute('role') === 'slider'
+          ? 'slider'
+          : cl.contains('scene-cell')
+            ? 'scene-cell'
+            : null;
+    if (!kind) return { kind: null as string | null };
+    const cs = getComputedStyle(el);
+    const box = el.getBoundingClientRect();
+    return {
+      kind,
+      focusVisible: el.matches(':focus-visible'),
+      outlineWidth: cs.outlineWidth,
+      outlineStyle: cs.outlineStyle,
+      outlineColor: cs.outlineColor,
+      w: box.width,
+      h: box.height,
+    };
+  });
+}
+
+test.describe('R6 depth — keyboard traverses the NEW controls with the ring, no trap (AC1)', () => {
+  test.beforeEach(async ({ demo }) => {
+    await demo.open(AWAKE.open);
+  });
+
+  test('AC1 — Tab reaches the deep-link, segmented control, reserve slider AND the scene cells; each paints the 2px blue ring; ≥44px; no trap', async ({ page }) => {
+    await mountDeepScene(page);
+    await expect(page.locator('tc-my-home .seg').first(), 'the deepened Scene exposes the new controls').toBeAttached();
+    await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
+
+    // Walk the whole keyboard path; collect each NEW affordance the focus lands on,
+    // and verify a representative of each paints the 2px --tc-blue ring at ≥44px.
+    const seen = new Set<string>();
+    const ringed = new Set<string>(); // cleared the SHARED 2px --tc-blue :focus-visible ring
+    const sized = new Set<string>(); // cleared the ≥44×44 CSS-px tap-target floor
+    let escapedAfterLast = false;
+    let sawAnyControl = false;
+    for (let i = 0; i < 80; i++) {
+      await page.keyboard.press('Tab');
+      const info = await deepFocusKind(page);
+      if (!info || !info.kind) {
+        // Focus left the scene-cell/control set: a trap would never allow this once
+        // we've been on a control. Record the escape as proof of "no trap".
+        if (sawAnyControl) escapedAfterLast = true;
+        continue;
+      }
+      sawAnyControl = true;
+      seen.add(info.kind);
+      if ((info.w ?? 0) >= 44 && (info.h ?? 0) >= 44) sized.add(info.kind);
+      if (
+        info.focusVisible &&
+        info.outlineStyle === 'solid' &&
+        info.outlineWidth === '2px' &&
+        info.outlineColor === 'rgb(56, 189, 248)'
+      ) {
+        ringed.add(info.kind);
+      }
+    }
+
+    // Every NEW affordance type is reachable by keyboard in the composed Scene.
+    for (const kind of ['deeplink', 'seg', 'slider', 'scene-cell']) {
+      expect(seen.has(kind), `keyboard Tab must reach the ${kind}`).toBe(true);
+    }
+    // The shared-outline controls paint the 2px --tc-blue ring on keyboard focus
+    // (the deeplink/seg/scene-cell :focus-visible recipe). The tc-slider's focus
+    // affordance is its thumb/track (commit-on-release, pinned in
+    // powerwall-controls.spec + a11y-interaction.spec), not the shared outline.
+    for (const kind of ['deeplink', 'seg', 'scene-cell']) {
+      expect(ringed.has(kind), `the ${kind} must paint the 2px blue ring on keyboard focus`).toBe(true);
+    }
+    // Every new affordance clears the ≥44×44 tap-target floor (incl. the 46px slider track).
+    for (const kind of ['deeplink', 'seg', 'slider', 'scene-cell']) {
+      expect(sized.has(kind), `the ${kind} must clear the ≥44px tap-target floor`).toBe(true);
+    }
+    // No focus trap: focus could leave the control/cell set after landing on it.
+    expect(escapedAfterLast, 'focus must be able to leave the Scene controls — no trap').toBe(true);
   });
 });
