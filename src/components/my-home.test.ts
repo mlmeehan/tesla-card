@@ -40,6 +40,8 @@ import './my-home';
 import { TcMyHome } from './my-home';
 import { SceneBusRenderer } from '../flow/scene-bus';
 import { resolveEnergyEntities } from '../data/energy';
+import { buildFlowModel, type FlowInput, type FlowModel } from '../flow/model';
+import type { EnergyRole } from '../data/registry';
 import { STRINGS } from '../strings';
 import awakeFx from '../fixtures/model-y-awake.json';
 import type { HassEntity, HomeAssistant, TeslaCardConfig } from '../types';
@@ -307,18 +309,30 @@ describe('AC1 — the summary ribbon above the explicit two-row grid', () => {
     expect(txt).toContain(STRINGS.scene.ribbon.net);
   });
 
-  test('the grid uses the explicit 380px×3 / 80px-gap two-row layout (not auto-fit)', () => {
+  test('the grid PACKS present cards into two centred rows (380px tracks / 80px gap, not role-fixed)', () => {
+    // Story 6.7: the 6.6 role-fixed `grid-template-areas` + fixed `380px 380px
+    // 380px` track (which left a 380px ghost cell for an absent node) is RETIRED
+    // for present-set-driven packed row-groups — each row `grid-auto-flow:column`
+    // over `380px` tracks with the `80px` bus-channel gap. The 380px card width +
+    // 80px gap + the phone breakpoint are preserved; the ghost-cell source is gone.
     const flatten = (s: unknown): string =>
       Array.isArray(s)
         ? s.map(flatten).join('\n')
         : ((s as { cssText?: string })?.cssText ?? '');
     const cssText = flatten((TcMyHome as unknown as { styles: unknown }).styles);
-    expect(cssText).toContain('380px 380px 380px');
-    expect(cssText).toContain('column-gap: 80px');
+    expect(cssText).toContain('grid-auto-columns: 380px'); // packed 380px card tracks
+    expect(cssText).toContain('column-gap: 80px'); // the bus channel preserved
+    expect(cssText).toContain('grid-auto-flow: column'); // pack, not place-by-area
     expect(cssText).not.toContain('auto-fit');
-    // role-fixed placement + the phone breakpoint.
-    expect(cssText).toContain('grid-template-areas');
-    expect(/max-width:\s*540px/.test(cssText)).toBe(true);
+    // AC2 "centred canvas" — packing must CENTRE (a glance surface, not full-bleed):
+    // each row centres its present cards and the column centres the rows. Without
+    // this, a packed-but-left-aligned layout would silently pass the assertions above.
+    expect(cssText).toContain('justify-content: center'); // each row centres its cards
+    expect(cssText).toContain('align-items: center'); // the column centres the rows
+    // the ghost-cell sources are retired: no fixed 3-track template, no role-fixed areas.
+    expect(cssText).not.toContain('380px 380px 380px');
+    expect(cssText).not.toContain('grid-template-areas');
+    expect(/max-width:\s*540px/.test(cssText)).toBe(true); // phone reflow kept
   });
 
   test('an absent node still omits its cell + anchor (the 6.5 present-gating holds)', async () => {
@@ -413,5 +427,203 @@ describe('AC4 — reflow: horizontal desktop bus → vertical phone bus', () => 
     await el.updateComplete;
     const trunk = sr(el).querySelector('.gw-trunk-base')!;
     expect(trunk.getAttribute('x1')).toBe(trunk.getAttribute('x2')); // constant x ⇒ vertical
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Story 6.7 — arbitrary-topology tolerance: the element renders correctly for ANY
+// subset (minimal Grid+Home → full five), packs the present cards into the two
+// centred rows with NO ghost cell, and keeps the desktop bus horizontal even at
+// the minimal topology (the axis follows the breakpoint, not the raw spread).
+// ═══════════════════════════════════════════════════════════════════════════
+
+/** node-id → child-card tag (mirrors the element's NODE_TAG; the present-cell order proof). */
+const TAG: Readonly<Record<EnergyRole, string>> = {
+  solar: 'tc-solar',
+  powerwall: 'tc-powerwall',
+  grid: 'tc-grid',
+  home: 'tc-home',
+  wall_connector: 'tc-wall-connector',
+};
+/** The five role → its `*_power` resolution key (drop it to make the node absent). */
+const POWER_KEY_OF: Readonly<Record<EnergyRole, keyof ReturnType<typeof energyIds>>> = {
+  solar: 'solar_power',
+  powerwall: 'battery_power',
+  grid: 'grid_power',
+  home: 'load_power',
+  wall_connector: 'wc_power',
+};
+const ALL_ROLES: readonly EnergyRole[] = ['solar', 'powerwall', 'grid', 'home', 'wall_connector'];
+const SOURCES: readonly EnergyRole[] = ['solar', 'powerwall', 'grid'];
+const LOADS: readonly EnergyRole[] = ['home', 'wall_connector'];
+
+/** A hass whose present energy nodes are exactly `roles` — absent ones have their power sensor dropped. */
+function subsetHass(roles: readonly EnergyRole[]): HomeAssistant {
+  const s = states(awakeFx);
+  const e = energyIds(s);
+  for (const role of ALL_ROLES) {
+    if (roles.includes(role)) continue;
+    const id = e[POWER_KEY_OF[role]];
+    if (id) delete s[id];
+  }
+  return makeHass(s);
+}
+/** Drive `_recomputeGeometry` with a mocked container width (jsdom gives zero rects). */
+function recomputeAtWidth(el: Scene, width: number): void {
+  const sceneEl = (el as unknown as { _scene: HTMLElement })._scene;
+  sceneEl.getBoundingClientRect = () =>
+    ({ width, height: 400, left: 0, top: 0, right: width, bottom: 400, x: 0, y: 0, toJSON: () => ({}) }) as DOMRect;
+  (el as unknown as { _recomputeGeometry(): void })._recomputeGeometry();
+}
+const sourceRowCells = (el: Scene): Element[] => [...sr(el).querySelectorAll('.source-row .scene-cell')];
+const loadRowCells = (el: Scene): Element[] => [...sr(el).querySelectorAll('.load-row .scene-cell')];
+
+describe('Story 6.7 — the exhaustive minimal→full topology sweep (AC1, AC2)', () => {
+  const SUBSETS: ReadonlyArray<{ name: string; roles: EnergyRole[] }> = [
+    { name: 'minimal Grid+Home', roles: ['grid', 'home'] },
+    { name: 'Grid+Home+Solar', roles: ['solar', 'grid', 'home'] },
+    { name: 'Powerwall+Home (islanding shape)', roles: ['powerwall', 'home'] },
+    { name: 'Solar+Powerwall+Grid+Home', roles: ['solar', 'powerwall', 'grid', 'home'] },
+    { name: 'full five', roles: [...ALL_ROLES] },
+  ];
+
+  for (const { name, roles } of SUBSETS) {
+    const present = ALL_ROLES.filter((r) => roles.includes(r)); // canonical order
+    const presentSources = SOURCES.filter((r) => roles.includes(r));
+    const presentLoads = LOADS.filter((r) => roles.includes(r));
+
+    test(`${name}: renders ONLY the present cards, packed in canonical order — no ghost cell`, async () => {
+      const el = await mount(subsetHass(roles));
+      // The present cells, in canonical (sources-then-loads) order — and ONLY them.
+      expect(cellTags(el)).toEqual(present.map((r) => TAG[r]));
+      expect(sr(el).querySelectorAll('.scene-cell')).toHaveLength(present.length);
+      // No cell — and no anchor target — for any absent role (no dead `veh` slot).
+      for (const role of ALL_ROLES) {
+        const cell = sr(el).querySelector(`.scene-cell[data-node="${role}"]`);
+        if (roles.includes(role)) expect(cell).not.toBeNull();
+        else expect(cell).toBeNull();
+      }
+    });
+
+    test(`${name}: each row packs exactly its present cards (no dead column)`, async () => {
+      const el = await mount(subsetHass(roles));
+      // A row with no present card is omitted entirely (no empty row eating the channel).
+      expect(sourceRowCells(el)).toHaveLength(presentSources.length);
+      expect(loadRowCells(el)).toHaveLength(presentLoads.length);
+      if (presentSources.length === 0)
+        expect(sr(el).querySelector('.source-row')).toBeNull();
+      if (presentLoads.length === 0) expect(sr(el).querySelector('.load-row')).toBeNull();
+    });
+
+    test(`${name}: the bus overlay is present and names ONLY present nodes`, async () => {
+      const el = await mount(subsetHass(roles));
+      const overlay = sr(el).querySelector('.scene-bus');
+      expect(overlay).not.toBeNull(); // ≥1 present node ⇒ an active overlay
+      const label = overlay!.getAttribute('aria-label') ?? '';
+      for (const role of ALL_ROLES) {
+        const nodeName = STRINGS.energy.nodes[role];
+        if (roles.includes(role)) expect(label).toContain(nodeName);
+        else expect(label).not.toContain(nodeName);
+      }
+    });
+
+    // AC2 "sources (solar·powerwall·grid) row OVER loads (home·wall_connector) row" —
+    // the structural ordering the packing must preserve. jsdom applies no stylesheet
+    // so this is a DOM-order proof (the e2e layer proves it as real geometry); when
+    // BOTH rows are present the source row must come first in the DOM.
+    if (presentSources.length > 0 && presentLoads.length > 0) {
+      test(`${name}: the .source-row renders BEFORE the .load-row (sources over loads)`, async () => {
+        const el = await mount(subsetHass(roles));
+        const sourceRow = sr(el).querySelector('.source-row')!;
+        const loadRow = sr(el).querySelector('.load-row')!;
+        expect(sourceRow).not.toBeNull();
+        expect(loadRow).not.toBeNull();
+        // source-row precedes load-row in document order (it is laid out above it).
+        expect(
+          sourceRow.compareDocumentPosition(loadRow) & Node.DOCUMENT_POSITION_FOLLOWING
+        ).toBeTruthy();
+      });
+    }
+  }
+});
+
+describe('Story 6.7 — desktop bus stays HORIZONTAL at the minimal topology (axis follows the breakpoint)', () => {
+  test('minimal Grid+Home packed at a WIDE container width keeps _axis = x (desktop horizontal)', async () => {
+    const el = await mount(subsetHass(['grid', 'home']));
+    recomputeAtWidth(el, 1100);
+    expect((el as unknown as { _axis: string })._axis).toBe('x');
+  });
+
+  test('the SAME minimal topology at a ≤540px container flips _axis = y (the phone re-route)', async () => {
+    const el = await mount(subsetHass(['grid', 'home']));
+    recomputeAtWidth(el, 460);
+    expect((el as unknown as { _axis: string })._axis).toBe('y');
+  });
+
+  test('the full topology also stays horizontal on a wide container', async () => {
+    const el = await mount(makeHass(states(awakeFx)));
+    recomputeAtWidth(el, 1100);
+    expect((el as unknown as { _axis: string })._axis).toBe('x');
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Story 6.7 — half-alive = NORMAL (AC3): a mixed-freshness Scene is calm, not
+// broken. The ribbon dims ONLY when FULLY quiescent (a partial-quiescent Scene
+// must NOT understate its live half); a fully-quiescent Scene dims + stamps the
+// last-known age; an empty / single-node model never crashes.
+// ═══════════════════════════════════════════════════════════════════════════
+describe('Story 6.7 — half-alive Scene is the normal calm state (AC3)', () => {
+  const measured = (role: EnergyRole, kW: number): FlowInput => ({ role, kW, provenance: 'measured' });
+  const quiescent = (role: EnergyRole, kW: number): FlowInput => ({ role, kW, provenance: 'quiescent' });
+  const absent = (role: EnergyRole): FlowInput => ({ role, kW: undefined, provenance: 'measured' });
+  /** Inject a model directly (the 6.6 geometry-test pattern) + force a re-render. */
+  async function withModel(el: Scene, model: FlowModel): Promise<void> {
+    (el as unknown as { _model: FlowModel })._model = model;
+    (el as unknown as { requestUpdate(): void }).requestUpdate();
+    await el.updateComplete;
+  }
+  const ribbonOf = (el: Scene) => sr(el).querySelector('.ribbon');
+
+  test('a PARTIALLY-quiescent Scene is NOT wholesale-dimmed (the live half stays confident)', async () => {
+    const el = await mount(makeHass(states(awakeFx)));
+    await withModel(
+      el,
+      buildFlowModel([
+        measured('solar', 3),
+        measured('home', 4),
+        quiescent('wall_connector', 0.5),
+        absent('powerwall'),
+        absent('grid'),
+      ])
+    );
+    const ribbon = ribbonOf(el);
+    expect(ribbon).not.toBeNull();
+    expect(ribbon!.classList.contains('dim')).toBe(false); // partial quiescence ⇒ confident
+    expect(sr(el).querySelector('.ribbon-age')).toBeNull(); // no overstated age stamp
+  });
+
+  test('a FULLY-quiescent Scene IS dimmed and stamps the last-known age (honest freshness)', async () => {
+    const el = await mount(makeHass(states(awakeFx)));
+    await withModel(
+      el,
+      buildFlowModel([
+        quiescent('solar', 3),
+        quiescent('home', 4),
+        absent('powerwall'),
+        absent('grid'),
+        absent('wall_connector'),
+      ])
+    );
+    const ribbon = ribbonOf(el);
+    expect(ribbon).not.toBeNull();
+    expect(ribbon!.classList.contains('dim')).toBe(true); // fully quiescent ⇒ de-emphasized
+    expect(sr(el).querySelector('.ribbon-age')).not.toBeNull(); // last-known "updated Nm ago"
+  });
+
+  test('a single-node model renders calm — one card, no crash', async () => {
+    const el = await mount(subsetHass(['home']));
+    expect(cellTags(el)).toEqual(['tc-home']);
+    expect(sr(el).querySelector('.scene')).not.toBeNull(); // calm, present
   });
 });

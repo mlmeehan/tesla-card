@@ -22,14 +22,13 @@ import { BUS_NODE_ID, IDLE_KW, type FlowEdge, type FlowModel } from '../flow/mod
 import { SceneBusRenderer, sceneBusStyles, type RectLike } from '../flow/scene-bus';
 import { edgeVisual, NODE_COLOR } from '../flow/renderer';
 import {
-  SCENE_NODES,
   relativeAnchors,
   deriveBusAnchor,
   RafCoalescer,
   gatewaySegments,
   sceneAggregates,
   coupledRoles,
-  busAxis,
+  axisForWidth,
   BUS_WIDTH_MAX,
   BUS_TRUNK_PAD,
   type BusAxis,
@@ -57,6 +56,19 @@ import './wall-connector';
  * fallback — it is generic (not a brand colour), so the trade-dress gate passes.
  */
 const GATEWAY_STROKE = '#cfe2ff';
+
+/**
+ * The Scene's two LAYOUT rows (Story 6.6/6.7) — a fixed role partition, NOT the
+ * dynamic net-sign source/load (a Powerwall discharging still sits in the top
+ * row). The order within each row is canonical (matches `SCENE_NODES`). Each row
+ * is packed independently (Story 6.7): only its PRESENT roles render, with no
+ * ghost cell — an absent node leaves nothing, so the minimal Grid+Home topology is
+ * a single source card over a single load card, centred, not two lonely cards in
+ * opposite corners of a three-column grid. Their concatenation IS `SCENE_NODES`
+ * order, so `cellTags`/anchor walks are unchanged.
+ */
+const SOURCE_ROW: readonly EnergyRole[] = ['solar', 'powerwall', 'grid'];
+const LOAD_ROW: readonly EnergyRole[] = ['home', 'wall_connector'];
 
 /** node-id (EnergyRole) → the registered child-card tag that renders it. */
 const NODE_TAG: Readonly<Record<EnergyRole, string>> = {
@@ -293,12 +305,16 @@ export class TcMyHome extends LitElement implements LovelaceCard {
     const bus = deriveBusAnchor(rel);
     if (bus) rel[BUS_NODE_ID] = bus;
     this._bus.setAnchors(rel);
-    // Story 6.6: cache the relativized anchors + the reflow-resolved bus axis for
-    // the Gateway overlay. The axis is geometry-driven (wider anchor spread = the
-    // trunk run) so the `≤540px` single-column reflow flips it to vertical without
-    // a per-`hass`-tick recompute — this runs ONLY from the reflow path (AC4).
+    // Story 6.6: cache the relativized anchors for the Gateway overlay.
     this._anchors = rel;
-    this._axis = busAxis(rel);
+    // Story 6.7: the trunk axis follows the LAYOUT BREAKPOINT (the live container
+    // width the ResizeObserver reports), NOT the raw anchor spread. Once the grid
+    // packs (Task 1), the minimal 1-source/1-load topology stacks both cards at
+    // ~the same x — a spread-based `busAxis` would flip the DESKTOP trunk vertical.
+    // `axisForWidth` keeps desktop horizontal and flips to vertical only at the
+    // `≤540px` phone reflow. Still reflow-driven (this runs ONLY here), never a
+    // per-`hass`-tick recompute; the underlying geometry math is unchanged (FR-33).
+    this._axis = axisForWidth(container.width);
     this.requestUpdate(); // redraw the overlay over the cached geometry
   }
 
@@ -314,24 +330,28 @@ export class TcMyHome extends LitElement implements LovelaceCard {
     const lit = this._focused ? coupledRoles(this._model, this._focused) : undefined;
 
     // Render a card ONLY for present nodes — an absent node is omitted with its
-    // bus edge (AC4), never an empty card holding a grid cell + a dead anchor.
+    // bus edge (AC1), never an empty card holding a grid cell + a dead anchor.
     // Each cell is keyboard-focusable (`tabindex=0`) and drives the SAME highlight
     // on hover (`mouseenter`) and keyboard focus (`focusin`) — the a11y floor.
-    const cards = SCENE_NODES.filter((role) => present.has(role)).map(
-      (role) => html`
-        <div
-          class="scene-cell ${lit?.has(role) ? 'lit' : ''}"
-          data-node=${role}
-          tabindex="0"
-          @mouseenter=${() => this._focus(role)}
-          @mouseleave=${this._blur}
-          @focusin=${() => this._focus(role)}
-          @focusout=${this._blur}
-        >
-          ${this._childCard(role, cfg)}
-        </div>
-      `
-    );
+    const cell = (role: EnergyRole): TemplateResult => html`
+      <div
+        class="scene-cell ${lit?.has(role) ? 'lit' : ''}"
+        data-node=${role}
+        tabindex="0"
+        @mouseenter=${() => this._focus(role)}
+        @mouseleave=${this._blur}
+        @focusin=${() => this._focus(role)}
+        @focusout=${this._blur}
+      >
+        ${this._childCard(role, cfg)}
+      </div>
+    `;
+    // Story 6.7 — PACK each row: render only the present cards in canonical order,
+    // so an absent node leaves NOTHING (no 380px ghost cell, no dead `veh` slot).
+    // A row with no present card is omitted entirely (no empty row eating the bus
+    // channel). The two packed, centred rows keep sources-over-loads by construction.
+    const sourceCells = SOURCE_ROW.filter((role) => present.has(role)).map(cell);
+    const loadCells = LOAD_ROW.filter((role) => present.has(role)).map(cell);
 
     // Layering, back-to-front: the summary RIBBON (whole-home aggregates, above the
     // cards) → the cards (each composites its own vignette internally) → ONE
@@ -342,7 +362,10 @@ export class TcMyHome extends LitElement implements LovelaceCard {
     return html`
       <div class="scene ${this._focused ? 'focus' : ''}" role="group" aria-label=${STRINGS.scene.label}>
         ${this._ribbon()}
-        <div class="scene-grid">${cards}</div>
+        <div class="scene-grid">
+          ${sourceCells.length ? html`<div class="source-row">${sourceCells}</div>` : nothing}
+          ${loadCells.length ? html`<div class="load-row">${loadCells}</div>` : nothing}
+        </div>
         ${this._bus.empty
           ? nothing
           : html`<svg class="scene-bus" role="img" aria-label=${this._bus.label()}>
@@ -624,39 +647,31 @@ export class TcMyHome extends LitElement implements LovelaceCard {
         opacity: var(--tc-dim-opacity, 0.5);
       }
 
-      /* ── The explicit two-row source/load grid (AC1a): sources (Solar · Powerwall
-         · Grid) over loads (Home · Wall Connector · [Vehicle slot]) in a 380px×3 /
-         80px-gap layout — the wide gap is the channel the Gateway bus runs through.
-         Cards are placed by grid-template-areas (role-fixed), NOT auto-flow, so an
-         absent node leaves its area empty without shuffling the others. The canvas
-         centres (a glance surface, not full-bleed). */
+      /* ── The PACKED two-row source/load layout (Story 6.7, AC1/AC2): sources
+         (Solar · Powerwall · Grid) over loads (Home · Wall Connector) — the wide
+         row-gap is the channel the Gateway bus threads through. Each row PACKS its
+         present cards (auto-flow column, fixed 380px tracks, 80px column gap,
+         centred) so an absent node leaves NOTHING — no 380px ghost cell, no dead
+         veh slot (the 6.6 role-fixed template-area placement is retired). The
+         minimal Grid+Home topology is one source card centred over one load card,
+         not two lonely cards in opposite corners. The canvas centres (a glance
+         surface, not full-bleed). */
       .scene-grid {
-        display: grid;
-        grid-template-columns: 380px 380px 380px;
-        column-gap: 80px;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
         row-gap: 150px;
+      }
+      .source-row,
+      .load-row {
+        display: grid;
+        grid-auto-flow: column;
+        grid-auto-columns: 380px;
+        column-gap: 80px;
         justify-content: center;
-        grid-template-areas:
-          'solar powerwall grid'
-          'home wc veh';
       }
       .scene-cell {
         min-width: 0;
-      }
-      .scene-cell[data-node='solar'] {
-        grid-area: solar;
-      }
-      .scene-cell[data-node='powerwall'] {
-        grid-area: powerwall;
-      }
-      .scene-cell[data-node='grid'] {
-        grid-area: grid;
-      }
-      .scene-cell[data-node='home'] {
-        grid-area: home;
-      }
-      .scene-cell[data-node='wall_connector'] {
-        grid-area: wc;
       }
       /* Keyboard focus ring — the 2px blue outline (EXPERIENCE.md:175 a11y floor),
          never the hairline border alone. */
@@ -721,22 +736,25 @@ export class TcMyHome extends LitElement implements LovelaceCard {
         }
       }
 
-      /* ── Phone reflow (AC4, ≤540px): the six cards stack into ONE full-width
-         column (source → load by DOM order); the Gateway bus re-routes VERTICALLY
-         (the busAxis flips off the now-tall anchor spread — geometry-driven, no
-         per-hass recompute). CSS @media can't read the --tc-* props, so the literal
-         540px (the established breakpoint, DESIGN.md:256) is used directly. */
+      /* ── Phone reflow (AC2, ≤540px): both packed rows collapse to ONE full-width
+         column (source cards then load cards, canonical order); the Gateway bus
+         re-routes VERTICALLY (the element's axis selection flips to y at this same
+         breakpoint — Story 6.7 axisForWidth, reflow-driven, no per-hass recompute).
+         CSS @media can't read the --tc-* props, so the literal 540px (the
+         established breakpoint, DESIGN.md:256) is used directly — the ONE TS mirror
+         is SCENE_PHONE_MAX in flow/my-home.ts (the 6.6 rule). */
       @media (max-width: 540px) {
         .scene-grid {
+          row-gap: var(--tc-space-4, 16px);
+        }
+        .source-row,
+        .load-row {
+          grid-auto-flow: row;
           grid-template-columns: 1fr;
+          grid-auto-columns: auto;
           column-gap: 0;
           row-gap: var(--tc-space-4, 16px);
-          grid-template-areas:
-            'solar'
-            'powerwall'
-            'grid'
-            'home'
-            'wc';
+          width: 100%;
         }
       }
     `,

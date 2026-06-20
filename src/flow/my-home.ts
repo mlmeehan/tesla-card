@@ -219,6 +219,38 @@ export function busAxis(anchors: Readonly<Record<string, RectLike>>): BusAxis {
 }
 
 /**
+ * The Scene's `≤540px` single-column phone breakpoint (Story 6.7) — the literal
+ * the element's axis selection keys off. Same value as the CSS `@media
+ * (max-width:540px)` rule (DESIGN.md:256) and the 6.6 grid breakpoint, kept here
+ * as the ONE TS constant so the layout-axis decision and the CSS reflow can never
+ * drift onto different widths. CSS `@media` can't read a `--tc-*` prop and this
+ * `BREAKPOINTS`-style constant is tree-shaken, so the literal lives in both — by
+ * design (the 6.6 rule), not by duplication oversight.
+ */
+export const SCENE_PHONE_MAX = 540;
+
+/**
+ * Pick the Gateway trunk axis from the LAYOUT BREAKPOINT (Story 6.7), not the raw
+ * anchor spread: desktop ⇒ horizontal `x` (sources-over-loads), the `≤540px` phone
+ * single-column reflow ⇒ vertical `y`. PURE (container width in, axis out) — the
+ * element calls this from its reflow path (`_recomputeGeometry`) with the live
+ * container width the `ResizeObserver` reports.
+ *
+ * Why this exists: once the grid PACKS the present cards (Task 1), the minimal
+ * 1-source-over-1-load topology stacks both cards at ~the same x, collapsing the
+ * x-spread below the y-spread — so the spread-based {@link busAxis} would flip the
+ * desktop trunk VERTICAL at the minimal topology, contradicting "desktop =
+ * horizontal Gateway bus" (6.6 AC4). Driving the axis off the breakpoint keeps the
+ * minimal Scene reading sources-over-loads with a horizontal trunk. `busAxis` is
+ * unchanged — it stays the spread-based geometry helper (and its `opts.axis ??`
+ * fallback in {@link gatewaySegments}); the element now CHOOSES the layout axis
+ * explicitly. The math is untouched; only the axis SELECTION moved (FR-33).
+ */
+export function axisForWidth(width: number): BusAxis {
+  return width <= SCENE_PHONE_MAX ? 'y' : 'x';
+}
+
+/**
  * The Gateway running-net derivation (Task 1 — the #1 test target). PURE: a
  * `FlowModel` (+ optional precomputed {@link Balance}) and relativized anchors in,
  * a plain {@link GatewaySegment}[] out — no DOM, no `hass`.

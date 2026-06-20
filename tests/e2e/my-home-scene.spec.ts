@@ -24,6 +24,8 @@ import type { Page } from '@playwright/test';
 type SceneOpts = {
   /** Drop every state whose entity-id contains this function slug (degradation tests). */
   dropSlug?: string;
+  /** Drop every state whose id contains ANY of these slugs (multi-node subset tests, 6.7). */
+  dropSlugs?: string[];
   /** Replace the hass states with an empty map (the calm-empty case). */
   empty?: boolean;
   /** Host width in px — used to size the mount (and to fit a narrowed viewport). */
@@ -38,11 +40,12 @@ async function mountScene(page: Page, opts: SceneOpts = {}): Promise<void> {
     document.getElementById('scene-host')?.remove();
     const card = document.querySelector('tesla-card') as unknown as { hass: Record<string, unknown> };
     const base = card.hass;
+    const drops = ([] as string[]).concat(o.dropSlug ?? [], o.dropSlugs ?? []);
     const states = o.empty
       ? {}
       : Object.fromEntries(
           Object.entries(base.states as Record<string, unknown>).filter(
-            ([id]) => !(o.dropSlug && id.includes(o.dropSlug)),
+            ([id]) => !drops.some((slug) => id.includes(slug)),
           ),
         );
     const hass = { ...base, states };
@@ -344,18 +347,20 @@ test.describe('tc-my-home Scene — Gateway bus, ribbon, focus & reflow (6.6)', 
   test('AC4 — phone ≤540px stacks one column and RE-ROUTES the bus VERTICALLY', async ({
     page,
   }) => {
-    // A genuine `@media (max-width:540px)` reflow: the grid collapses to one column,
-    // the cards stack tall, the live anchor spread becomes vertical, and the
-    // geometry-driven busAxis flips — the trunk re-routes down between the cards.
+    // A genuine `@media (max-width:540px)` reflow: the packed rows collapse to one
+    // column, the cards stack tall, the live anchor spread becomes vertical, and the
+    // breakpoint-driven axis flips — the trunk re-routes down between the cards.
     await page.setViewportSize({ width: 500, height: 1000 });
     await mountScene(page, { width: 460 });
     await expect(cells(page)).toHaveCount(5);
     await waitForTrunk(page);
 
-    // The grid collapsed to a SINGLE column (one track) — the phone reflow.
-    const cols = await grid(page).evaluate(
-      (g) => getComputedStyle(g).gridTemplateColumns.split(' ').length,
-    );
+    // Each packed row collapsed to a SINGLE column (one track) — the phone reflow.
+    // (Story 6.7: `.scene-grid` is now the flex wrapper; the source/load rows are the
+    // grids, each `grid-template-columns:1fr` at ≤540px.)
+    const cols = await scene(page)
+      .locator('.source-row')
+      .evaluate((g) => getComputedStyle(g).gridTemplateColumns.split(' ').length);
     expect(cols).toBe(1);
 
     // The cards now stack: every cell shares (roughly) the same left, with distinct
@@ -418,6 +423,78 @@ test.describe('tc-my-home Scene — Gateway bus, ribbon, focus & reflow (6.6)', 
     await expect(overlay(page)).toHaveCount(0);
     await expect(ribbon(page)).toHaveCount(0); // empty Scene ⇒ no ribbon (calm)
     // The auto console-guard asserts the empty mount emitted no errors at teardown.
+  });
+
+  // ── Story 6.7 — arbitrary-topology tolerance (minimal → full, pack + re-route) ──
+
+  test('6.7 — minimal Grid+Home packs two adjacent cards with a HORIZONTAL desktop bus', async ({
+    page,
+  }) => {
+    // The minimal energy-flow topology (Vehicle is NOT a flow node). Drop the other
+    // three sources/loads' power sensors → only grid (source) + home (load) present.
+    await page.setViewportSize({ width: 1280, height: 800 });
+    await mountScene(page, { dropSlugs: ['solar_power', 'battery_power', 'wc_power'], width: 1100 });
+    await expect(cells(page)).toHaveCount(2);
+
+    const tags = await cells(page).evaluateAll((cs) =>
+      cs.map((c) => (c.firstElementChild?.tagName ?? '').toLowerCase()),
+    );
+    expect(tags).toEqual(['tc-grid', 'tc-home']); // sources-then-loads, present only
+
+    await waitForTrunk(page);
+    await expect(legs(page)).toHaveCount(2); // one leg per present node, no ghost leg
+
+    // The two present cards PACK: grid (source) sits strictly above home (load), and
+    // their horizontal centres are near-aligned (each row centres its single card) —
+    // NOT two lonely cards in opposite corners of a three-column grid (which would put
+    // their centres ~900px apart). This is the "no ghost space" proof (AC2).
+    const boxes = await cells(page).evaluateAll((cs) =>
+      cs.map((c) => {
+        const r = c.getBoundingClientRect();
+        return { role: (c as HTMLElement).dataset.node, cx: r.left + r.width / 2, top: Math.round(r.top) };
+      }),
+    );
+    const gridCell = boxes.find((b) => b.role === 'grid')!;
+    const homeCell = boxes.find((b) => b.role === 'home')!;
+    expect(gridCell.top).toBeLessThan(homeCell.top); // source over load
+    expect(Math.abs(gridCell.cx - homeCell.cx)).toBeLessThan(200); // centred/packed, not opposite corners
+
+    // The desktop trunk stays HORIZONTAL even at this near-degenerate 1-source/1-load
+    // topology — the axis follows the breakpoint (Task 2), not the collapsed spread.
+    const t = await trunkLine(page);
+    expect(Math.abs(t.y1 - t.y2)).toBeLessThanOrEqual(1); // constant y ⇒ horizontal
+    expect(Math.abs(t.x2 - t.x1)).toBeGreaterThan(50); // real left→right span
+  });
+
+  test('6.7 — an absent SOURCE card packs the row (no dead column) and the bus re-routes', async ({
+    page,
+  }) => {
+    // A mid-size subset: Solar absent → the source row packs Powerwall+Grid adjacent,
+    // with NO leading 380px ghost cell where Solar was (the reflow-around-a-gap proof).
+    await page.setViewportSize({ width: 1280, height: 800 });
+    await mountScene(page, { dropSlug: 'solar_power', width: 1100 });
+    await expect(cells(page)).toHaveCount(4);
+    await expect(scene(page).locator('tc-solar')).toHaveCount(0);
+    await waitForTrunk(page);
+    await expect(legs(page)).toHaveCount(4); // four legs, no ghost leg for Solar
+
+    // The source row now holds exactly its two present cards, packed adjacent: their
+    // centres are within one packed column (≈ card + gap), NOT a dropped-cell gap apart.
+    const srcXs = await scene(page)
+      .locator('.source-row .scene-cell')
+      .evaluateAll((cs) =>
+        cs.map((c) => {
+          const r = c.getBoundingClientRect();
+          return Math.round(r.left + r.width / 2);
+        }),
+      );
+    expect(srcXs).toHaveLength(2);
+    expect(Math.abs(srcXs[1] - srcXs[0])).toBeLessThan(380 + 80 + 40); // adjacent, no 380px dead column
+
+    // The trunk re-routes around the gap and stays horizontal on the wide desktop.
+    const t = await trunkLine(page);
+    expect(Math.abs(t.y1 - t.y2)).toBeLessThanOrEqual(1); // constant y ⇒ horizontal
+    expect(Math.abs(t.x2 - t.x1)).toBeGreaterThan(50);
   });
 
   test('AC4 — disconnecting the Scene tears down cleanly under live reflow', async ({ page }) => {

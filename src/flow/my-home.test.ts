@@ -8,6 +8,8 @@ import {
   sceneAggregates,
   coupledRoles,
   busAxis,
+  axisForWidth,
+  SCENE_PHONE_MAX,
   BUS_WIDTH_MAX,
 } from './my-home';
 import { ENERGY_ROLES, bindFlowModel } from './binding';
@@ -264,5 +266,205 @@ describe('coupledRoles — shared-bus focus coupling, computed not hard-coded (T
     expect(lit.has('solar')).toBe(true);
     expect(lit.has('grid')).toBe(true);
     expect(lit.has('wall_connector')).toBe(false); // another load — not coupled
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Story 6.7 — arbitrary-topology tolerance (minimal → full), the #1 new gate.
+//
+// "Free by construction" (DESIGN.md:362): every subset from minimal Grid+Home to
+// the full five renders correctly with ONE render path — no baked subset matrix,
+// no ghost hardware. The model layer ALREADY delivers present-gating; this sweep
+// PROVES it exhaustively + cross-checks the bus running net against the ONE balance
+// authority for each topology. (The packing + axis are the element/CSS half; here
+// we pin the pure hub that drives them.)
+// ═══════════════════════════════════════════════════════════════════════════
+
+/** Build a FULL five-role model from a partial present map (absent roles → present:false, no edge). */
+const absent = (role: EnergyRole): FlowInput => ({ role, kW: undefined, provenance: 'measured' });
+function topology(present: Partial<Record<EnergyRole, number>>): FlowModel {
+  return buildFlowModel(
+    ENERGY_ROLES.map((role) => (role in present ? measured(role, present[role] as number) : absent(role)))
+  );
+}
+/** Lay the present roles out along an axis at distinct positions (synthetic anchors — the hub is pure). */
+function anchorsFor(roles: readonly EnergyRole[], axis: 'x' | 'y' = 'x'): Record<string, RectLike> {
+  const out: Record<string, RectLike> = {};
+  roles.forEach((role, i) => {
+    out[role] = axis === 'x' ? r(i * 200, 0) : r(0, i * 200);
+  });
+  return out;
+}
+
+// Canonical readings per role: grid + = import (source), home + = load, solar + =
+// produce (source), powerwall + = charging so a DISCHARGE (source) is negative,
+// wall_connector + = charging draw (load). buildFlowModel applies BUS_ORIENTATION,
+// so net[] signs come out +source / −load — but we ALWAYS cross-check against
+// computeBalance, never re-derive a sign here.
+const SUBSETS: ReadonlyArray<{ name: string; present: Partial<Record<EnergyRole, number>> }> = [
+  { name: 'minimal Grid+Home', present: { grid: 2, home: 2 } },
+  { name: 'Grid+Home+Solar', present: { solar: 3, grid: 1, home: 4 } },
+  { name: 'Powerwall+Home (islanding shape)', present: { powerwall: -2, home: 2 } },
+  { name: 'Solar+Powerwall+Grid+Home', present: { solar: 3, powerwall: -1, grid: 1, home: 5 } },
+  { name: 'full five', present: { solar: 4, powerwall: -1, grid: 1, home: 4, wall_connector: 2 } },
+];
+
+describe('topology sweep — present-gating holds from minimal Grid+Home to the full five (AC1)', () => {
+  for (const { name, present } of SUBSETS) {
+    const presentRoles = ENERGY_ROLES.filter((role) => role in present);
+
+    test(`${name}: model present-gates exactly the subset (absent ⇒ present:false, no edge)`, () => {
+      const model = topology(present);
+      // Every role is a node; exactly the subset is present.
+      expect(model.nodes.map((n) => n.role)).toEqual([...ENERGY_ROLES]);
+      expect(model.nodes.filter((n) => n.present).map((n) => n.role)).toEqual(presentRoles);
+      // An absent node carries NO edge (no phantom zero-kW term).
+      for (const node of model.nodes) {
+        const edge = model.edges.find((e) => e.from === node.role);
+        if (node.present) expect(edge).toBeTruthy();
+        else expect(edge).toBeUndefined();
+      }
+      // sceneAggregates only sums present nodes; an absent grid ⇒ self-supplied.
+      const agg = sceneAggregates(model);
+      expect(agg.gridPresent).toBe('grid' in present);
+      if (!('grid' in present)) expect(agg.gridNet).toBe(0);
+    });
+
+    test(`${name}: gatewaySegments walks ONLY present taps; per-segment net = running Σ balance.net (AC1/AC2)`, () => {
+      const model = topology(present);
+      const net = computeBalance(model).net;
+      const anchors = anchorsFor(presentRoles, 'x');
+      const segs = gatewaySegments(model, anchors, { axis: 'x' });
+      // (a) one segment per present tap — never a segment for an absent node.
+      expect(segs).toHaveLength(presentRoles.length);
+      // (b) each segment net = the running sum of the present taps' net[role] L→R.
+      let run = 0;
+      presentRoles.forEach((role, i) => {
+        run += net[role];
+        expect(segs[i].net).toBeCloseTo(run, 6);
+        expect(Number.isFinite(segs[i].net)).toBe(true);
+      });
+      // (d) a sub-IDLE_KW running net is a dead/calm segment (the balanced tail).
+      const last = segs[segs.length - 1];
+      if (Math.abs(last.net) < IDLE_KW) {
+        expect(last.active).toBe(false);
+        expect(last.direction).toBe('none');
+      }
+    });
+  }
+
+  test('(c) islanding reroute: Powerwall sources, Home draws — the single active Powerwall→Home segment', () => {
+    // The canonical reroute proof (EXPERIENCE.md:152): grid absent, Powerwall left
+    // of Home → the running net is +2 across the only inter-tap segment (forward,
+    // Powerwall→Home), then 0 on the balanced tail.
+    const model = topology({ powerwall: -2, home: 2 });
+    const segs = gatewaySegments(model, { powerwall: r(0, 0), home: r(200, 0) }, { axis: 'x' });
+    expect(segs).toHaveLength(2);
+    expect(segs[0].direction).toBe('forward'); // Powerwall → Home
+    expect(segs[0].net).toBeCloseTo(2, 6);
+    expect(segs[1].active).toBe(false); // balanced tail — dead rail
+  });
+
+  test('the running net is geometry-agnostic across the full sweep (x and y walks agree)', () => {
+    for (const { present } of SUBSETS) {
+      const presentRoles = ENERGY_ROLES.filter((role) => role in present);
+      const model = topology(present);
+      const xs = gatewaySegments(model, anchorsFor(presentRoles, 'x'), { axis: 'x' }).map((s) => s.net);
+      const ys = gatewaySegments(model, anchorsFor(presentRoles, 'y'), { axis: 'y' }).map((s) => s.net);
+      ys.forEach((n, i) => expect(n).toBeCloseTo(xs[i], 6));
+    }
+  });
+});
+
+describe('axisForWidth — the trunk axis follows the LAYOUT BREAKPOINT, not the raw spread (Task 2, AC2)', () => {
+  test('a wide desktop container ⇒ horizontal x (even at the minimal 2-node topology)', () => {
+    expect(axisForWidth(1100)).toBe('x');
+    expect(axisForWidth(760)).toBe('x');
+    expect(axisForWidth(SCENE_PHONE_MAX + 1)).toBe('x'); // just above the breakpoint
+  });
+  test('the ≤540px phone container ⇒ vertical y (the single-column reflow)', () => {
+    expect(axisForWidth(540)).toBe('y');
+    expect(axisForWidth(460)).toBe('y');
+    expect(axisForWidth(SCENE_PHONE_MAX)).toBe('y'); // inclusive at the breakpoint
+  });
+  test('the breakpoint is the documented 540px (the ONE TS mirror of the CSS @media)', () => {
+    expect(SCENE_PHONE_MAX).toBe(540);
+  });
+  test('it does NOT consult the anchor spread — a near-degenerate packed minimal Scene stays horizontal', () => {
+    // The exact bug Task 2 fixes: a packed Grid+Home stacks both cards at ~the same
+    // x, so the spread-based busAxis would return 'y' (vertical desktop trunk) —
+    // axisForWidth(wide) overrides that to 'x'. Both helpers still coexist (busAxis
+    // is the spread fallback for the geometry math, kept + tested above).
+    const stacked = { grid: r(100, 0), home: r(100, 400) };
+    expect(busAxis(stacked)).toBe('y'); // spread says vertical (the trap)…
+    expect(axisForWidth(1100)).toBe('x'); // …the breakpoint keeps the desktop horizontal
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Story 6.7 — half-alive = NORMAL (AC3): live local energy + an asleep/quiescent
+// read is the calm steady state, never an error. Quiescent edges are present-and-
+// calm (direction:'none'); the live half is NOT zeroed; the running net stays
+// finite (no NaN, no throw) on a mixed / empty / single-node model.
+// ═══════════════════════════════════════════════════════════════════════════
+describe('half-alive model — mixed measured + quiescent reads stay calm (AC3)', () => {
+  const quiescent = (role: EnergyRole, kW: number): FlowInput => ({ role, kW, provenance: 'quiescent' });
+
+  test('quiescent edges read direction:none (present, calm); the live edges keep their measured sense', () => {
+    // The asleep-car-no-session case: wall_connector quiescent while the energy
+    // nodes read fresh. senseOf maps quiescent → 'none' (a present, dead leg).
+    const model = buildFlowModel([
+      measured('solar', 3),
+      measured('grid', 1),
+      measured('home', 4),
+      quiescent('wall_connector', 0.5),
+      absent('powerwall'),
+    ]);
+    const edgeOf = (role: EnergyRole) => model.edges.find((e) => e.from === role)!;
+    expect(edgeOf('wall_connector').provenance).toBe('quiescent');
+    expect(edgeOf('wall_connector').direction).toBe('none'); // calm, no motion
+    expect(edgeOf('solar').direction).toBe('forward'); // a live source still flows
+    expect(edgeOf('home').direction).toBe('reverse'); // a live load still draws
+  });
+
+  test('the live half is NOT zeroed by the quiescent node; the running net stays finite', () => {
+    const model = buildFlowModel([
+      measured('solar', 3),
+      measured('grid', 1),
+      measured('home', 4),
+      quiescent('wall_connector', 0.5),
+      absent('powerwall'),
+    ]);
+    const agg = sceneAggregates(model);
+    expect(agg.generation).toBeCloseTo(4, 6); // live sources solar(+3)+grid(+1) — not zeroed
+    expect(Number.isFinite(agg.consumption)).toBe(true);
+    const segs = gatewaySegments(model, anchorsFor(['solar', 'grid', 'home', 'wall_connector']), { axis: 'x' });
+    expect(segs.every((s) => Number.isFinite(s.net))).toBe(true); // no NaN
+  });
+
+  test('an empty model and a single-node model produce no throw and a valid (possibly empty) net', () => {
+    const empty: FlowModel = { nodes: [], edges: [] };
+    expect(() => gatewaySegments(empty, {}, { axis: 'x' })).not.toThrow();
+    expect(gatewaySegments(empty, {}, { axis: 'x' })).toEqual([]);
+    expect(sceneAggregates(empty)).toEqual({ generation: 0, consumption: 0, gridNet: 0, gridPresent: false });
+
+    const single = topology({ home: 2 });
+    const segs = gatewaySegments(single, anchorsFor(['home']), { axis: 'x' });
+    expect(() => gatewaySegments(single, anchorsFor(['home']), { axis: 'x' })).not.toThrow();
+    expect(segs).toHaveLength(1); // the lone tap's trailing segment
+    expect(Number.isFinite(segs[0].net)).toBe(true);
+  });
+
+  test('a FULLY-quiescent model: every edge is calm (direction:none), nothing animates', () => {
+    const model = buildFlowModel([
+      quiescent('solar', 3),
+      quiescent('grid', 1),
+      quiescent('home', 4),
+      absent('powerwall'),
+      absent('wall_connector'),
+    ]);
+    expect(model.edges.length).toBeGreaterThan(0);
+    expect(model.edges.every((e) => e.provenance === 'quiescent')).toBe(true);
+    expect(model.edges.every((e) => e.direction === 'none')).toBe(true);
   });
 });
