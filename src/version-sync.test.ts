@@ -90,6 +90,54 @@ describe('version-sync gate — checkVersionSync (pure)', () => {
     expect(failures.some((f: string) => f.includes('package.json is not valid JSON'))).toBe(true);
   });
 
+  // --- FLAGS: package.json `version` present but not a string (QA gap: non-string branch) ---
+  test('FLAGS a non-string package.json version (e.g. a number) without throwing', () => {
+    const inputs = synced();
+    inputs.pkgText = JSON.stringify({ name: 'tesla-card', version: 123, main: 'dist/tesla-card.js' });
+    const failures = checkVersionSync(inputs);
+    // The non-string is reported; and because pkgVersion is cleared, NO false "version drift" fires.
+    expect(failures.some((f: string) => f.includes('`version` is not a string'))).toBe(true);
+    expect(failures.some((f: string) => /version drift/i.test(f))).toBe(false);
+  });
+
+  // --- FLAGS: invalid hacs.json JSON specifically (QA gap: only package.json was covered) ---
+  test('FLAGS invalid hacs.json JSON rather than throwing', () => {
+    const inputs = synced();
+    inputs.hacsText = '{ not valid json';
+    const failures = checkVersionSync(inputs);
+    expect(failures.some((f: string) => f.includes('hacs.json is not valid JSON'))).toBe(true);
+  });
+
+  // --- FLAGS: rollup output.file count ≠ 1 (QA gap: single-bundle output-shape drift) ---
+  test('FLAGS a missing rollup output.file (found 0 — single-bundle shape changed)', () => {
+    const inputs = synced();
+    inputs.rollupText = `export default { input: 'src/tesla-card.ts', output: { format: 'es' } };\n`;
+    const failures = checkVersionSync(inputs);
+    expect(failures.some((f: string) => f.includes('output.file') && f.includes('found 0'))).toBe(true);
+  });
+
+  test('FLAGS multiple rollup output.file declarations (found 2 — ambiguous output shape)', () => {
+    const inputs = synced();
+    inputs.rollupText =
+      `export default [\n` +
+      `  { input: 'a.ts', output: { file: 'dist/tesla-card.js', format: 'es' } },\n` +
+      `  { input: 'b.ts', output: { file: 'dist/tesla-card.js', format: 'es' } },\n` +
+      `];\n`;
+    const failures = checkVersionSync(inputs);
+    expect(failures.some((f: string) => f.includes('output.file') && f.includes('found 2'))).toBe(true);
+  });
+
+  // --- FLAGS: hacs.json filename and rollup basename disagree, isolated (QA gap: weakly covered) ---
+  test('FLAGS hacs.json filename ↔ rollup output basename disagreement explicitly', () => {
+    const inputs = synced();
+    // Both reference a real .js basename, but a DIFFERENT one each — neither is tesla-card.js,
+    // so the disagreement message must fire alongside the per-side basename mismatches.
+    inputs.hacsText = JSON.stringify({ name: 'Tesla Card', filename: 'foo.js' });
+    inputs.rollupText = `export default { input: 'src/tesla-card.ts', output: { file: 'dist/bar.js', format: 'es' } };\n`;
+    const failures = checkVersionSync(inputs);
+    expect(failures.some((f: string) => f.includes('disagree'))).toBe(true);
+  });
+
   test('surfaces MULTIPLE violations at once (reports all, not just the first)', () => {
     const inputs = synced();
     inputs.constText = `export const CARD_VERSION = '0.2.0';\n`; // version drift
