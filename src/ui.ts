@@ -1,5 +1,6 @@
 import { html, nothing, type TemplateResult } from 'lit';
 import type { HomeAssistant, TeslaCardConfig } from './types';
+import type { EntityKey } from './const';
 import { clamp, formatAge } from './helpers';
 import { readKey, referenceNow } from './data/freshness';
 import { STRINGS } from './strings';
@@ -91,30 +92,47 @@ export const batteryGauge = (
 };
 
 /**
- * The single honest "updated Nm ago" derivation (UX-DR18) — the ONE last-updated
- * source shared by every car-dependent surface (the Hero's status sub-line and the
- * commands wake affordance). Backing signal: `battery_level` — the headline value,
- * whose `last_updated` stamp still says WHEN the car last reported even while it
- * reads `unavailable` (asleep). Age is measured against HA's OWN time base
- * (`referenceNow` = max server stamp), NEVER `Date.now()`: a naive client
- * subtraction can manufacture phantom freshness, the one unforgivable error.
+ * The single honest "updated Nm ago" FORMATTER (UX-DR18) — the ONE place a
+ * last-updated stamp becomes user copy. Age is measured against HA's OWN time
+ * base (`now` = `referenceNow` = max server stamp), NEVER `Date.now()`: a naive
+ * client subtraction can manufacture phantom freshness, the one unforgivable
+ * error. Callers that already hold a freshness read (e.g. the closures panel,
+ * Story 5.7) pass its `lastUpdated` straight in — no second `hass.states` scan
+ * and no divergent age-formatting path.
  *
  * Returns `"updated 47m ago"` / `STRINGS.hero.justNow`, or `undefined` when no
  * stamp exists (caller omits the hint — never "updated NaN"/a fabricated time).
  */
-export const ageHint = (
-  hass: HomeAssistant | undefined,
-  config: TeslaCardConfig
+export const formatAgeHint = (
+  lastUpdated: string | undefined,
+  now: number
 ): string | undefined => {
-  // One O(n) scan of hass.states for the server reference, reused for the read.
-  const now = referenceNow(hass);
-  const r = readKey(hass, config, 'battery_level', { now });
-  if (!r.lastUpdated) return undefined;
-  const age = formatAge(now - Date.parse(r.lastUpdated));
+  if (!lastUpdated) return undefined;
+  const age = formatAge(now - Date.parse(lastUpdated));
   return age === ''
     ? STRINGS.hero.justNow
     : `${STRINGS.hero.updatedPrefix} ${age} ${STRINGS.hero.ago}`;
 };
+
+/**
+ * Per-key honest last-updated hint: resolve `key`'s freshness read and format its
+ * stamp via {@link formatAgeHint}. `now` defaults to one `referenceNow` scan when
+ * the caller has none. The single derivation reused by every car-dependent
+ * surface (the Hero's status sub-line, the commands wake affordance, the closures
+ * panel's per-closure staleness stamps).
+ */
+export const keyAgeHint = (
+  hass: HomeAssistant | undefined,
+  config: TeslaCardConfig,
+  key: EntityKey,
+  now: number = referenceNow(hass)
+): string | undefined => formatAgeHint(readKey(hass, config, key, { now }).lastUpdated, now);
+
+/** The Hero/commands last-updated hint, backed by `battery_level` (the headline value). */
+export const ageHint = (
+  hass: HomeAssistant | undefined,
+  config: TeslaCardConfig
+): string | undefined => keyAgeHint(hass, config, 'battery_level');
 
 /** Circular progress ring with a centred label. */
 export const ring = (

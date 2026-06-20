@@ -144,6 +144,22 @@ describe('centralized strings — voice contract (Story 2.5)', () => {
     expect(`${STRINGS.climate.seats.fl} ${STRINGS.climate.heater}`).toBe('Front L heater');
   });
 
+  test('Story 5.7: closures panel gains the honest three-state copy', () => {
+    // The honesty-first panel needs an `unknown` state word, an honest status
+    // line for unconfirmable closures, and a neutral lock name — never a false
+    // "closed"/"Unlocked" (UX-DR16/18). Single-sourced here; the staleness stamp
+    // reuses STRINGS.hero.updatedPrefix/ago/justNow (no duplicate age copy).
+    expect(STRINGS.closures.unknownWord).toBe('unknown');
+    expect(STRINGS.closures.someUnconfirmed).toBe('Some closures unconfirmed');
+    expect(STRINGS.closures.lockUnavailable).toBe('Lock unavailable');
+    // Sentence-case (first word capitalized, the rest lower) like the other copy.
+    for (const label of [STRINGS.closures.someUnconfirmed, STRINGS.closures.lockUnavailable]) {
+      const words = label.split(' ');
+      expect(words[0]).toMatch(/^[A-Z]/);
+      for (const w of words.slice(1)) expect(w).toMatch(/^[a-z]/);
+    }
+  });
+
   test('migration backstop: copy-bearing components import from ./strings', () => {
     const consumers = [
       'tesla-card.ts',

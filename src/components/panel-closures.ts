@@ -4,110 +4,233 @@ import { mdiLock, mdiLockOpenVariant, mdiWindowClosedVariant } from '@mdi/js';
 import { TcBase } from '../base';
 import { sharedStyles } from '../styles';
 import { STRINGS } from '../strings';
-import { icon } from '../ui';
+import { icon, formatAgeHint } from '../ui';
 import {
   rawState,
   isUnavailable,
   entityId,
   toggleEntity,
-  moreInfo,
+  srState,
 } from '../helpers';
+import { readKey, referenceNow, type Staleness } from '../data/freshness';
 import type { EntityKey } from '../const';
 
 const DOOR = 'var(--tc-red, #f87171)';
 const CARGO = 'var(--tc-amber, #fbbf24)';
 const GLASS = 'var(--tc-blue, #38bdf8)';
 
+/** Honesty-first three-state closure read (Story 5.7 / AC3): a closure we cannot
+ *  confirm is `unknown`, NEVER a false "closed". `state` is the last-known value
+ *  for a stale read and `unknown` only when there is no confirmable value. */
+type ClosureState = 'open' | 'closed' | 'unknown';
+interface Closure {
+  state: ClosureState;
+  staleness: Staleness;
+  available: boolean;
+  /** Surviving last-updated stamp (honest staleness source), or undefined. */
+  lastUpdated: string | undefined;
+}
+
 @customElement('tc-panel-closures')
 export class TcPanelClosures extends TcBase {
-  private _open(key: EntityKey): boolean {
-    return rawState(this.hass, this.config, key) === 'open';
+  /**
+   * The single honest read per closure (AC3). Routes through the Epic-1
+   * `data/freshness` model — the same model the Hero consumes — so staleness is
+   * never re-derived here. `openLiteral` differs by domain: covers report
+   * `'open'`, door binary-sensors report `'on'`. `now` is the HA time base,
+   * computed once in `render` and threaded down (one `referenceNow` scan, not one
+   * per closure). An `unavailable`/absent read becomes `unknown` (neutral), never
+   * a confident "closed".
+   */
+  private _closure(key: EntityKey, openLiteral: 'open' | 'on', now: number): Closure {
+    const r = readKey(this.hass, this.config, key, { now });
+    if (!r.available) {
+      return { state: 'unknown', staleness: r.staleness, available: false, lastUpdated: r.lastUpdated };
+    }
+    return {
+      state: r.value === openLiteral ? 'open' : 'closed',
+      staleness: r.staleness,
+      available: true,
+      lastUpdated: r.lastUpdated,
+    };
   }
-  private _doorOpen(key: EntityKey): boolean {
-    return rawState(this.hass, this.config, key) === 'on';
+
+  /** The honest state word for an aria-label / status noun. */
+  private _stateWord(s: ClosureState): string {
+    return s === 'open'
+      ? STRINGS.closures.openWord
+      : s === 'closed'
+        ? STRINGS.closures.closedWord
+        : STRINGS.closures.unknownWord;
   }
+
   private _avail(key: EntityKey): boolean {
     return !isUnavailable(rawState(this.hass, this.config, key));
   }
+  private _open(key: EntityKey): boolean {
+    return rawState(this.hass, this.config, key) === 'open';
+  }
   private _toggle(key: EntityKey): void {
     if (!this.hass || !this._avail(key)) return;
+    // Fire-and-forget (DELIBERATE non-goal: no optimistic flip — a physical
+    // closure takes seconds and can fail; an optimistic "open" would paint
+    // certainty we don't have, the exact sin this panel prevents). The UI
+    // reflects the REAL reconciled state on the next `hass` tick.
     toggleEntity(this.hass, entityId(this.config, key));
   }
-  private _info(key: EntityKey): void {
-    if (!this.hass) return;
-    moreInfo(this, entityId(this.config, key));
+  /** Enter/Space actuation for the focusable SVG zones (DoD a11y floor). */
+  private _zoneKey(e: KeyboardEvent, key: EntityKey): void {
+    if (e.key === 'Enter' || e.key === ' ') {
+      e.preventDefault(); // Space would otherwise scroll the page
+      this._toggle(key);
+    }
   }
 
-  private _fill(open: boolean, color: string): string {
-    return open ? `color-mix(in srgb, ${color} 34%, transparent)` : 'var(--tc-surface-2, rgba(255, 255, 255, 0.07))';
+  private _zoneFill(c: Closure, color: string): string {
+    if (c.state === 'unknown') return 'transparent'; // neutral — never the closed surface
+    return c.state === 'open'
+      ? `color-mix(in srgb, ${color} 34%, transparent)`
+      : 'var(--tc-surface-2, rgba(255, 255, 255, 0.07))';
   }
-  private _stroke(open: boolean, color: string): string {
-    return open ? color : 'var(--tc-border-strong, rgba(255, 255, 255, 0.16))';
+  private _zoneStroke(c: Closure, color: string): string {
+    if (c.state === 'unknown') return 'var(--tc-text-dim, #9aa7b8)'; // dim, dashed (see styles)
+    return c.state === 'open' ? color : 'var(--tc-border-strong, rgba(255, 255, 255, 0.16))';
   }
 
-  /** A tappable cover zone (frunk / trunk / windows / charge port). */
+  /** A tappable + keyboard-operable cover zone (frunk / trunk / windows / sunroof / charge port). */
   private _zone(
     key: EntityKey,
     color: string,
     shape: (fill: string, stroke: string) => SVGTemplateResult,
-    label: string
+    label: string,
+    now: number
   ): SVGTemplateResult {
-    const open = this._open(key);
-    const avail = this._avail(key);
+    const c = this._closure(key, 'open', now);
+    const stale = c.available && c.staleness !== 'fresh';
+    // Only an available zone is a live control: focusable + actuable. An
+    // unavailable zone is a dead control — non-focusable, pointer-events:none.
     return svg`<g
-      class="zone ${avail ? '' : 'na'}"
+      class="zone ${c.state}${c.available ? '' : ' na'}${stale ? ' stale' : ''}"
       @click=${() => this._toggle(key)}
+      @keydown=${(e: KeyboardEvent) => this._zoneKey(e, key)}
       role="button"
-      aria-label=${`${label} ${open ? STRINGS.closures.openWord : STRINGS.closures.closedWord}`}
-    >${shape(this._fill(open, color), this._stroke(open, color))}</g>`;
+      tabindex=${c.available ? '0' : nothing}
+      aria-label=${srState(label, this._stateWord(c.state))}
+    >${shape(this._zoneFill(c, color), this._zoneStroke(c, color))}</g>`;
   }
 
-  /** A door indicator (read-only binary sensor). */
-  private _door(key: EntityKey, x: number, y: number): SVGTemplateResult {
-    const open = this._doorOpen(key);
+  /** A door indicator — status-only (AC1): rendered + coloured by state, NOT
+   *  tappable and NOT focusable. Announces a read-only state to SR (L176). */
+  private _door(key: EntityKey, x: number, y: number, name: string, now: number): SVGTemplateResult {
+    const c = this._closure(key, 'on', now);
+    const stale = c.available && c.staleness !== 'fresh';
     return svg`<rect
-      class="zone door"
-      @click=${() => this._info(key)}
+      class="zone door ${c.state}${c.available ? '' : ' na'}${stale ? ' stale' : ''}"
       x=${x} y=${y} width="20" height="52" rx="7"
-      style="fill:${this._fill(open, DOOR)};stroke:${this._stroke(open, DOOR)}"
+      role="img"
+      aria-label=${srState(name, this._stateWord(c.state))}
+      style="fill:${this._zoneFill(c, DOOR)};stroke:${this._zoneStroke(c, DOOR)}"
     ></rect>`;
   }
 
-  private _statusLine(): { text: string; tone: string } {
-    const locked = rawState(this.hass, this.config, 'lock') === 'locked';
-    const openNames: string[] = [];
-    if (this._open('frunk')) openNames.push(STRINGS.closures.parts.frunk);
-    if (this._open('trunk')) openNames.push(STRINGS.closures.parts.trunk);
-    if (this._open('windows')) openNames.push(STRINGS.closures.parts.windows);
-    if (this._open('charge_port')) openNames.push(STRINGS.closures.parts.chargePort);
-    (
-      [
-        ['door_fl', STRINGS.closures.parts.doorFL],
-        ['door_fr', STRINGS.closures.parts.doorFR],
-        ['door_rl', STRINGS.closures.parts.doorRL],
-        ['door_rr', STRINGS.closures.parts.doorRR],
-      ] as [EntityKey, string][]
-    ).forEach(([k, n]) => this._doorOpen(k) && openNames.push(n));
+  /**
+   * The freshness-honest status line (AC3). "All closed" may ONLY be claimed when
+   * every closure is `available && closed`; any `unknown` (unconfirmable) closure
+   * surfaces staleness instead. A `lock` we cannot read reads neutral, never a
+   * confident "Unlocked".
+   */
+  private _statusLine(now: number): { text: string; tone: string } {
+    const lock = readKey(this.hass, this.config, 'lock', { now });
+    const lockWord = !lock.available
+      ? STRINGS.closures.lockUnavailable
+      : lock.value === 'locked'
+        ? STRINGS.status.locked
+        : STRINGS.status.unlocked;
 
-    if (openNames.length === 0) {
-      return {
-        text: `${STRINGS.closures.allClosed} · ${locked ? STRINGS.status.locked : STRINGS.status.unlocked}`,
-        tone: locked ? 'good' : 'warn',
-      };
+    const items: { name: string; c: Closure }[] = [
+      { name: STRINGS.closures.parts.frunk, c: this._closure('frunk', 'open', now) },
+      { name: STRINGS.closures.parts.trunk, c: this._closure('trunk', 'open', now) },
+      { name: STRINGS.closures.parts.windows, c: this._closure('windows', 'open', now) },
+      { name: STRINGS.closures.parts.chargePort, c: this._closure('charge_port', 'open', now) },
+      { name: STRINGS.closures.parts.doorFL, c: this._closure('door_fl', 'on', now) },
+      { name: STRINGS.closures.parts.doorFR, c: this._closure('door_fr', 'on', now) },
+      { name: STRINGS.closures.parts.doorRL, c: this._closure('door_rl', 'on', now) },
+      { name: STRINGS.closures.parts.doorRR, c: this._closure('door_rr', 'on', now) },
+    ];
+    // The sunroof counts toward honesty ONLY when the install has one (entity
+    // present): a sunroof we render `unknown` must block a false "All closed",
+    // but an absent sunroof on a car without one must not invent doubt.
+    const sunroof = readKey(this.hass, this.config, 'sunroof', { now });
+    if (sunroof.value !== undefined) {
+      items.push({ name: STRINGS.closures.zones.sunroof, c: this._closure('sunroof', 'open', now) });
     }
-    const list =
-      openNames.length <= 2
-        ? openNames.join(' & ')
-        : `${openNames.length} ${STRINGS.closures.openWord}`;
-    return { text: `${STRINGS.closures.openPrefix}: ${list}`, tone: 'warn' };
+
+    const openNames = items.filter((i) => i.c.state === 'open').map((i) => i.name);
+    if (openNames.length > 0) {
+      const list =
+        openNames.length <= 2
+          ? openNames.join(' & ')
+          : `${openNames.length} ${STRINGS.closures.openWord}`;
+      return { text: `${STRINGS.closures.openPrefix}: ${list}`, tone: 'warn' };
+    }
+
+    // Nothing open. If any closure is unconfirmable, never claim "All closed".
+    if (items.some((i) => i.c.state === 'unknown')) {
+      return { text: `${STRINGS.closures.someUnconfirmed} · ${lockWord}`, tone: 'dim' };
+    }
+
+    // Every closure is available + closed → the honest "All closed". But reserve
+    // the confident GREEN for FRESH reads only: a stale last-known "All closed"
+    // keeps the (spec-permitted) text + its staleness stamp, yet must NOT paint a
+    // confident green — "a green 'Closed' on stale data" is the named failure
+    // (UX-DR18 / EXPERIENCE L101). Any stale closure degrades the tone to dim.
+    const anyStale = items.some((i) => i.c.available && i.c.staleness !== 'fresh');
+    return {
+      text: `${STRINGS.closures.allClosed} · ${lockWord}`,
+      tone: !lock.available || anyStale ? 'dim' : lock.value === 'locked' ? 'good' : 'warn',
+    };
+  }
+
+  /**
+   * The visible staleness stamp (AC3 / UX-DR18) — the oldest "updated Nm ago"
+   * among any stale-or-unknown closure, or undefined when every read is fresh.
+   * Rendered in `--tc-text-dim` (via `.tc-stale-copy`), NEVER `--tc-text-mute`.
+   */
+  private _staleNote(now: number): string | undefined {
+    const keys: [EntityKey, 'open' | 'on'][] = [
+      ['frunk', 'open'], ['trunk', 'open'], ['windows', 'open'], ['sunroof', 'open'],
+      ['charge_port', 'open'], ['door_fl', 'on'], ['door_fr', 'on'], ['door_rl', 'on'], ['door_rr', 'on'],
+    ];
+    let oldest: string | undefined;
+    for (const [key] of keys) {
+      const r = readKey(this.hass, this.config, key, { now });
+      if (r.staleness === 'fresh') continue; // only annotate the unconfirmed
+      if (!r.lastUpdated) continue;
+      if (oldest === undefined || Date.parse(r.lastUpdated) < Date.parse(oldest)) {
+        oldest = r.lastUpdated;
+      }
+    }
+    return formatAgeHint(oldest, now);
   }
 
   protected override render(): TemplateResult {
     const cfg = this.config;
-    const locked = rawState(this.hass, cfg, 'lock') === 'locked';
-    const lockAvail = !isUnavailable(rawState(this.hass, cfg, 'lock'));
-    const status = this._statusLine();
-    const sunroofAvail = this._avail('sunroof');
+    const now = referenceNow(this.hass);
+    const lock = readKey(this.hass, cfg, 'lock', { now });
+    const lockAvail = lock.available;
+    const locked = lockAvail && lock.value === 'locked';
+    const status = this._statusLine(now);
+    const staleNote = this._staleNote(now);
+    // Show the sunroof zone whenever the entity is PRESENT (value defined) — even
+    // when unavailable it renders `unknown` so the user learns the sensor exists
+    // but is unconfirmed (Task 5). Absent from the install → hidden.
+    const sunroof = readKey(this.hass, cfg, 'sunroof', { now });
+    const showSunroof = sunroof.value !== undefined;
+    const lockWord = !lockAvail
+      ? STRINGS.closures.lockUnavailable
+      : locked
+        ? STRINGS.status.locked
+        : STRINGS.status.unlocked;
 
     return html`
       <div class="wrap">
@@ -134,7 +257,8 @@ export class TcPanelClosures extends TcBase {
               (fill, stroke) =>
                 svg`<path d="M52 56 q0 -28 28 -28 h60 q28 0 28 28 v22 h-116 z"
                   style="fill:${fill};stroke:${stroke}"></path>`,
-              STRINGS.closures.zones.frunk
+              STRINGS.closures.zones.frunk,
+              now
             )}
 
             <!-- windshield -->
@@ -147,16 +271,18 @@ export class TcPanelClosures extends TcBase {
               (fill, stroke) =>
                 svg`<rect x="70" y="124" width="80" height="116" rx="12"
                   style="fill:${fill};stroke:${stroke}"></rect>`,
-              STRINGS.closures.zones.windows
+              STRINGS.closures.zones.windows,
+              now
             )}
-            ${sunroofAvail
+            ${showSunroof
               ? this._zone(
                   'sunroof',
                   GLASS,
                   (fill, stroke) =>
                     svg`<rect x="86" y="140" width="48" height="84" rx="9"
                       style="fill:${fill};stroke:${stroke}"></rect>`,
-                  STRINGS.closures.zones.sunroof
+                  STRINGS.closures.zones.sunroof,
+                  now
                 )
               : nothing}
 
@@ -170,14 +296,15 @@ export class TcPanelClosures extends TcBase {
               (fill, stroke) =>
                 svg`<path d="M52 328 v-22 h116 v22 q0 28 -28 28 h-60 q-28 0 -28 -28 z"
                   style="fill:${fill};stroke:${stroke}"></path>`,
-              STRINGS.closures.zones.trunk
+              STRINGS.closures.zones.trunk,
+              now
             )}
 
-            <!-- doors -->
-            ${this._door('door_fl', 42, 128)}
-            ${this._door('door_rl', 42, 186)}
-            ${this._door('door_fr', 158, 128)}
-            ${this._door('door_rr', 158, 186)}
+            <!-- doors (status-only) -->
+            ${this._door('door_fl', 42, 128, STRINGS.closures.parts.doorFL, now)}
+            ${this._door('door_rl', 42, 186, STRINGS.closures.parts.doorRL, now)}
+            ${this._door('door_fr', 158, 128, STRINGS.closures.parts.doorFR, now)}
+            ${this._door('door_rr', 158, 186, STRINGS.closures.parts.doorRR, now)}
 
             <!-- mirrors -->
             <g class="mirror">
@@ -192,43 +319,68 @@ export class TcPanelClosures extends TcBase {
               (fill, stroke) =>
                 svg`<circle cx="50" cy="258" r="8"
                   style="fill:${fill};stroke:${stroke}"></circle>`,
-              STRINGS.closures.zones.chargePort
+              STRINGS.closures.zones.chargePort,
+              now
             )}
 
             <!-- centre lock glyph -->
             <g
               class="zone lock-glyph ${lockAvail ? '' : 'na'}"
               @click=${() => lockAvail && toggleEntity(this.hass!, entityId(cfg, 'lock'))}
+              @keydown=${(e: KeyboardEvent) =>
+                lockAvail &&
+                (e.key === 'Enter' || e.key === ' ') &&
+                (e.preventDefault(), toggleEntity(this.hass!, entityId(cfg, 'lock')))}
               role="button"
-              aria-label=${locked ? STRINGS.status.locked : STRINGS.status.unlocked}
+              tabindex=${lockAvail ? '0' : nothing}
+              aria-label=${lockWord}
             >
               <circle
                 cx="110" cy="182" r="22"
-                style="fill:${locked
-                  ? 'color-mix(in srgb, var(--tc-green, #34d399) 22%, transparent)'
-                  : 'color-mix(in srgb, var(--tc-amber, #fbbf24) 22%, transparent)'};stroke:${locked
-                  ? 'var(--tc-green, #34d399)'
-                  : 'var(--tc-amber, #fbbf24)'}"
+                style="fill:${!lockAvail
+                  ? 'transparent'
+                  : locked
+                    ? 'color-mix(in srgb, var(--tc-green, #34d399) 22%, transparent)'
+                    : 'color-mix(in srgb, var(--tc-amber, #fbbf24) 22%, transparent)'};stroke:${!lockAvail
+                  ? 'var(--tc-text-dim, #9aa7b8)'
+                  : locked
+                    ? 'var(--tc-green, #34d399)'
+                    : 'var(--tc-amber, #fbbf24)'}"
               ></circle>
               <path
                 transform="translate(98 170) scale(1)"
                 d=${locked ? mdiLock : mdiLockOpenVariant}
-                style="fill:${locked ? 'var(--tc-green, #34d399)' : 'var(--tc-amber, #fbbf24)'}"
+                style="fill:${!lockAvail
+                  ? 'var(--tc-text-dim, #9aa7b8)'
+                  : locked
+                    ? 'var(--tc-green, #34d399)'
+                    : 'var(--tc-amber, #fbbf24)'}"
               ></path>
             </g>
           </svg>
 
           <div class="status ${status.tone}">${status.text}</div>
+          ${staleNote
+            ? html`<div class="stale-note tc-stale-copy">${staleNote}</div>`
+            : nothing}
         </section>
 
         <!-- primary lock control -->
+        <!-- primary lock control — the visible span IS the state-bearing
+             accessible name (neutralised to "Lock unavailable" when unreadable). -->
         <button
           class="bigpill ${locked ? 'locked' : 'unlocked'}"
           ?disabled=${!lockAvail}
           @click=${() => this._toggle('lock')}
         >
           ${icon(locked ? mdiLock : mdiLockOpenVariant, { size: 20 })}
-          <span>${locked ? STRINGS.closures.lockedTapToUnlock : STRINGS.closures.unlockedTapToLock}</span>
+          <span
+            >${!lockAvail
+              ? STRINGS.closures.lockUnavailable
+              : locked
+                ? STRINGS.closures.lockedTapToUnlock
+                : STRINGS.closures.unlockedTapToLock}</span
+          >
         </button>
 
         <button
@@ -283,11 +435,9 @@ export class TcPanelClosures extends TcBase {
         stroke: var(--tc-border, rgba(255, 255, 255, 0.09));
         stroke-width: 1;
       }
-      .zone {
-        cursor: pointer;
-      }
-      .zone[role='button'],
-      .zone.door {
+      /* Only the tappable zones (role=button) are interactive; status-only doors
+         (role=img) carry no pointer affordance. */
+      .zone[role='button'] {
         cursor: pointer;
       }
       .zone rect,
@@ -297,12 +447,27 @@ export class TcPanelClosures extends TcBase {
         stroke-width: 1.6;
         transition: fill 0.2s var(--tc-ease, cubic-bezier(0.22, 1, 0.36, 1)), stroke 0.2s var(--tc-ease, cubic-bezier(0.22, 1, 0.36, 1));
       }
-      .zone:hover :is(rect, path, circle, polygon) {
+      /* Unknown = neutral indeterminate, NEVER the closed look: dashed dim outline. */
+      .zone.unknown :is(rect, path, circle, polygon) {
+        stroke-dasharray: 4 4;
+      }
+      /* Stale = last-known, visibly de-emphasised (confident colour is fresh-only). */
+      .zone.stale :is(rect, path, circle, polygon) {
+        opacity: 0.6;
+      }
+      .zone[role='button']:hover :is(rect, path, circle, polygon) {
         filter: brightness(1.35);
       }
-      .zone:active {
+      .zone[role='button']:active {
         transform: scale(0.99);
         transform-origin: center;
+      }
+      /* Visible keyboard focus on the SVG group — an SVG <g> doesn't reliably
+         paint the host :focus-visible outline, so mark the inner shape. The 2px
+         corpus outline (sharedStyles :focus-visible) still applies on top. */
+      .zone[role='button']:focus-visible :is(rect, path, circle, polygon) {
+        stroke: var(--tc-blue, #38bdf8);
+        stroke-width: 3;
       }
       .zone.na {
         opacity: 0.35;
@@ -321,6 +486,14 @@ export class TcPanelClosures extends TcBase {
       }
       .status.warn {
         color: var(--tc-amber, #fbbf24);
+      }
+      .status.dim {
+        color: var(--tc-text-dim, #9aa7b8);
+      }
+      /* Honest staleness stamp (UX-DR18) — --tc-text-dim via .tc-stale-copy. */
+      .stale-note {
+        font-size: 11.5px;
+        font-weight: 600;
       }
 
       .bigpill {

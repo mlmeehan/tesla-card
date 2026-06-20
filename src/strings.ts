@@ -130,6 +130,13 @@ export const STRINGS = {
     openPrefix: 'Open', // `Open: frunk & trunk`
     openWord: 'open', // zone aria + `${n} open`
     closedWord: 'closed', // zone aria
+    // Honesty-first three-state copy (Story 5.7 / UX-DR16/18): a closure we can't
+    // confirm is `unknown`, never a false "closed". The status line surfaces this
+    // instead of claiming "All closed"; the staleness stamp reuses the hero's
+    // honest "updated Nm ago" copy (STRINGS.hero.updatedPrefix/ago/justNow).
+    unknownWord: 'unknown', // zone aria for an unconfirmable closure (state-bearing)
+    someUnconfirmed: 'Some closures unconfirmed', // status line when nothing is open but a closure is unknown
+    lockUnavailable: 'Lock unavailable', // neutral lock name — never a confident "Unlocked" we can't read
     lockedTapToUnlock: 'Locked — tap to unlock',
     unlockedTapToLock: 'Unlocked — tap to lock',
     closeWindows: 'Close windows',
