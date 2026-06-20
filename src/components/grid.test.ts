@@ -4,7 +4,7 @@
 // the fixture/freshness method. Focus: AC4 — direction read DIRECTLY from the
 // RAW sensor sign (+ import / − export), pinned both ways so a flipped convention
 // fails here; plus the neutral accent, the grid_status chip, and AC1–AC3.
-import { afterEach, describe, expect, test } from 'vitest';
+import { afterEach, describe, expect, test, vi } from 'vitest';
 import './grid';
 import { accentVar } from './ecosystem-card';
 import { resolveEnergyEntities } from '../data/energy';
@@ -182,5 +182,76 @@ describe('AC3 — standalone registered element', () => {
       el.setConfig({ type: 'custom:tesla-card', unknown_future_key: 1 } as TeslaCardConfig)
     ).not.toThrow();
     expect((window.customCards ?? []).find((c) => c.type === 'tc-grid')).toBeTruthy();
+  });
+});
+
+// ── Story 8.3 — inline history charts (today grid_power + 7-day grid_imported) ──
+function fixtureNowMs(s: Record<string, HassEntity>): number {
+  let max = -Infinity;
+  for (const e of Object.values(s)) {
+    for (const ts of [e.last_updated, e.last_changed]) {
+      const ms = ts ? Date.parse(ts) : NaN;
+      if (Number.isFinite(ms) && ms > max) max = ms;
+    }
+  }
+  return max;
+}
+const SAMPLE_HISTORY = (id: string, nowMs: number) => {
+  const day = 86_400_000;
+  return {
+    [id]: [
+      { s: '10', lu: (nowMs - day - 3_600_000) / 1000 },
+      { s: '13', lu: (nowMs - day - 1000) / 1000 },
+      { s: '20', lu: (nowMs - 3_600_000) / 1000 },
+      { s: '26', lu: (nowMs - 1000) / 1000 },
+    ],
+  };
+};
+function makeHassWS(
+  s: Record<string, HassEntity>,
+  callWS = vi.fn().mockImplementation((msg: { entity_ids: string[] }) =>
+    Promise.resolve(SAMPLE_HISTORY(msg.entity_ids[0], fixtureNowMs(s)))
+  )
+): HomeAssistant {
+  return { states: s, callWS } as unknown as HomeAssistant;
+}
+async function settle(el: Card): Promise<void> {
+  await new Promise((r) => setTimeout(r, 0));
+  await el.updateComplete;
+}
+
+describe('Story 8.3 — inline history charts', () => {
+  test('AC1/AC3 — grid_power + grid_imported resolve → sparkline + 7-day bars render', async () => {
+    const el = await mount(makeHassWS(states(detailFx)));
+    await settle(el);
+    expect(sr(el).querySelector('.eco-charts svg.spark')).not.toBeNull();
+    expect(sr(el).querySelectorAll('.bcol').length).toBeGreaterThan(0);
+  });
+
+  test('AC2/AC5 — resolved entity but empty recorder → calm empty chart, no fabricated curve', async () => {
+    const el = await mount(makeHassWS(states(detailFx), vi.fn().mockResolvedValue({})));
+    await settle(el);
+    expect(sr(el).querySelector('.eco-charts .ct-empty')).not.toBeNull();
+    expect(sr(el).querySelector('svg.spark')).toBeNull();
+    expect(sr(el).querySelector('.bcol')).toBeNull();
+  });
+
+  test('AC5 — NO chart on the calm-empty path (unresolved fixture)', async () => {
+    const el = await mount(makeHassWS(states(allUnresolvedFx)));
+    await settle(el);
+    expect(sr(el).querySelector('.eco-charts')).toBeNull();
+  });
+
+  test('AC3 — no re-fetch on an unrelated hass tick (callWS count frozen for a stable id)', async () => {
+    const s = states(detailFx);
+    const callWS = vi.fn().mockImplementation((msg: { entity_ids: string[] }) =>
+      Promise.resolve(SAMPLE_HISTORY(msg.entity_ids[0], fixtureNowMs(s)))
+    );
+    const el = await mount(makeHassWS(s, callWS));
+    await settle(el);
+    const n = callWS.mock.calls.length;
+    el.hass = makeHassWS(states(detailFx), callWS);
+    await settle(el);
+    expect(callWS.mock.calls.length).toBe(n);
   });
 });

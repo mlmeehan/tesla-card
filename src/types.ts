@@ -21,6 +21,13 @@ export interface HomeAssistant {
   ) => Promise<unknown>;
   locale?: { language: string };
   themes?: Record<string, unknown>;
+  /**
+   * One-shot WebSocket command over HA's OWN authenticated connection (Story
+   * 8.3 — recorder/history reads). Optional + generic for strictness; the index
+   * signature already permits the call, this just types its result. SANCTIONED
+   * by `no-network-egress` (rides HA's socket; the card opens none of its own).
+   */
+  callWS?: <T = unknown>(msg: Record<string, unknown>) => Promise<T>;
   /** Present on the real hass object; typed loosely for runtime access. */
   [key: string]: any;
 }

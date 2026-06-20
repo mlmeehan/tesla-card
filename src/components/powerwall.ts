@@ -1,13 +1,15 @@
 import { html, nothing, type PropertyValues, type TemplateResult } from 'lit';
-import { customElement } from 'lit/decorators.js';
+import { customElement, state } from 'lit/decorators.js';
 import { mdiHomeBattery, mdiBatteryLock, mdiCogOutline, mdiBatteryPlus, mdiBatteryMinus } from '@mdi/js';
 import { EcosystemCard, ecosystemShellStyles, accentVar } from './ecosystem-card';
 import { nodeHero, nodeHeroStyles } from './node-hero';
+import { sparkline, dayBars, barLabels, chartStyles } from './chart';
 import { sharedStyles } from '../styles';
 import { STRINGS } from '../strings';
 import { statTile, ring, formatAgeHint } from '../ui';
 import { resolveEnergyEntities, numById, stateById, unitById, type EnergyEntities } from '../data/energy';
 import { read, referenceNow } from '../data/freshness';
+import { fetchCardHistory, type CardHistory } from '../data/history';
 import { formatNumber, prettyText, isUnavailable } from '../helpers';
 import type { LovelaceCard, TeslaCardConfig } from '../types';
 
@@ -27,6 +29,9 @@ const THRESH = 0.05;
 export class TcPowerwall extends EcosystemCard implements LovelaceCard {
   private _energy?: EnergyEntities;
   private _resolveCache?: { hass: unknown; config: TeslaCardConfig };
+  /** One-shot recorder history (Story 8.3), id-gated so unrelated hass ticks never re-fetch. */
+  @state() private _charts?: CardHistory;
+  private _lastChartKey?: string;
 
   public setConfig(config: TeslaCardConfig): void {
     if (!config) throw new Error('Invalid configuration');
@@ -38,7 +43,10 @@ export class TcPowerwall extends EcosystemCard implements LovelaceCard {
   }
 
   protected override willUpdate(changed: PropertyValues): void {
-    if (changed.has('hass') || changed.has('config')) this._resolve();
+    if (changed.has('hass') || changed.has('config')) {
+      this._resolve();
+      this._fetchCharts();
+    }
   }
 
   /** Resolve once per hass/config change — see `tc-solar` for the cache-key rationale. */
@@ -48,6 +56,26 @@ export class TcPowerwall extends EcosystemCard implements LovelaceCard {
     if (c && c.hass === this.hass && c.config === this.config) return;
     this._energy = resolveEnergyEntities(this.hass, this.config);
     this._resolveCache = { hass: this.hass, config: this.config };
+  }
+
+  /**
+   * One-shot, id-gated history fetch (AC3) — see `tc-solar._fetchCharts`. Charts
+   * the SoC % today (`powerwall_level`) + the 7-day charged-kWh bars (daily delta
+   * of `battery_charged`).
+   */
+  private _fetchCharts(): void {
+    const e = this._energy ?? {};
+    const ids = { today: e.powerwall_level, cumulative: e.battery_charged };
+    const key = `${ids.today ?? ''}|${ids.cumulative ?? ''}`;
+    if (key === this._lastChartKey) return;
+    this._lastChartKey = key;
+    if (!ids.today && !ids.cumulative) {
+      this._charts = undefined;
+      return;
+    }
+    void fetchCardHistory(this.hass, ids, referenceNow(this.hass)).then((h) => {
+      this._charts = h;
+    });
   }
 
   protected override render(): TemplateResult {
@@ -144,11 +172,31 @@ export class TcPowerwall extends EcosystemCard implements LovelaceCard {
     const ariaLabel =
       level === undefined ? `${label} ${dir}` : `${label} ${formatNumber(level, 0)}% ${dir}`;
 
+    // Inline charts (Story 8.3): today's SoC % sparkline + the 7-day charged-kWh
+    // bars (daily delta). Each included only when its source id resolves.
+    const days = this._charts?.days ?? [];
+    const charts: Array<TemplateResult | typeof nothing> = [
+      e.powerwall_level
+        ? sparkline(this._charts?.today ?? [], {
+            accent,
+            title: STRINGS.ecosystem.chartTodayTitle,
+            valueLabel: level === undefined ? undefined : `${formatNumber(level, 0)}%`,
+          })
+        : nothing,
+      e.battery_charged
+        ? dayBars(
+            days.map((d) => d.value),
+            barLabels(days, STRINGS.ecosystem.weekdays),
+            { accent, title: STRINGS.ecosystem.chartHistoryTitle }
+          )
+        : nothing,
+    ];
+
     // Powerwall stays a SENSOR in this story — its writable mode/reserve controls
     // land in 8.4; here mode/reserve remain read-only telemetry tiles (AC3).
     return this.renderDetail(
       { accent, label, stamp, state, subStatus: dir, kind: 'sensor', ariaLabel },
-      { hero: nodeHero('powerwall'), readout: html`${soc}${flow}`, tiles }
+      { hero: nodeHero('powerwall'), readout: html`${soc}${flow}`, tiles, charts }
     );
   }
 
@@ -167,7 +215,7 @@ export class TcPowerwall extends EcosystemCard implements LovelaceCard {
     });
   }
 
-  static override styles = [sharedStyles, ecosystemShellStyles, nodeHeroStyles];
+  static override styles = [sharedStyles, ecosystemShellStyles, nodeHeroStyles, chartStyles];
 }
 
 declare global {

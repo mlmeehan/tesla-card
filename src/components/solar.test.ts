@@ -16,7 +16,7 @@
 // advancing ANOTHER entity's last_updated → referenceNow = max stamp) forces a
 // stale classification. Energy ids are never inlined — they come from real
 // resolveEnergyEntities resolution over the fixture corpus.
-import { afterEach, describe, expect, test } from 'vitest';
+import { afterEach, describe, expect, test, vi } from 'vitest';
 import './solar';
 import './home';
 import { accentVar } from './ecosystem-card';
@@ -329,5 +329,99 @@ describe('cross-card interlink — shared hass only (FR-32)', () => {
       HTMLElement.prototype.dispatchEvent = orig;
     }
     expect(dispatched.filter((e) => e instanceof CustomEvent)).toEqual([]);
+  });
+});
+
+// ── Story 8.3 — inline history charts ────────────────────────────────────────
+/** The fixture's HA "now" (max last_updated/last_changed) — the card's time base. */
+function fixtureNowMs(s: Record<string, HassEntity>): number {
+  let max = -Infinity;
+  for (const e of Object.values(s)) {
+    for (const ts of [e.last_updated, e.last_changed]) {
+      const ms = ts ? Date.parse(ts) : NaN;
+      if (Number.isFinite(ms) && ms > max) max = ms;
+    }
+  }
+  return max;
+}
+/**
+ * A representative history payload anchored to the fixture's HA now, so samples
+ * fall inside the card's today / 7-day windows. Two days × two samples → the
+ * sparkline has ≥2 points and the cumulative bars carry a real daily delta.
+ */
+const SAMPLE_HISTORY = (id: string, nowMs: number) => {
+  const day = 86_400_000;
+  return {
+    [id]: [
+      { s: '10', lu: (nowMs - day - 3_600_000) / 1000 }, // yesterday early
+      { s: '13', lu: (nowMs - day - 1000) / 1000 }, // yesterday late → delta 3
+      { s: '20', lu: (nowMs - 3_600_000) / 1000 }, // today early
+      { s: '26', lu: (nowMs - 1000) / 1000 }, // today late → delta 6
+    ],
+  };
+};
+function makeHassWS(
+  s: Record<string, HassEntity>,
+  callWS = vi.fn().mockImplementation((msg: { entity_ids: string[] }) =>
+    Promise.resolve(SAMPLE_HISTORY(msg.entity_ids[0], fixtureNowMs(s)))
+  )
+): HomeAssistant {
+  return { states: s, callWS } as unknown as HomeAssistant;
+}
+/** Let the one-shot fetch's async .then settle, then re-render. */
+async function settle(el: Card): Promise<void> {
+  await new Promise((r) => setTimeout(r, 0));
+  await el.updateComplete;
+}
+
+describe('Story 8.3 — inline history charts (AC1/AC2/AC3/AC5)', () => {
+  test('AC1/AC3 — charted entity resolves + history present → the .eco-charts region renders a sparkline', async () => {
+    const el = await mount(makeHassWS(states(detailFx)));
+    await settle(el);
+    const region = sr(el).querySelector('.eco-charts');
+    expect(region).not.toBeNull();
+    expect(region!.querySelector('svg.spark')).not.toBeNull(); // today area sparkline
+    expect(sr(el).querySelectorAll('.bcol').length).toBeGreaterThan(0); // 7-day bars
+  });
+
+  test('AC5 — NO chart on the calm-empty path (renderShell, unresolved fixture)', async () => {
+    const el = await mount(makeHassWS(states(allUnresolvedFx)));
+    await settle(el);
+    expect(sr(el).querySelector('.eco-charts')).toBeNull();
+    expect(sr(el).querySelector('.chart')).toBeNull();
+  });
+
+  test('AC2 — resolved entity but EMPTY recorder result → calm empty chart, never a fabricated curve', async () => {
+    const callWS = vi.fn().mockResolvedValue({}); // recorder returns nothing
+    const el = await mount(makeHassWS(states(detailFx), callWS));
+    await settle(el);
+    expect(sr(el).querySelector('.eco-charts .ct-empty')).not.toBeNull();
+    expect(sr(el).querySelector('svg.spark')).toBeNull(); // no fake path
+    expect(sr(el).querySelector('.bcol')).toBeNull(); // no zero-height bars
+  });
+
+  test('AC3 — NO re-fetch on an unrelated hass tick (stable charted id, callWS count frozen)', async () => {
+    const s = states(detailFx);
+    const callWS = vi.fn().mockImplementation((msg: { entity_ids: string[] }) =>
+      Promise.resolve(SAMPLE_HISTORY(msg.entity_ids[0], fixtureNowMs(s)))
+    );
+    const el = await mount(makeHassWS(s, callWS));
+    await settle(el);
+    const afterFirst = callWS.mock.calls.length;
+    expect(afterFirst).toBeGreaterThan(0);
+    // A fresh hass object (HA replaces it every tick) with the SAME resolved ids.
+    el.hass = makeHassWS(states(detailFx), callWS);
+    await settle(el);
+    el.hass = makeHassWS(states(detailFx), callWS);
+    await settle(el);
+    expect(callWS.mock.calls.length).toBe(afterFirst); // no extra fetch
+  });
+
+  test('AC4 — chart animation is gated behind a prefers-reduced-motion block', async () => {
+    // The card composes chartStyles; the gate lives in that sheet (asserted in
+    // chart.test.ts). Here we just confirm the card pulls it in (a .spark exists).
+    const el = await mount(makeHassWS(states(detailFx)));
+    await settle(el);
+    expect(sr(el).querySelector('svg.spark')).not.toBeNull();
   });
 });

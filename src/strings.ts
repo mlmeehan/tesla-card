@@ -267,6 +267,14 @@ export const STRINGS = {
     // `sensorTag` honestly marks read-only Sensor cards (UX-DR24) in the header.
     deepLink: 'Open Energy dashboard',
     sensorTag: 'Sensor',
+    // Inline history charts (Story 8.3, FR-36). Titles for the two chart slots +
+    // the calm empty-state caption (shown when history is absent/short/failed —
+    // never a fabricated curve). `weekdays` (Sun-indexed, `Date.getDay()`) labels
+    // the multi-day bars without an Intl dependency.
+    chartTodayTitle: 'Today',
+    chartHistoryTitle: 'Last 7 days',
+    chartEmpty: 'No recent history',
+    weekdays: ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'],
     solar: {
       description: 'Standalone solar production card.',
       empty: 'No solar production reported yet.',

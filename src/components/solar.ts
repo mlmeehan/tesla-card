@@ -1,13 +1,15 @@
 import { html, nothing, type PropertyValues, type TemplateResult } from 'lit';
-import { customElement } from 'lit/decorators.js';
+import { customElement, state } from 'lit/decorators.js';
 import { mdiSolarPower, mdiExport } from '@mdi/js';
 import { EcosystemCard, ecosystemShellStyles, accentVar } from './ecosystem-card';
 import { weatherVignette, weatherVignetteStyles } from './weather-vignette';
+import { sparkline, dayBars, barLabels, chartStyles } from './chart';
 import { sharedStyles } from '../styles';
 import { STRINGS } from '../strings';
 import { statTile, formatAgeHint } from '../ui';
 import { resolveEnergyEntities, numById, unitById, type EnergyEntities } from '../data/energy';
 import { read, readRaw, referenceNow } from '../data/freshness';
+import { fetchCardHistory, type CardHistory } from '../data/history';
 import { formatNumber } from '../helpers';
 import type { LovelaceCard, TeslaCardConfig } from '../types';
 
@@ -25,6 +27,9 @@ export class TcSolar extends EcosystemCard implements LovelaceCard {
   /** Auto-detected energy-site entities (cached; recomputed only when hass/config change). */
   private _energy?: EnergyEntities;
   private _resolveCache?: { hass: unknown; config: TeslaCardConfig };
+  /** One-shot recorder history (Story 8.3), id-gated so unrelated hass ticks never re-fetch. */
+  @state() private _charts?: CardHistory;
+  private _lastChartKey?: string;
 
   public setConfig(config: TeslaCardConfig): void {
     // Forward-compatible (R9): store as-is, tolerate unknown keys; reject only
@@ -38,7 +43,31 @@ export class TcSolar extends EcosystemCard implements LovelaceCard {
   }
 
   protected override willUpdate(changed: PropertyValues): void {
-    if (changed.has('hass') || changed.has('config')) this._resolve();
+    if (changed.has('hass') || changed.has('config')) {
+      this._resolve();
+      this._fetchCharts();
+    }
+  }
+
+  /**
+   * One-shot, id-gated history fetch (AC3). HA replaces `hass` on every tick, but
+   * the cached series is reused across unrelated ticks — a fetch fires ONLY when
+   * the resolved charted entity-id set changes (never polled, never re-fetched on
+   * a stable id). `nowMs` is `referenceNow(hass)` (HA's time base), not `Date.now`.
+   */
+  private _fetchCharts(): void {
+    const e = this._energy ?? {};
+    const ids = { today: e.solar_power, cumulative: e.solar_generated };
+    const key = `${ids.today ?? ''}|${ids.cumulative ?? ''}`;
+    if (key === this._lastChartKey) return;
+    this._lastChartKey = key;
+    if (!ids.today && !ids.cumulative) {
+      this._charts = undefined;
+      return;
+    }
+    void fetchCardHistory(this.hass, ids, referenceNow(this.hass)).then((h) => {
+      this._charts = h;
+    });
   }
 
   /**
@@ -119,10 +148,32 @@ export class TcSolar extends EcosystemCard implements LovelaceCard {
     // Status dot: live while producing, idle at rest, stale on old data.
     const state = stamp ? 'stale' : value > 0.05 ? 'live' : 'idle';
 
+    // Inline charts (Story 8.3): today's power sparkline + the 7-day generated-kWh
+    // bars (daily delta of the cumulative counter). Each is included only when its
+    // source id resolves; an absent/short series renders the chart's calm empty
+    // state (AC2/AC5), never a fabricated curve.
+    const days = this._charts?.days ?? [];
+    const charts: Array<TemplateResult | typeof nothing> = [
+      id
+        ? sparkline(this._charts?.today ?? [], {
+            accent,
+            title: STRINGS.ecosystem.chartTodayTitle,
+            valueLabel: kw,
+          })
+        : nothing,
+      e.solar_generated
+        ? dayBars(
+            days.map((d) => d.value),
+            barLabels(days, STRINGS.ecosystem.weekdays),
+            { accent, title: STRINGS.ecosystem.chartHistoryTitle }
+          )
+        : nothing,
+    ];
+
     return this.renderDetail(
       { accent, label, stamp, state, kind: 'sensor', ariaLabel: `${label} ${kw}` },
       // Vignette is the card's hero-art slot (8.2 reuses it); the kW is the lead.
-      { hero: vignette, readout: production, tiles }
+      { hero: vignette, readout: production, tiles, charts }
     );
   }
 
@@ -141,7 +192,7 @@ export class TcSolar extends EcosystemCard implements LovelaceCard {
     });
   }
 
-  static override styles = [sharedStyles, ecosystemShellStyles, weatherVignetteStyles];
+  static override styles = [sharedStyles, ecosystemShellStyles, weatherVignetteStyles, chartStyles];
 }
 
 declare global {

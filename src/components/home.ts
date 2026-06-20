@@ -1,13 +1,15 @@
-import { html, type PropertyValues, type TemplateResult } from 'lit';
-import { customElement } from 'lit/decorators.js';
+import { html, nothing, type PropertyValues, type TemplateResult } from 'lit';
+import { customElement, state } from 'lit/decorators.js';
 import { mdiHomeLightningBolt } from '@mdi/js';
 import { EcosystemCard, ecosystemShellStyles, accentVar } from './ecosystem-card';
 import { nodeHero, nodeHeroStyles } from './node-hero';
+import { sparkline, chartStyles } from './chart';
 import { sharedStyles } from '../styles';
 import { STRINGS } from '../strings';
 import { statTile, formatAgeHint } from '../ui';
 import { resolveEnergyEntities, numById, type EnergyEntities } from '../data/energy';
 import { read, referenceNow } from '../data/freshness';
+import { fetchCardHistory, type CardHistory } from '../data/history';
 import { formatNumber } from '../helpers';
 import type { LovelaceCard, TeslaCardConfig } from '../types';
 
@@ -22,6 +24,9 @@ import type { LovelaceCard, TeslaCardConfig } from '../types';
 export class TcHome extends EcosystemCard implements LovelaceCard {
   private _energy?: EnergyEntities;
   private _resolveCache?: { hass: unknown; config: TeslaCardConfig };
+  /** One-shot recorder history (Story 8.3), id-gated so unrelated hass ticks never re-fetch. */
+  @state() private _charts?: CardHistory;
+  private _lastChartKey?: string;
 
   public setConfig(config: TeslaCardConfig): void {
     if (!config) throw new Error('Invalid configuration');
@@ -33,7 +38,10 @@ export class TcHome extends EcosystemCard implements LovelaceCard {
   }
 
   protected override willUpdate(changed: PropertyValues): void {
-    if (changed.has('hass') || changed.has('config')) this._resolve();
+    if (changed.has('hass') || changed.has('config')) {
+      this._resolve();
+      this._fetchCharts();
+    }
   }
 
   /** Resolve once per hass/config change — see `tc-solar` for the cache-key rationale. */
@@ -43,6 +51,25 @@ export class TcHome extends EcosystemCard implements LovelaceCard {
     if (c && c.hass === this.hass && c.config === this.config) return;
     this._energy = resolveEnergyEntities(this.hass, this.config);
     this._resolveCache = { hass: this.hass, config: this.config };
+  }
+
+  /**
+   * One-shot, id-gated history fetch (AC3) — see `tc-solar._fetchCharts`. Home has
+   * no clean cumulative energy-today counter on this integration, so only the
+   * today `load_power` sparkline is sourced (the multi-day bars stay absent).
+   */
+  private _fetchCharts(): void {
+    const ids = { today: this._energy?.load_power };
+    const key = ids.today ?? '';
+    if (key === this._lastChartKey) return;
+    this._lastChartKey = key;
+    if (!ids.today) {
+      this._charts = undefined;
+      return;
+    }
+    void fetchCardHistory(this.hass, ids, referenceNow(this.hass)).then((h) => {
+      this._charts = h;
+    });
   }
 
   protected override render(): TemplateResult {
@@ -68,6 +95,19 @@ export class TcHome extends EcosystemCard implements LovelaceCard {
     // Home exposes no clean single energy-today/peak entity on this integration,
     // so the detail layout is honestly lead-only (the stat grid stays empty and
     // is omitted) — the minimal-install path AC2 calls out, by construction.
+    // Inline chart (Story 8.3): today's consumption sparkline only (no clean
+    // cumulative counter → no multi-day bars). Included only when load_power
+    // resolves; an absent/short series renders the calm empty state (AC2/AC5).
+    const charts: Array<TemplateResult | typeof nothing> = [
+      id
+        ? sparkline(this._charts?.today ?? [], {
+            accent,
+            title: STRINGS.ecosystem.chartTodayTitle,
+            valueLabel: kw,
+          })
+        : nothing,
+    ];
+
     return this.renderDetail(
       { accent, label, stamp, state, kind: 'sensor', ariaLabel: `${label} ${kw}` },
       {
@@ -78,11 +118,12 @@ export class TcHome extends EcosystemCard implements LovelaceCard {
           value: kw,
           color: accentVar(accent),
         }),
+        charts,
       }
     );
   }
 
-  static override styles = [sharedStyles, ecosystemShellStyles, nodeHeroStyles];
+  static override styles = [sharedStyles, ecosystemShellStyles, nodeHeroStyles, chartStyles];
 }
 
 declare global {

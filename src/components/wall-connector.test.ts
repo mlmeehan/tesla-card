@@ -6,7 +6,7 @@
 // (available / connected / charging) read DIRECTLY from the raw WC sensors with
 // the 0.05 kW deadband; plus the teal accent, power/session tiles, honest
 // staleness stamp, calm empty state, and standalone registration (AC1–AC3).
-import { afterEach, describe, expect, test } from 'vitest';
+import { afterEach, describe, expect, test, vi } from 'vitest';
 import './wall-connector';
 import { accentVar } from './ecosystem-card';
 import { resolveEnergyEntities } from '../data/energy';
@@ -264,5 +264,70 @@ describe('AC1/AC2 — partial presence: hide-when-missing, never a fabricated re
     expect(values).toContain('12.5 kWh'); // last-known session retained
     expect(values.some((v) => /\bkW\b/.test(v))).toBe(false); // no fabricated power (kW) readout
     expect(values.some((v) => v.includes('NaN'))).toBe(false);
+  });
+});
+
+// ── Story 8.3 — inline history charts (today-only: wc_power; session resets per session) ──
+function fixtureNowMs(s: Record<string, HassEntity>): number {
+  let max = -Infinity;
+  for (const e of Object.values(s)) {
+    for (const ts of [e.last_updated, e.last_changed]) {
+      const ms = ts ? Date.parse(ts) : NaN;
+      if (Number.isFinite(ms) && ms > max) max = ms;
+    }
+  }
+  return max;
+}
+const SAMPLE_HISTORY = (id: string, nowMs: number) => ({
+  [id]: [
+    { s: '7.0', lu: (nowMs - 7_200_000) / 1000 },
+    { s: '7.4', lu: (nowMs - 3_600_000) / 1000 },
+    { s: '7.2', lu: (nowMs - 1000) / 1000 },
+  ],
+});
+function makeHassWS(
+  s: Record<string, HassEntity>,
+  callWS = vi.fn().mockImplementation((msg: { entity_ids: string[] }) =>
+    Promise.resolve(SAMPLE_HISTORY(msg.entity_ids[0], fixtureNowMs(s)))
+  )
+): HomeAssistant {
+  return { states: s, callWS } as unknown as HomeAssistant;
+}
+async function settle(el: Card): Promise<void> {
+  await new Promise((r) => setTimeout(r, 0));
+  await el.updateComplete;
+}
+
+describe('Story 8.3 — inline history charts', () => {
+  test('AC1/AC3 — wc_power resolves + history present → a today sparkline renders', async () => {
+    const el = await mount(makeHassWS(states(detailFx)));
+    await settle(el);
+    expect(sr(el).querySelector('.eco-charts svg.spark')).not.toBeNull();
+  });
+
+  test('AC2/AC5 — empty recorder → calm empty chart, never a fabricated curve', async () => {
+    const el = await mount(makeHassWS(states(detailFx), vi.fn().mockResolvedValue({})));
+    await settle(el);
+    expect(sr(el).querySelector('.eco-charts .ct-empty')).not.toBeNull();
+    expect(sr(el).querySelector('svg.spark')).toBeNull();
+  });
+
+  test('AC5 — NO chart on the calm-empty path (unresolved fixture)', async () => {
+    const el = await mount(makeHassWS(states(allUnresolvedFx)));
+    await settle(el);
+    expect(sr(el).querySelector('.eco-charts')).toBeNull();
+  });
+
+  test('AC3 — no re-fetch on an unrelated hass tick (single today series, called once)', async () => {
+    const s = states(detailFx);
+    const callWS = vi.fn().mockImplementation((msg: { entity_ids: string[] }) =>
+      Promise.resolve(SAMPLE_HISTORY(msg.entity_ids[0], fixtureNowMs(s)))
+    );
+    const el = await mount(makeHassWS(s, callWS));
+    await settle(el);
+    expect(callWS).toHaveBeenCalledTimes(1);
+    el.hass = makeHassWS(states(detailFx), callWS);
+    await settle(el);
+    expect(callWS).toHaveBeenCalledTimes(1);
   });
 });

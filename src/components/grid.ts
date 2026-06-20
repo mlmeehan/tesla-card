@@ -1,13 +1,15 @@
 import { html, css, nothing, type PropertyValues, type TemplateResult } from 'lit';
-import { customElement } from 'lit/decorators.js';
+import { customElement, state } from 'lit/decorators.js';
 import { mdiTransmissionTower, mdiImport, mdiExport } from '@mdi/js';
 import { EcosystemCard, ecosystemShellStyles, accentVar } from './ecosystem-card';
 import { nodeHero, nodeHeroStyles } from './node-hero';
+import { sparkline, dayBars, barLabels, chartStyles } from './chart';
 import { sharedStyles } from '../styles';
 import { STRINGS } from '../strings';
 import { statTile, formatAgeHint } from '../ui';
 import { resolveEnergyEntities, numById, stateById, unitById, type EnergyEntities } from '../data/energy';
 import { read, referenceNow } from '../data/freshness';
+import { fetchCardHistory, type CardHistory } from '../data/history';
 import { formatNumber, prettyText, isUnavailable } from '../helpers';
 import type { LovelaceCard, TeslaCardConfig } from '../types';
 
@@ -28,6 +30,9 @@ const THRESH = 0.05;
 export class TcGrid extends EcosystemCard implements LovelaceCard {
   private _energy?: EnergyEntities;
   private _resolveCache?: { hass: unknown; config: TeslaCardConfig };
+  /** One-shot recorder history (Story 8.3), id-gated so unrelated hass ticks never re-fetch. */
+  @state() private _charts?: CardHistory;
+  private _lastChartKey?: string;
 
   public setConfig(config: TeslaCardConfig): void {
     if (!config) throw new Error('Invalid configuration');
@@ -39,7 +44,10 @@ export class TcGrid extends EcosystemCard implements LovelaceCard {
   }
 
   protected override willUpdate(changed: PropertyValues): void {
-    if (changed.has('hass') || changed.has('config')) this._resolve();
+    if (changed.has('hass') || changed.has('config')) {
+      this._resolve();
+      this._fetchCharts();
+    }
   }
 
   /** Resolve once per hass/config change — see `tc-solar` for the cache-key rationale. */
@@ -49,6 +57,22 @@ export class TcGrid extends EcosystemCard implements LovelaceCard {
     if (c && c.hass === this.hass && c.config === this.config) return;
     this._energy = resolveEnergyEntities(this.hass, this.config);
     this._resolveCache = { hass: this.hass, config: this.config };
+  }
+
+  /** One-shot, id-gated history fetch (AC3) — see `tc-solar._fetchCharts`. */
+  private _fetchCharts(): void {
+    const e = this._energy ?? {};
+    const ids = { today: e.grid_power, cumulative: e.grid_imported };
+    const key = `${ids.today ?? ''}|${ids.cumulative ?? ''}`;
+    if (key === this._lastChartKey) return;
+    this._lastChartKey = key;
+    if (!ids.today && !ids.cumulative) {
+      this._charts = undefined;
+      return;
+    }
+    void fetchCardHistory(this.hass, ids, referenceNow(this.hass)).then((h) => {
+      this._charts = h;
+    });
   }
 
   protected override render(): TemplateResult {
@@ -109,9 +133,29 @@ export class TcGrid extends EcosystemCard implements LovelaceCard {
       this._kwhTile(e.grid_exported, mdiExport, STRINGS.ecosystem.grid.exported),
     ];
 
+    // Inline charts (Story 8.3): today's grid_power sparkline (signed — import +/
+    // export − charted honestly) + the 7-day imported-kWh bars (daily delta).
+    const days = this._charts?.days ?? [];
+    const charts: Array<TemplateResult | typeof nothing> = [
+      e.grid_power
+        ? sparkline(this._charts?.today ?? [], {
+            accent,
+            title: STRINGS.ecosystem.chartTodayTitle,
+            valueLabel: power === undefined ? undefined : `${formatNumber(Math.abs(power), 1)} kW`,
+          })
+        : nothing,
+      e.grid_imported
+        ? dayBars(
+            days.map((d) => d.value),
+            barLabels(days, STRINGS.ecosystem.weekdays),
+            { accent, title: STRINGS.ecosystem.chartHistoryTitle }
+          )
+        : nothing,
+    ];
+
     return this.renderDetail(
       { accent, label, stamp, state, subStatus: dir, kind: 'sensor', ariaLabel: `${label} ${dir}` },
-      { hero: nodeHero('grid'), readout: html`${chip}${tile}`, tiles }
+      { hero: nodeHero('grid'), readout: html`${chip}${tile}`, tiles, charts }
     );
   }
 
@@ -144,6 +188,7 @@ export class TcGrid extends EcosystemCard implements LovelaceCard {
     sharedStyles,
     ecosystemShellStyles,
     nodeHeroStyles,
+    chartStyles,
     css`
       .gchip {
         display: inline-flex;

@@ -5,13 +5,14 @@
 //   AC1 — resolves load_power, renders the shell with the blue accent + value.
 //   AC2 — absent → calm empty; stale → last-known + "updated …" stamp.
 //   AC3 — registered standalone element + LovelaceCard + customCards entry.
-import { afterEach, describe, expect, test } from 'vitest';
+import { afterEach, describe, expect, test, vi } from 'vitest';
 import './home';
 import { accentVar } from './ecosystem-card';
 import { STRINGS } from '../strings';
 import { DEFAULT_ENTITIES } from '../const';
 import awakeFx from '../fixtures/model-y-awake.json';
 import allUnresolvedFx from '../fixtures/all-unresolved.json';
+import detailFx from '../fixtures/energy-detail.json';
 import type { HassEntity, HomeAssistant, TeslaCardConfig } from '../types';
 
 const CONFIG: TeslaCardConfig = { type: 'custom:tesla-card' };
@@ -127,5 +128,63 @@ describe('AC3 — standalone registered element', () => {
     ).not.toThrow();
     const entry = (window.customCards ?? []).find((c) => c.type === 'tc-home');
     expect(entry).toBeTruthy();
+  });
+});
+
+// ── Story 8.3 — inline history charts (today-only: load_power has no cumulative) ──
+function fixtureNowMs(s: Record<string, HassEntity>): number {
+  let max = -Infinity;
+  for (const e of Object.values(s)) {
+    for (const ts of [e.last_updated, e.last_changed]) {
+      const ms = ts ? Date.parse(ts) : NaN;
+      if (Number.isFinite(ms) && ms > max) max = ms;
+    }
+  }
+  return max;
+}
+const SAMPLE_HISTORY = (id: string, nowMs: number) => ({
+  [id]: [
+    { s: '1.0', lu: (nowMs - 7_200_000) / 1000 },
+    { s: '1.4', lu: (nowMs - 3_600_000) / 1000 },
+    { s: '0.9', lu: (nowMs - 1000) / 1000 },
+  ],
+});
+function makeHassWS(
+  s: Record<string, HassEntity>,
+  callWS = vi.fn().mockImplementation((msg: { entity_ids: string[] }) =>
+    Promise.resolve(SAMPLE_HISTORY(msg.entity_ids[0], fixtureNowMs(s)))
+  )
+): HomeAssistant {
+  return { states: s, callWS } as unknown as HomeAssistant;
+}
+async function settle(el: Card): Promise<void> {
+  await new Promise((r) => setTimeout(r, 0));
+  await el.updateComplete;
+}
+
+describe('Story 8.3 — inline history charts', () => {
+  test('AC1/AC3 — load_power resolves + history present → a today sparkline renders', async () => {
+    const el = await mount(makeHassWS(states(detailFx)));
+    await settle(el);
+    expect(sr(el).querySelector('.eco-charts svg.spark')).not.toBeNull();
+  });
+
+  test('AC5 — NO chart on the calm-empty path (unresolved fixture)', async () => {
+    const el = await mount(makeHassWS(states(allUnresolvedFx)));
+    await settle(el);
+    expect(sr(el).querySelector('.eco-charts')).toBeNull();
+  });
+
+  test('AC3 — no re-fetch on an unrelated hass tick (callWS called once for a stable id)', async () => {
+    const s = states(detailFx);
+    const callWS = vi.fn().mockImplementation((msg: { entity_ids: string[] }) =>
+      Promise.resolve(SAMPLE_HISTORY(msg.entity_ids[0], fixtureNowMs(s)))
+    );
+    const el = await mount(makeHassWS(s, callWS));
+    await settle(el);
+    expect(callWS).toHaveBeenCalledTimes(1); // home fetches a single (today) series
+    el.hass = makeHassWS(states(detailFx), callWS);
+    await settle(el);
+    expect(callWS).toHaveBeenCalledTimes(1); // unchanged across the tick
   });
 });

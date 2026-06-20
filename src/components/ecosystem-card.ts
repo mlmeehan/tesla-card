@@ -117,6 +117,15 @@ export interface DetailParts {
   readout?: TemplateResult | typeof nothing;
   /** Stat-grid tiles (`.grid.g3`); each `statTile` hides itself (`nothing`) when its entity is absent. */
   tiles?: Array<TemplateResult | typeof nothing>;
+  /**
+   * Inline history charts (Story 8.3) — `sparkline`/`dayBars` results from
+   * `components/chart.ts`, rendered in a `.eco-charts` region AFTER the stat grid
+   * and BEFORE the deep-link chip. Hide-when-empty by construction (a chart whose
+   * series is absent returns its own calm empty state, or the card passes nothing
+   * for a chart it can't source). Additive to the live path only — the calm-empty
+   * `renderShell` path is untouched (AC5).
+   */
+  charts?: Array<TemplateResult | typeof nothing>;
 }
 
 export class EcosystemCard extends TcBase {
@@ -173,6 +182,8 @@ export class EcosystemCard extends TcBase {
     const tiles = parts.tiles ?? [];
     const hasTiles = tiles.some((t) => t !== nothing);
     const hasReadout = parts.readout !== undefined && parts.readout !== nothing;
+    const charts = parts.charts ?? [];
+    const hasCharts = charts.some((c) => c !== nothing);
     return html`
       <section
         class="surface eco-card eco-detail"
@@ -196,6 +207,7 @@ export class EcosystemCard extends TcBase {
         <div class="eco-hero">${parts.hero ?? nothing}</div>
         ${hasReadout ? html`<div class="eco-readout">${parts.readout}</div>` : nothing}
         ${hasTiles ? html`<div class="grid g3 eco-grid">${tiles}</div>` : nothing}
+        ${hasCharts ? html`<div class="eco-charts">${charts}</div>` : nothing}
         ${this._deepLinkChip()}
       </section>
     `;
@@ -324,6 +336,17 @@ export const ecosystemShellStyles: CSSResult = css`
      ≤540px via BREAKPOINTS.compact) — only the vertical rhythm is set here. */
   .eco-grid {
     margin-top: var(--tc-space-1, 4px);
+  }
+  /* Story 8.3 inline-charts region — stacking + rhythm ONLY (the .chart panel's
+     own surface/radius live in chartStyles, a nested panel, NOT the .surface
+     elevation recipe). Collapses to nothing when no chart resolves. */
+  .eco-charts {
+    display: flex;
+    flex-direction: column;
+    gap: var(--tc-space-3, 12px);
+  }
+  .eco-charts:empty {
+    display: none;
   }
   .eco-deeplink-row {
     display: flex;
