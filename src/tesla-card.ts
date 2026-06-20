@@ -24,13 +24,7 @@ import { tokens, sharedStyles } from './styles';
 import { STRINGS } from './strings';
 import { log } from './log';
 import { icon } from './ui';
-import type {
-  HomeAssistant,
-  TeslaCardConfig,
-  LovelaceCard,
-  PanelId,
-  OpenPanelDetail,
-} from './types';
+import type { HomeAssistant, TeslaCardConfig, LovelaceCard, PanelId } from './types';
 
 import './components/hero';
 import './components/quick-actions';
@@ -56,6 +50,16 @@ import './components/wall-connector';
 import './components/my-home';
 
 type Tab = { id: PanelId; name: string; icon: string };
+
+/**
+ * Detail emitted when the hero / quick actions request a panel switch (Story 7.1
+ * relocation, E9/AC1). Internal event contract owned by the panel-orchestration
+ * parent (this module is the sole `@open-panel` listener) — NOT part of the public
+ * `TeslaCardConfig` surface, so it lives with its owner here, not in `types.ts`.
+ */
+export interface OpenPanelDetail {
+  panel: PanelId;
+}
 
 const PANELS: Tab[] = [
   { id: 'climate', name: STRINGS.tabs.climate, icon: mdiThermometer },
@@ -87,8 +91,17 @@ export class TeslaCard extends LitElement implements LovelaceCard {
   };
 
   public setConfig(config: TeslaCardConfig): void {
+    // Forward-compatible (R9): the ONLY validation is presence — a falsy config
+    // is the one sanctioned throw. We spread `{ ...config }` so UNKNOWN/future
+    // keys are PRESERVED (never enumerated-and-rejected), and validate only what
+    // we consume here (`default_panel`). Everything else degrades later in
+    // `_resolve()` (entity/energy auto-detect), so old YAML never breaks on a new
+    // build and a newer YAML still renders on an older one. Do NOT add eager
+    // validation of optional fields — that would break the tolerate-extras contract.
     if (!config) throw new Error('Invalid configuration');
     this._config = { ...config };
+    // A garbage/hidden `default_panel` seats here but render() falls it back to
+    // the first available tab (never an empty shell) — see `render()`/`_panels()`.
     if (config.default_panel) this._panel = config.default_panel;
   }
 

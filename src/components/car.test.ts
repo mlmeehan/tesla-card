@@ -12,8 +12,9 @@
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import { render } from 'lit';
 import { carView } from './car';
+import type { ApertureState } from './car';
 import { HERO_VIEWBOX } from '../const';
-import type { BodyLayers, ApertureState } from '../types';
+import type { BodyLayers } from '../types';
 
 /** Build a full ApertureState (all-closed) overriding only the named apertures. */
 const AP = (o: Partial<ApertureState> = {}): ApertureState => ({

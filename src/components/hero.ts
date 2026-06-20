@@ -6,6 +6,7 @@ import { sharedStyles } from '../styles';
 import { STRINGS } from '../strings';
 import { icon, batteryGauge, ageHint } from '../ui';
 import { carView, carStyles, CLOSED_APERTURES } from './car';
+import type { ApertureState, ChargeVisual } from './car';
 import { bindFlowModel } from '../flow/binding';
 import { HeroSvgRenderer, flowOverlayStyles } from '../flow/hero-svg';
 import { resolvePaint } from '../paint';
@@ -22,7 +23,7 @@ import {
   formatHoursToHM,
   unit,
 } from '../helpers';
-import type { ApertureState, ChargeVisual, PanelId } from '../types';
+import type { PanelId } from '../types';
 
 interface HeroStatus {
   dot: string;

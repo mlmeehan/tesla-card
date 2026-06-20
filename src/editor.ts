@@ -23,6 +23,10 @@ export class TeslaCardEditor extends LitElement implements LovelaceCardEditor {
   @state() private _config!: TeslaCardConfig;
 
   public setConfig(config: TeslaCardConfig): void {
+    // Forward-compatible like the card's `setConfig` (Story 7.1): spread preserves
+    // UNKNOWN/future keys, so editing a config carrying a field this build doesn't
+    // know round-trips through `config-changed` without silently dropping it. The
+    // editor never enumerate-rejects keys.
     this._config = { ...config };
   }
 

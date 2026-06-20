@@ -1,9 +1,46 @@
 import { html, svg, css, nothing, type TemplateResult, type SVGTemplateResult } from 'lit';
-import type { BodyLayers, ChargeVisual, ApertureState } from '../types';
+import type { BodyLayers } from '../types';
 import { HERO_VIEWBOX } from '../const';
 import { LAYER_CONTRACT } from '../layer-contract';
 import { log } from '../log';
 import { STRINGS } from '../strings';
+
+// ─── Hero render-path types (Story 7.1 relocation, E9/AC1) ──────────────────
+// These describe the living-hero render opts and are owned by the Hero render
+// path (this module + `hero.ts`), NOT the public config surface — so they live
+// with their owner here, not in `types.ts` (which is PUBLIC `TeslaCardConfig`
+// only). The Hero classifier (`hero.ts`) and `carView` (below) are the only
+// consumers; both import them from here.
+
+/**
+ * The three glanceable charge states the Hero renders (Story 3.4, FR-5/UX-DR10):
+ * `parked` (neutral, not plugged), `plugged` (connected, at rest — blue port glow
+ * + cable) and `charging` (live kW — green port glow + cable + pulsing halo).
+ * Derived from the discrete charging-state entity via `normalizeChargingState`
+ * (NOT signed power). `charging ⇒ plugged` (AC2) is structural: the port-glow/cable
+ * renders for BOTH `plugged` and `charging`, so green is a superset of blue. Shared
+ * by the Hero (classifier) and `carView` (the render opt).
+ */
+export type ChargeVisual = 'parked' | 'plugged' | 'charging';
+
+/**
+ * The four apertures the Hero reflects (Story 3.5, FR-6): frunk (front clamshell),
+ * liftgate (rear hatch — the `trunk` cover on a Model Y), door (any of the four
+ * door binary_sensors) and window (the aggregate `windows` cover). The car answers
+ * "is my car open?" at a wall-glance.
+ */
+export type ApertureKey = 'frunk' | 'liftgate' | 'door' | 'window';
+
+/**
+ * Aperture open-state: a FLAT record of four independent booleans (AC1 — linear,
+ * NOT combinatorial). Apertures are physically independent — a frunk can be up
+ * while a door is ajar and a window is down — so each is its own toggle, never
+ * collapsed into a single enum (that was right for `ChargeVisual`, where exactly
+ * one of parked/plugged/charging holds; it is WRONG here). Four overlays, four
+ * toggles, runtime-composed — never a state set of all 2⁴ combinations. Shared by
+ * the Hero (the `_apertures()` classifier) and `carView` (the render opt).
+ */
+export type ApertureState = Record<ApertureKey, boolean>;
 
 /** Neutral silver — matches a typical source render, reads as "no tint applied". */
 const DEFAULT_PAINT = '#c6c8c9';

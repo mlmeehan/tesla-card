@@ -128,10 +128,32 @@ export interface BodyLayers {
   chargePort?: { x: number; y: number };
 }
 
+/**
+ * The single public, **forward-compatible** card configuration (AR-14, FR-29,
+ * R9). This is the ONE public type the card exposes; every Lovelace YAML config
+ * is a `TeslaCardConfig`. It grew field-by-field across Epics 1–6 (D2 `integration`,
+ * D3 `tyres`, D6 `body`/`paint` layer-pack refs, plus energy/weather/visibility
+ * tuning) and is consolidated here (Story 7.1) into one coherent, reviewed surface.
+ *
+ * **Forward-compatibility contract (the R9 back-compat obligation):** unknown keys
+ * are TOLERATED, never rejected. `setConfig` spreads the config (`{ ...config }`)
+ * and validates only what it consumes, so a NEWER YAML carrying a field this build
+ * doesn't know still renders on an OLDER build, and OLD YAML never breaks on a
+ * NEWER build. Optional fields all degrade by auto-detection (FR-24 / NFR-4) — a
+ * missing/garbage key fills from live entity resolution rather than throwing.
+ *
+ * Surface keys are **snake_case** (F4); the card consumes them directly (no
+ * camelCase mapping layer — none is needed today). Fields are grouped below:
+ * identity → render/paint → entity-resolution → panels/visibility → per-feature.
+ */
 export interface TeslaCardConfig {
+  // ── Identity / display ────────────────────────────────────────────────────
+  /** Lovelace card type discriminator, e.g. `custom:tesla-card`. */
   type: string;
   /** Displayed vehicle name (defaults to "Model Y"). */
   name?: string;
+
+  // ── Render / paint (the hero) ─────────────────────────────────────────────
   /**
    * URL of the flat car render image. Has NO default — used only when `body` is
    * unset; when both are absent the card shows the bundled generic-EV silhouette
@@ -152,12 +174,8 @@ export interface TeslaCardConfig {
    * `image` mode ignores it. Defaults to a neutral silver.
    */
   paint?: string | PaintSource;
-  /**
-   * Tesla energy site + Wall Connector wiring for the Energy panel. Entities
-   * are auto-detected from the `tesla_fleet`/`powerwall` integration; override
-   * any here, or set `hide: true` to suppress the panel even when detected.
-   */
-  energy?: EnergyConfig;
+
+  // ── Entity resolution ─────────────────────────────────────────────────────
   /**
    * Vehicle device, by registry id or (user) name. Used to auto-resolve
    * entities by function-name. Auto-detected from the Tesla integration when
@@ -171,9 +189,11 @@ export interface TeslaCardConfig {
   prefix?: string;
   /** Per-key entity overrides; anything omitted is auto-resolved, then falls back to DEFAULT_ENTITIES. */
   entities?: Partial<Record<EntityKey, string>>;
-  /** Force the integration dialect; auto-detected from the Tesla integration when omitted. */
+  /** Force the integration dialect; auto-detected from the Tesla integration when omitted (D2). */
   integration?: Integration;
-  /** Which detail panel is open initially (default "charging"). */
+
+  // ── Panels / visibility ───────────────────────────────────────────────────
+  /** Which detail panel is open initially (default "charging"); an absent/hidden id falls back to the first available panel. */
   default_panel?: PanelId;
   /** Hide the detail tabs entirely (hero + quick actions only). */
   hide_panels?: boolean;
@@ -181,25 +201,38 @@ export interface TeslaCardConfig {
   hide_quick_actions?: boolean;
   /** Hide the command buttons (wake/honk/flash/…) under the panels. */
   hide_commands?: boolean;
+
+  // ── Per-feature tuning ────────────────────────────────────────────────────
+  /**
+   * Tesla energy site + Wall Connector wiring for the Energy panel. Entities
+   * are auto-detected from the `tesla_fleet`/`powerwall` integration; override
+   * any here, or set `hide: true` to suppress the panel even when detected.
+   */
+  energy?: EnergyConfig;
   /**
    * Per-instance wake cooldown in MINUTES (Story 5.4 / AR-9). After a wake, repeat
    * taps within this window are rate-limited (treated as in-flight) and the
    * affordance surfaces "available in Nm" — it never permanently locks the user
    * out (it expires) and never blocks a wake of a car that has settled back to
    * asleep. Defaults to a short built-in window (1 min) when unset/≤0.
+   *
+   * D3 forward-compat note: an OPT-IN shared-HA-wake-helper ref (a single helper
+   * entity coordinating wakes across multiple cards) is a deliberately DEFERRED
+   * future field — YAGNI until a real double-wake is observed (architecture D3,
+   * §451–453). It is intentionally NOT yet added; the tolerant schema means it
+   * can land later without breaking old YAML. Per-instance cooldown is the shipped
+   * mechanism today.
    */
   wake_cooldown?: number;
   /**
-   * Tyre low-pressure check tuning (Story 5.8 / FR-19). Additive, forward-
-   * compatible — Epic 7 owns the consolidated schema + GUI editor; this is the
-   * data field only. When omitted, the panel derives a peer-baseline
-   * `recommended` (max of the four corners) and a unit-aware default `margin`.
+   * Tyre low-pressure check tuning (Story 5.8 / FR-19). When omitted, the panel
+   * derives a peer-baseline `recommended` (max of the four live corners) and a
+   * unit-aware default `margin` — values are in the sensor's NATIVE unit. See
+   * {@link TyresConfig}.
    */
   tyres?: TyresConfig;
   /**
-   * Live-weather vignette tuning for the Solar card (Story 6.4 / UX-DR15).
-   * Additive, forward-compatible — Epic 7 owns the consolidated schema + GUI
-   * editor; this is the data field only (the `tyres?`/`energy?` precedent). The
+   * Live-weather vignette tuning for the Solar card (Story 6.4 / UX-DR15). The
    * vignette reads HA CORE `weather.home` (condition) + `sun.sun` (day/night) by
    * default; `entity`/`sun` override those ids (the provenance chip reflects the
    * override honestly). `hide: true` suppresses the vignette even when present.
@@ -207,37 +240,10 @@ export interface TeslaCardConfig {
   weather?: { entity?: string; sun?: string; hide?: boolean };
 }
 
-/** Detail emitted when the hero / quick actions request a panel switch. */
-export interface OpenPanelDetail {
-  panel: PanelId;
-}
-
-/**
- * The three glanceable charge states the Hero renders (Story 3.4, FR-5/UX-DR10):
- * `parked` (neutral, not plugged), `plugged` (connected, at rest — blue port glow
- * + cable) and `charging` (live kW — green port glow + cable + pulsing halo).
- * Derived from the discrete charging-state entity via `normalizeChargingState`
- * (NOT signed power). `charging ⇒ plugged` (AC2) is structural: the port-glow/cable
- * renders for BOTH `plugged` and `charging`, so green is a superset of blue. Shared
- * by the Hero (classifier) and `carView` (the render opt).
- */
-export type ChargeVisual = 'parked' | 'plugged' | 'charging';
-
-/**
- * The four apertures the Hero reflects (Story 3.5, FR-6): frunk (front clamshell),
- * liftgate (rear hatch — the `trunk` cover on a Model Y), door (any of the four
- * door binary_sensors) and window (the aggregate `windows` cover). The car answers
- * "is my car open?" at a wall-glance.
- */
-export type ApertureKey = 'frunk' | 'liftgate' | 'door' | 'window';
-
-/**
- * Aperture open-state: a FLAT record of four independent booleans (AC1 — linear,
- * NOT combinatorial). Apertures are physically independent — a frunk can be up
- * while a door is ajar and a window is down — so each is its own toggle, never
- * collapsed into a single enum (that was right for `ChargeVisual`, where exactly
- * one of parked/plugged/charging holds; it is WRONG here). Four overlays, four
- * toggles, runtime-composed — never a state set of all 2⁴ combinations. Shared by
- * the Hero (the `_apertures()` classifier) and `carView` (the render opt).
- */
-export type ApertureState = Record<ApertureKey, boolean>;
+// ─── Relocated internal types (Story 7.1, E9/AC1) ───────────────────────────
+// Hero render-path enums (`ChargeVisual`, `ApertureKey`, `ApertureState`) now
+// live with their owner in `components/car.ts`; the panel-switch event detail
+// (`OpenPanelDetail`) lives with the panel-orchestration parent in
+// `tesla-card.ts`. They are NOT part of the public config surface, so they no
+// longer sit in this file — keeping `types.ts` the home of the PUBLIC
+// `TeslaCardConfig` (+ its sub-shapes) and the platform HA interfaces only.
