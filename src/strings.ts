@@ -320,6 +320,19 @@ export const STRINGS = {
     },
   },
 
+  // "My Home" Scene (Story 6.5 — the suite centrepiece, `tc-my-home`). Picker
+  // copy + the composed-view group aria-label. Node chip labels + the bus
+  // overlay aria-label are NOT here: they reuse `STRINGS.energy.nodes.*` and
+  // `STRINGS.energy.flowLabel` (composed by `SceneBusRenderer.label()`) — never
+  // duplicated.
+  scene: {
+    name: 'My Home',
+    description: 'Composed live energy Scene — Solar, Powerwall, Grid, Home & Wall Connector on one shared flow model.',
+    // Group label for the composed container (the live overlay carries its own
+    // state-bearing label from the renderer).
+    label: 'My Home energy scene',
+  },
+
   editor: {
     vehicleName: 'Vehicle name',
     namePlaceholder: 'Model Y',

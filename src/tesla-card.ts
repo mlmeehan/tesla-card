@@ -51,6 +51,9 @@ import './components/powerwall';
 import './components/grid';
 import './components/home';
 import './components/wall-connector';
+// Epic 6 centrepiece (Story 6.5) — the "My Home" Scene composes the five
+// ecosystem cards above into one live SceneBus-driven composition.
+import './components/my-home';
 
 type Tab = { id: PanelId; name: string; icon: string };
 

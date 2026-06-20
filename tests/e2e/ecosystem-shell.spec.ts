@@ -54,6 +54,15 @@ test.describe('ecosystem shell (6.1) — deliberate no-runtime-surface contract'
       'tc-home',
       'tc-wall-connector',
     ]);
+
+    // Story 6.5 — the `tc-my-home` Scene orchestrator registers from the same
+    // single bundle entry (FR-29). Assert it landed so a regression that drops the
+    // side-effect import is caught here too. It is NOT in the strays denylist above
+    // (it is a real, intended registration, not a leaked test fixture).
+    const myHomeRegistered = await demo.page.evaluate(
+      () => customElements.get('tc-my-home') !== undefined,
+    );
+    expect(myHomeRegistered).toBe(true);
   });
 
   test('the shell ships no inter-card messaging on the page (shared-hass-only interlink)', async ({
