@@ -1,6 +1,10 @@
 import { html, css, nothing, type CSSResult, type TemplateResult } from 'lit';
+import { mdiOpenInNew } from '@mdi/js';
 import { TcBase } from '../base';
 import { ACCENT_SEMANTICS } from '../styles';
+import { STRINGS } from '../strings';
+import { icon } from '../ui';
+import { fireEvent } from '../helpers';
 
 /**
  * Shared ecosystem-card shell (Story 6.1 — the DAG root of Epic 6).
@@ -80,6 +84,41 @@ export interface ShellOpts {
   ariaLabel?: string;
 }
 
+/**
+ * Options for {@link EcosystemCard.renderDetail} — the Story 8.1 full detail
+ * layout. Extends {@link ShellOpts} (accent/label/stamp/ariaLabel) with the three
+ * detail-only affordances. Type-only (compiler-erased): adding it does NOT widen
+ * the module's runtime export surface (FR-32 — the shell exposes only
+ * EcosystemCard/accentVar/ecosystemShellStyles at runtime).
+ */
+export interface DetailOpts extends ShellOpts {
+  /**
+   * Read-vs-control honesty (UX-DR24 / AC3). `'sensor'` cards (Solar/Grid/Home/
+   * Wall-Connector — and Powerwall until its controls land in 8.4) present
+   * telemetry + the deep-link ONLY, and the header carries a "Sensor" mark.
+   */
+  kind?: 'sensor' | 'control';
+  /** Status-dot state: live (accent), idle (at rest / sub-deadband), stale (old data). */
+  state?: 'live' | 'idle' | 'stale';
+  /** Optional short sub-status beside the label (e.g. the card's direction word). */
+  subStatus?: string;
+}
+
+/**
+ * Content slots for {@link EcosystemCard.renderDetail}. Every slot is optional and
+ * hide-when-missing by construction: an absent hero/readout simply omits its row,
+ * and `tiles` are `statTile` results that each return `nothing` when their entity
+ * is missing — so a minimal install renders a calm, sparse-but-correct card.
+ */
+export interface DetailParts {
+  /** Hero-art slot (Solar's weather vignette today; an empty placeholder otherwise — 8.2 fills it). */
+  hero?: TemplateResult | typeof nothing;
+  /** Lead readout row — the card's headline value (kW / SoC ring / direction tile). */
+  readout?: TemplateResult | typeof nothing;
+  /** Stat-grid tiles (`.grid.g3`); each `statTile` hides itself (`nothing`) when its entity is absent. */
+  tiles?: Array<TemplateResult | typeof nothing>;
+}
+
 export class EcosystemCard extends TcBase {
   /**
    * Render the shared ecosystem chrome: the `.surface` primitive (radius `xl`,
@@ -116,6 +155,92 @@ export class EcosystemCard extends TcBase {
         <div class="eco-body">${content ?? nothing}</div>
       </section>
     `;
+  }
+
+  /**
+   * Render the Story 8.1 full DETAIL layout inside the shared `.surface`: a status
+   * header (state dot + label + optional sub-status + honest Sensor mark + stamp),
+   * a hero-art slot, an optional lead readout row, a `.grid.g3` stat-grid region
+   * (reusing the existing responsive grid — it already collapses to 2 columns
+   * ≤540px via `BREAKPOINTS.compact`, so NO new breakpoint is authored), and a
+   * dashed deep-link chip to HA's built-in Energy dashboard.
+   *
+   * This is ADDITIVE to the live path only (AC4): the calm-empty path keeps
+   * calling {@link renderShell} unchanged, so Epic-6 presence-tolerance is intact.
+   * Every slot is hide-when-missing, so a minimal install reads calm and sparse.
+   */
+  protected renderDetail(opts: DetailOpts, parts: DetailParts): TemplateResult {
+    const tiles = parts.tiles ?? [];
+    const hasTiles = tiles.some((t) => t !== nothing);
+    const hasReadout = parts.readout !== undefined && parts.readout !== nothing;
+    return html`
+      <section
+        class="surface eco-card eco-detail"
+        style=${`--node-accent: ${accentVar(opts.accent)}`}
+        aria-label=${opts.ariaLabel ?? nothing}
+      >
+        <header class="eco-status">
+          <span class="eco-dot ${opts.state ?? 'live'}" aria-hidden="true"></span>
+          ${opts.label !== undefined ? html`<span class="label">${opts.label}</span>` : nothing}
+          ${opts.subStatus !== undefined
+            ? html`<span class="eco-sub">${opts.subStatus}</span>`
+            : nothing}
+          <span class="eco-spacer"></span>
+          ${opts.kind === 'sensor'
+            ? html`<span class="eco-kind">${STRINGS.ecosystem.sensorTag}</span>`
+            : nothing}
+          ${opts.stamp !== undefined
+            ? html`<span class="eco-stamp tc-stale-copy">${opts.stamp}</span>`
+            : nothing}
+        </header>
+        <div class="eco-hero">${parts.hero ?? nothing}</div>
+        ${hasReadout ? html`<div class="eco-readout">${parts.readout}</div>` : nothing}
+        ${hasTiles ? html`<div class="grid g3 eco-grid">${tiles}</div>` : nothing}
+        ${this._deepLinkChip()}
+      </section>
+    `;
+  }
+
+  /**
+   * The dashed deep-link chip → HA's built-in Energy dashboard (`/energy`). A real
+   * keyboard-operable button (`role="button"`, `tabindex="0"`, Enter/Space) with a
+   * ≥44×44 hit area and a state-bearing aria-label. Lives on the live detail layout
+   * only (never the calm empty state — AC4). Copy is centralized in `STRINGS`.
+   */
+  private _deepLinkChip(): TemplateResult {
+    return html`<div class="eco-deeplink-row">
+      <span
+        class="eco-deeplink"
+        role="button"
+        tabindex="0"
+        aria-label=${STRINGS.ecosystem.deepLink}
+        @click=${(e: Event) => this._openEnergy(e)}
+        @keydown=${(e: KeyboardEvent) => this._onDeepLinkKey(e)}
+      >
+        ${icon(mdiOpenInNew, { size: 16 })}
+        <span class="eco-deeplink-t">${STRINGS.ecosystem.deepLink}</span>
+      </span>
+    </div>`;
+  }
+
+  /**
+   * Navigate to `/energy` the HA-standard way: push the route, then let the
+   * `<home-assistant>` root pick it up via `location-changed` (bubbles + composed,
+   * supplied by `fireEvent`). Deliberately NOT `<a href>`/`location.href` — those
+   * trigger a full page reload.
+   */
+  private _openEnergy(e: Event): void {
+    e.preventDefault();
+    history.pushState(null, '', '/energy');
+    fireEvent(this, 'location-changed', { replace: false });
+  }
+
+  /** Keyboard activation for the deep-link chip: Enter or Space (Space prevented to avoid scroll). */
+  private _onDeepLinkKey(e: KeyboardEvent): void {
+    if (e.key === 'Enter' || e.key === ' ' || e.key === 'Spacebar') {
+      e.preventDefault();
+      this._openEnergy(e);
+    }
   }
 }
 
@@ -163,5 +288,45 @@ export const ecosystemShellStyles: CSSResult = css`
     color: var(--tc-text-dim, #9aa7b8);
     font-size: var(--tc-fs-body, 13.5px);
     font-weight: var(--tc-fw-body, 600);
+  }
+
+  /* ── Story 8.1 detail layout (LAYOUT ONLY — the rounded primitives .eco-dot/
+     .eco-kind/.eco-deeplink live in styles.ts sharedStyles, since the shell
+     declares no rounding/elevation recipe of its own; those belong to .surface).
+     The detail layout is additive to the live path only (AC4). ── */
+  .eco-status {
+    display: flex;
+    align-items: center;
+    gap: var(--tc-space-2, 8px);
+  }
+  /* Pushes the Sensor mark + staleness stamp to the trailing edge. */
+  .eco-spacer {
+    flex: 1 1 auto;
+  }
+  .eco-sub {
+    color: var(--tc-text-dim, #9aa7b8);
+    font-size: var(--tc-fs-label, 11.5px);
+    font-weight: var(--tc-fw-body, 600);
+  }
+  /* Hero-art slot — an empty placeholder this story (8.2 fills it). Collapses to
+     zero height when empty so a minimal card stays compact; Solar passes its
+     weather vignette here. */
+  .eco-hero:empty {
+    display: none;
+  }
+  .eco-readout {
+    display: flex;
+    flex-direction: column;
+    gap: var(--tc-space-2, 8px);
+    min-width: 0;
+  }
+  /* Stat-grid region uses the shared responsive .grid.g3 (collapses to 2-col
+     ≤540px via BREAKPOINTS.compact) — only the vertical rhythm is set here. */
+  .eco-grid {
+    margin-top: var(--tc-space-1, 4px);
+  }
+  .eco-deeplink-row {
+    display: flex;
+    justify-content: flex-start;
   }
 `;

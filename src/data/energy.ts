@@ -63,6 +63,30 @@ export interface EnergyEntities {
   wc_connected?: string;
   /** Wall Connector status enum. */
   wc_status?: string;
+  // ── Story 8.1 telemetry-only keys (ecosystem-card detail stat grids) ──────
+  // All verified to resolve against the live tesla_fleet/powerwall/Wall-Connector
+  // vocabulary (see RULES + energy.test.ts). Cumulative energy sensors carry the
+  // integration's own kWh unit; the WC measurement sensors carry V/Hz/°(F|C).
+  // Read the unit live via `unitById` — never assume (e.g. handle temp is °F on
+  // some installs). Non-power telemetry: the FlowModel never sees these (FR-33).
+  /** Solar energy generated (cumulative, kWh). */
+  solar_generated?: string;
+  /** Solar energy exported (cumulative, kWh). */
+  solar_exported?: string;
+  /** Grid energy imported (cumulative, kWh). */
+  grid_imported?: string;
+  /** Grid energy exported (cumulative, kWh). */
+  grid_exported?: string;
+  /** Powerwall energy charged (cumulative, kWh). */
+  battery_charged?: string;
+  /** Powerwall energy discharged (cumulative, kWh). */
+  battery_discharged?: string;
+  /** Wall Connector grid voltage (V). */
+  wc_voltage?: string;
+  /** Wall Connector grid frequency (Hz). */
+  wc_frequency?: string;
+  /** Wall Connector handle temperature (° — unit per install). */
+  wc_temperature?: string;
 }
 
 // `Key` is gated on the drift guard so the guard is load-bearing, not decorative:
@@ -95,6 +119,28 @@ const RULES: Record<Key, Rule> = {
   wc_session: { domain: 'sensor', has: ['session_energy'] },
   wc_connected: { domain: 'binary_sensor', has: ['vehicle_connected'] },
   wc_status: { domain: 'sensor', has: ['wall_connector', 'status'], not: ['code'] },
+  // ── Story 8.1 telemetry rules ─────────────────────────────────────────────
+  // Each substring set was checked against the live install's object-ids and the
+  // `find()` shortest-match semantics so it resolves to exactly the intended
+  // entity (energy.test.ts pins this — the drift guard only proves key parity,
+  // NOT that a rule matches a real entity, the Epic-6 gate blind-spot).
+  //   solar_generated → sensor.my_home_solar_generated
+  solar_generated: { domain: 'sensor', has: ['solar_generated'] },
+  //   solar_exported → sensor.my_home_solar_exported (NOT grid_exported_from_solar)
+  solar_exported: { domain: 'sensor', has: ['solar_exported'] },
+  //   grid_imported → sensor.my_home_grid_imported (NOT grid_services_imported)
+  grid_imported: { domain: 'sensor', has: ['grid_imported'] },
+  //   grid_exported → my_home_grid_exported wins on shortest object-id over the
+  //   longer my_home_grid_exported_from_* siblings.
+  grid_exported: { domain: 'sensor', has: ['grid_exported'] },
+  //   battery_charged/discharged → my_home_battery_charged / _discharged
+  battery_charged: { domain: 'sensor', has: ['battery_charged'] },
+  battery_discharged: { domain: 'sensor', has: ['battery_discharged'] },
+  //   WC measurement sensors — scoped to the wall_connector device so they never
+  //   false-match an energy-site grid sensor.
+  wc_voltage: { domain: 'sensor', has: ['wall_connector', 'grid_voltage'] },
+  wc_frequency: { domain: 'sensor', has: ['wall_connector', 'frequency'] },
+  wc_temperature: { domain: 'sensor', has: ['wall_connector', 'handle_temperature'] },
 };
 
 function objectId(entityId: string): string {
@@ -188,4 +234,19 @@ export function stateById(
   id?: string
 ): string | undefined {
   return id ? readRaw(hass, id) : undefined;
+}
+
+/**
+ * The entity's `unit_of_measurement` attribute (Story 8.1). Routes through the
+ * freshness reader's attribute path (the sanctioned arbitrary-entity read) so the
+ * detail stat-grid can render the integration's OWN unit rather than assuming one
+ * — load-bearing for telemetry whose unit varies per install (e.g. the Wall
+ * Connector handle temperature is °F on some, °C on others). `undefined` when the
+ * entity or the attribute is absent.
+ */
+export function unitById(
+  hass: HomeAssistant | undefined,
+  id?: string
+): string | undefined {
+  return id ? readRaw(hass, id, 'unit_of_measurement') : undefined;
 }

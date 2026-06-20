@@ -14,6 +14,7 @@ import awakeFx from '../fixtures/model-y-awake.json';
 import solarSurplusFx from '../fixtures/flow-solar-surplus.json';
 import islandingFx from '../fixtures/flow-islanding.json';
 import allUnresolvedFx from '../fixtures/all-unresolved.json';
+import detailFx from '../fixtures/energy-detail.json';
 import type { HassEntity, HomeAssistant, TeslaCardConfig } from '../types';
 
 const CONFIG: TeslaCardConfig = { type: 'custom:tesla-card' };
@@ -122,6 +123,39 @@ describe('AC2 — graceful degradation', () => {
     expect(stamp).not.toBeNull();
     expect(stamp!.classList.contains('tc-stale-copy')).toBe(true);
     expect(stamp!.textContent).toContain(STRINGS.hero.updatedPrefix);
+  });
+});
+
+describe('Story 8.1 — detail layout: charge/discharge tiles, read-only, deep-link', () => {
+  test('AC2 — present charge/discharge energy totals render', async () => {
+    const el = await mount(makeHass(states(detailFx)));
+    const txt = sr(el).textContent ?? '';
+    expect(txt).toContain(STRINGS.ecosystem.powerwall.charged);
+    expect(txt).toContain('5.7'); // battery_charged value (kWh)
+    expect(txt).toContain(STRINGS.ecosystem.powerwall.discharged);
+  });
+
+  test('AC2 — absent totals hide; reserve + mode (today) still render read-only', async () => {
+    const el = await mount(makeHass(states(awakeFx))); // has reserve+mode, no charged/discharged
+    const txt = sr(el).textContent ?? '';
+    expect(txt).toContain(STRINGS.energy.reserve);
+    expect(txt).toContain(STRINGS.energy.mode);
+    expect(txt).not.toContain(STRINGS.ecosystem.powerwall.charged);
+    expect(txt).not.toContain('NaN');
+  });
+
+  test('AC3 — Powerwall stays a Sensor this story (controls are 8.4): NO write control', async () => {
+    // reserve/mode are read-only statTiles — NOT a number/select input or slider.
+    const el = await mount(makeHass(states(detailFx)));
+    expect(sr(el).querySelector('input, select, tc-slider, [role="switch"], [role="slider"]')).toBeNull();
+    expect(sr(el).querySelector('.eco-kind')!.textContent).toContain(STRINGS.ecosystem.sensorTag);
+  });
+
+  test('AC1/AC4 — deep-link present on live, absent on calm empty', async () => {
+    const live = await mount(makeHass(states(detailFx)));
+    expect(sr(live).querySelector('.eco-deeplink')).not.toBeNull();
+    const empty = await mount(makeHass(states(allUnresolvedFx)));
+    expect(sr(empty).querySelector('.eco-deeplink')).toBeNull();
   });
 });
 

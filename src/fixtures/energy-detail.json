@@ -1,0 +1,191 @@
+{
+  "provenance": {
+    "captured_at": "2026-06-20T12:00:00Z",
+    "reference_now": "2026-06-20T12:00:00Z",
+    "source_integration": "tesla_fleet",
+    "model": "Energy Site + Wall Connector",
+    "scenario": "energy-detail",
+    "ha_version": "2026.6",
+    "synthesized": true,
+    "capture_method": "SYNTHESIZED for Story 8.1 (modelled on the live install's real object-ids, verified via /api/states): the full energy-site + Wall-Connector telemetry set used by the ecosystem-card detail stat grids — the five *_power leads PLUS the new cumulative-energy (kWh) totals and the WC measurement sensors (V/Hz/°F). Includes deliberate DECOY entities (grid_services_imported, grid_exported_from_*, wc phase_a_voltage) so the resolution test proves each new RULES substring picks the INTENDED entity, not a false positive (the Epic-6 gate blind-spot: the drift guard proves key parity, not that a rule matches a real entity). Every entity stamped at reference_now so reads classify fresh when now=reference_now.",
+    "entity_count": 25,
+    "notes": "RAW tesla_fleet/powerwall signs (battery -=charging, grid +=import); kWh totals + WC V/Hz/°F carry their own unit_of_measurement so unitById reads the integration's real unit (handle temp is °F here on purpose)."
+  },
+  "states": {
+    "sensor.my_home_solar_power": {
+      "entity_id": "sensor.my_home_solar_power",
+      "state": "6.0",
+      "attributes": { "unit_of_measurement": "kW", "device_class": "power" },
+      "last_changed": "2026-06-20T12:00:00Z",
+      "last_updated": "2026-06-20T12:00:00Z"
+    },
+    "sensor.my_home_solar_generated": {
+      "entity_id": "sensor.my_home_solar_generated",
+      "state": "15.7",
+      "attributes": { "unit_of_measurement": "kWh", "device_class": "energy", "state_class": "total" },
+      "last_changed": "2026-06-20T12:00:00Z",
+      "last_updated": "2026-06-20T12:00:00Z"
+    },
+    "sensor.my_home_solar_exported": {
+      "entity_id": "sensor.my_home_solar_exported",
+      "state": "2.3",
+      "attributes": { "unit_of_measurement": "kWh", "device_class": "energy", "state_class": "total" },
+      "last_changed": "2026-06-20T12:00:00Z",
+      "last_updated": "2026-06-20T12:00:00Z"
+    },
+    "sensor.my_home_grid_power": {
+      "entity_id": "sensor.my_home_grid_power",
+      "state": "0.9",
+      "attributes": { "unit_of_measurement": "kW", "device_class": "power" },
+      "last_changed": "2026-06-20T12:00:00Z",
+      "last_updated": "2026-06-20T12:00:00Z"
+    },
+    "sensor.my_home_grid_status": {
+      "entity_id": "sensor.my_home_grid_status",
+      "state": "on_grid",
+      "attributes": {},
+      "last_changed": "2026-06-20T12:00:00Z",
+      "last_updated": "2026-06-20T12:00:00Z"
+    },
+    "sensor.my_home_grid_imported": {
+      "entity_id": "sensor.my_home_grid_imported",
+      "state": "25.6",
+      "attributes": { "unit_of_measurement": "kWh", "device_class": "energy", "state_class": "total" },
+      "last_changed": "2026-06-20T12:00:00Z",
+      "last_updated": "2026-06-20T12:00:00Z"
+    },
+    "sensor.my_home_grid_exported": {
+      "entity_id": "sensor.my_home_grid_exported",
+      "state": "0.03",
+      "attributes": { "unit_of_measurement": "kWh", "device_class": "energy", "state_class": "total" },
+      "last_changed": "2026-06-20T12:00:00Z",
+      "last_updated": "2026-06-20T12:00:00Z"
+    },
+    "sensor.my_home_grid_services_imported": {
+      "entity_id": "sensor.my_home_grid_services_imported",
+      "state": "0.0",
+      "attributes": { "unit_of_measurement": "kWh", "device_class": "energy", "state_class": "total" },
+      "last_changed": "2026-06-20T12:00:00Z",
+      "last_updated": "2026-06-20T12:00:00Z"
+    },
+    "sensor.my_home_grid_exported_from_solar": {
+      "entity_id": "sensor.my_home_grid_exported_from_solar",
+      "state": "1.0",
+      "attributes": { "unit_of_measurement": "kWh", "device_class": "energy", "state_class": "total" },
+      "last_changed": "2026-06-20T12:00:00Z",
+      "last_updated": "2026-06-20T12:00:00Z"
+    },
+    "sensor.my_home_grid_exported_from_battery": {
+      "entity_id": "sensor.my_home_grid_exported_from_battery",
+      "state": "0.5",
+      "attributes": { "unit_of_measurement": "kWh", "device_class": "energy", "state_class": "total" },
+      "last_changed": "2026-06-20T12:00:00Z",
+      "last_updated": "2026-06-20T12:00:00Z"
+    },
+    "sensor.my_home_load_power": {
+      "entity_id": "sensor.my_home_load_power",
+      "state": "1.0",
+      "attributes": { "unit_of_measurement": "kW", "device_class": "power" },
+      "last_changed": "2026-06-20T12:00:00Z",
+      "last_updated": "2026-06-20T12:00:00Z"
+    },
+    "sensor.my_home_battery_power": {
+      "entity_id": "sensor.my_home_battery_power",
+      "state": "-1.5",
+      "attributes": { "unit_of_measurement": "kW", "device_class": "power" },
+      "last_changed": "2026-06-20T12:00:00Z",
+      "last_updated": "2026-06-20T12:00:00Z"
+    },
+    "sensor.my_home_percentage_charged": {
+      "entity_id": "sensor.my_home_percentage_charged",
+      "state": "72",
+      "attributes": { "unit_of_measurement": "%", "device_class": "battery" },
+      "last_changed": "2026-06-20T12:00:00Z",
+      "last_updated": "2026-06-20T12:00:00Z"
+    },
+    "number.my_home_backup_reserve": {
+      "entity_id": "number.my_home_backup_reserve",
+      "state": "20",
+      "attributes": { "unit_of_measurement": "%", "device_class": "battery" },
+      "last_changed": "2026-06-20T12:00:00Z",
+      "last_updated": "2026-06-20T12:00:00Z"
+    },
+    "select.my_home_operation_mode": {
+      "entity_id": "select.my_home_operation_mode",
+      "state": "self_consumption",
+      "attributes": { "options": ["self_consumption", "autonomous", "backup"] },
+      "last_changed": "2026-06-20T12:00:00Z",
+      "last_updated": "2026-06-20T12:00:00Z"
+    },
+    "sensor.my_home_battery_charged": {
+      "entity_id": "sensor.my_home_battery_charged",
+      "state": "5.7",
+      "attributes": { "unit_of_measurement": "kWh", "device_class": "energy", "state_class": "total" },
+      "last_changed": "2026-06-20T12:00:00Z",
+      "last_updated": "2026-06-20T12:00:00Z"
+    },
+    "sensor.my_home_battery_discharged": {
+      "entity_id": "sensor.my_home_battery_discharged",
+      "state": "3.0",
+      "attributes": { "unit_of_measurement": "kWh", "device_class": "energy", "state_class": "total" },
+      "last_changed": "2026-06-20T12:00:00Z",
+      "last_updated": "2026-06-20T12:00:00Z"
+    },
+    "sensor.tesla_wall_connector_total_power": {
+      "entity_id": "sensor.tesla_wall_connector_total_power",
+      "state": "7.2",
+      "attributes": { "unit_of_measurement": "kW", "device_class": "power" },
+      "last_changed": "2026-06-20T12:00:00Z",
+      "last_updated": "2026-06-20T12:00:00Z"
+    },
+    "sensor.tesla_wall_connector_session_energy": {
+      "entity_id": "sensor.tesla_wall_connector_session_energy",
+      "state": "12.4",
+      "attributes": { "unit_of_measurement": "Wh", "device_class": "energy" },
+      "last_changed": "2026-06-20T12:00:00Z",
+      "last_updated": "2026-06-20T12:00:00Z"
+    },
+    "binary_sensor.tesla_wall_connector_vehicle_connected": {
+      "entity_id": "binary_sensor.tesla_wall_connector_vehicle_connected",
+      "state": "on",
+      "attributes": {},
+      "last_changed": "2026-06-20T12:00:00Z",
+      "last_updated": "2026-06-20T12:00:00Z"
+    },
+    "sensor.tesla_wall_connector_status": {
+      "entity_id": "sensor.tesla_wall_connector_status",
+      "state": "Charging",
+      "attributes": {},
+      "last_changed": "2026-06-20T12:00:00Z",
+      "last_updated": "2026-06-20T12:00:00Z"
+    },
+    "sensor.tesla_wall_connector_grid_voltage": {
+      "entity_id": "sensor.tesla_wall_connector_grid_voltage",
+      "state": "238.2",
+      "attributes": { "unit_of_measurement": "V", "device_class": "voltage" },
+      "last_changed": "2026-06-20T12:00:00Z",
+      "last_updated": "2026-06-20T12:00:00Z"
+    },
+    "sensor.tesla_wall_connector_grid_frequency": {
+      "entity_id": "sensor.tesla_wall_connector_grid_frequency",
+      "state": "59.9",
+      "attributes": { "unit_of_measurement": "Hz", "device_class": "frequency" },
+      "last_changed": "2026-06-20T12:00:00Z",
+      "last_updated": "2026-06-20T12:00:00Z"
+    },
+    "sensor.tesla_wall_connector_handle_temperature": {
+      "entity_id": "sensor.tesla_wall_connector_handle_temperature",
+      "state": "84.4",
+      "attributes": { "unit_of_measurement": "°F", "device_class": "temperature" },
+      "last_changed": "2026-06-20T12:00:00Z",
+      "last_updated": "2026-06-20T12:00:00Z"
+    },
+    "sensor.tesla_wall_connector_phase_a_voltage": {
+      "entity_id": "sensor.tesla_wall_connector_phase_a_voltage",
+      "state": "120.0",
+      "attributes": { "unit_of_measurement": "V", "device_class": "voltage" },
+      "last_changed": "2026-06-20T12:00:00Z",
+      "last_updated": "2026-06-20T12:00:00Z"
+    }
+  }
+}

@@ -1,11 +1,11 @@
 import { html, nothing, type PropertyValues, type TemplateResult } from 'lit';
 import { customElement } from 'lit/decorators.js';
-import { mdiHomeBattery, mdiBatteryLock, mdiCogOutline } from '@mdi/js';
+import { mdiHomeBattery, mdiBatteryLock, mdiCogOutline, mdiBatteryPlus, mdiBatteryMinus } from '@mdi/js';
 import { EcosystemCard, ecosystemShellStyles, accentVar } from './ecosystem-card';
 import { sharedStyles } from '../styles';
 import { STRINGS } from '../strings';
 import { statTile, ring, formatAgeHint } from '../ui';
-import { resolveEnergyEntities, numById, stateById, type EnergyEntities } from '../data/energy';
+import { resolveEnergyEntities, numById, stateById, unitById, type EnergyEntities } from '../data/energy';
 import { read, referenceNow } from '../data/freshness';
 import { formatNumber, prettyText, isUnavailable } from '../helpers';
 import type { LovelaceCard, TeslaCardConfig } from '../types';
@@ -128,13 +128,42 @@ export class TcPowerwall extends EcosystemCard implements LovelaceCard {
             color: 'var(--tc-purple, #a78bfa)',
           });
 
+    // Detail stat-grid: reserve + mode (read-only — controls are 8.4) plus the
+    // cumulative charge/discharge energy totals (kWh), all hide-when-missing.
+    const tiles: Array<TemplateResult | typeof nothing> = [
+      reserveTile,
+      modeTile,
+      this._kwhTile(e.battery_charged, mdiBatteryPlus, STRINGS.ecosystem.powerwall.charged),
+      this._kwhTile(e.battery_discharged, mdiBatteryMinus, STRINGS.ecosystem.powerwall.discharged),
+    ];
+
+    const state =
+      stamp !== undefined ? 'stale' : batt !== undefined && Math.abs(batt) > THRESH ? 'live' : 'idle';
+
     const ariaLabel =
       level === undefined ? `${label} ${dir}` : `${label} ${formatNumber(level, 0)}% ${dir}`;
 
-    return this.renderShell(
-      { accent, label, stamp, ariaLabel },
-      html`${soc}${flow}${reserveTile}${modeTile}`
+    // Powerwall stays a SENSOR in this story — its writable mode/reserve controls
+    // land in 8.4; here mode/reserve remain read-only telemetry tiles (AC3).
+    return this.renderDetail(
+      { accent, label, stamp, state, subStatus: dir, kind: 'sensor', ariaLabel },
+      { readout: html`${soc}${flow}`, tiles }
     );
+  }
+
+  /** A NaN-safe cumulative-energy (kWh) stat tile; hides when its entity is absent. */
+  private _kwhTile(
+    id: string | undefined,
+    iconPath: string,
+    label: string
+  ): TemplateResult | typeof nothing {
+    const v = numById(this.hass, id);
+    return statTile({
+      icon: iconPath,
+      label,
+      value: v === undefined ? undefined : `${formatNumber(v, 1)} ${unitById(this.hass, id) ?? 'kWh'}`,
+      color: accentVar('green'),
+    });
   }
 
   static override styles = [sharedStyles, ecosystemShellStyles];

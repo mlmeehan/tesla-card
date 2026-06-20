@@ -14,6 +14,7 @@ import { STRINGS } from '../strings';
 import { DEFAULT_ENTITIES } from '../const';
 import awakeFx from '../fixtures/model-y-awake.json';
 import allUnresolvedFx from '../fixtures/all-unresolved.json';
+import detailFx from '../fixtures/energy-detail.json';
 import type { HassEntity, HomeAssistant, TeslaCardConfig } from '../types';
 
 const CONFIG: TeslaCardConfig = { type: 'custom:tesla-card' };
@@ -195,6 +196,37 @@ describe('AC4 — honest three-state classification (raw reads, 0.05 kW deadband
     expect(statLabels(el)).toContain(STRINGS.ecosystem.wallConnector.available);
     expect(statLabels(el)).not.toContain(STRINGS.ecosystem.wallConnector.connected);
     expect(statLabels(el)).not.toContain(STRINGS.ecosystem.wallConnector.charging);
+  });
+});
+
+describe('Story 8.1 — detail layout: V/Hz/° measurement tiles (live units), deep-link', () => {
+  test('AC2 — present measurements render with the entity\'s OWN unit (°F here, never assumed)', async () => {
+    const el = await mount(makeHass(states(detailFx)));
+    const txt = sr(el).textContent ?? '';
+    expect(txt).toContain(STRINGS.ecosystem.wallConnector.voltage);
+    expect(txt).toContain('238'); // grid_voltage value
+    expect(txt).toContain('V');
+    expect(txt).toContain(STRINGS.ecosystem.wallConnector.frequency);
+    expect(txt).toContain('59.9');
+    expect(txt).toContain('Hz');
+    expect(txt).toContain(STRINGS.ecosystem.wallConnector.temperature);
+    expect(txt).toContain('°F'); // live unit read from the entity, not a baked °C
+  });
+
+  test('AC2 — absent measurements hide their tiles; the lead state/power still renders', async () => {
+    const el = await mount(makeHass(states(awakeFx))); // no wc voltage/frequency/temperature
+    const txt = sr(el).textContent ?? '';
+    expect(txt).not.toContain(STRINGS.ecosystem.wallConnector.voltage);
+    expect(txt).not.toContain('NaN');
+    expect(sr(el).querySelector('.stat')).not.toBeNull();
+  });
+
+  test('AC1/AC4 — deep-link present on live, absent on calm empty; AC3 — no write control', async () => {
+    const live = await mount(makeHass(states(detailFx)));
+    expect(sr(live).querySelector('.eco-deeplink')).not.toBeNull();
+    expect(sr(live).querySelector('input, select, tc-slider, [role="switch"], [role="slider"]')).toBeNull();
+    const empty = await mount(makeHass(states(allUnresolvedFx)));
+    expect(sr(empty).querySelector('.eco-deeplink')).toBeNull();
   });
 });
 

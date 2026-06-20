@@ -15,8 +15,16 @@ export type EnergyRole = Exclude<Role, 'vehicle'>;
 /**
  * The canonical function-keys, grouped by role. The vehicle subset mirrors
  * `const.ts` DEFAULT_ENTITIES (84 keys) and the energy subset mirrors `energy.ts`
- * EnergyEntities (12 keys); both value tables are typecheck-bound back to these names
+ * EnergyEntities (21 keys); both value tables are typecheck-bound back to these names
  * (`satisfies` / drift guard), so the three tables cannot diverge silently (D2).
+ *
+ * Story 8.1 grew the energy vocabulary 12 → 21 with telemetry-only keys for the
+ * ecosystem-card detail layout (stat grids). Every added key was verified to
+ * resolve against the live `tesla_fleet`/`powerwall`/Wall-Connector entity
+ * vocabulary by a real substring rule (see `energy.ts` RULES + `energy.test.ts`);
+ * none are speculative. The keys are NON-POWER telemetry — `flow/binding.ts`
+ * `POWER_KEY` (role → single `*_power` sensor) is untouched, so the FlowModel is
+ * unperturbed (FR-33).
  */
 export const FUNCTION_KEYS = {
   vehicle: [
@@ -35,11 +43,11 @@ export const FUNCTION_KEYS = {
     'speed', 'power', 'traffic_delay', 'distance_to_arrival', 'time_to_arrival', 'media_player',
     'wake', 'honk', 'flash', 'homelink', 'keyless', 'boombox',
   ],
-  solar: ['solar_power'],
-  powerwall: ['battery_power', 'powerwall_level', 'backup_reserve', 'operation_mode'],
-  grid: ['grid_power', 'grid_status'],
+  solar: ['solar_power', 'solar_generated', 'solar_exported'],
+  powerwall: ['battery_power', 'powerwall_level', 'backup_reserve', 'operation_mode', 'battery_charged', 'battery_discharged'],
+  grid: ['grid_power', 'grid_status', 'grid_imported', 'grid_exported'],
   home: ['load_power'],
-  wall_connector: ['wc_power', 'wc_session', 'wc_connected', 'wc_status'],
+  wall_connector: ['wc_power', 'wc_session', 'wc_connected', 'wc_status', 'wc_voltage', 'wc_frequency', 'wc_temperature'],
 } as const satisfies Record<Role, readonly string[]>;
 
 /** The vehicle function-keys (today's `EntityKey`). */

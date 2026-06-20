@@ -81,6 +81,28 @@ describe('AC2 — graceful degradation', () => {
   });
 });
 
+describe('Story 8.1 — detail layout: lead-only (honest minimal), deep-link, sensor honesty', () => {
+  test('AC2 — Home has no clean energy-today entity, so the stat grid is omitted (lead-only)', async () => {
+    const el = await mount(makeHass(states(awakeFx)));
+    // The lead consumption readout renders; no stat-grid region is forced empty.
+    expect(sr(el).querySelector('.eco-readout .stat')).not.toBeNull();
+    expect(sr(el).querySelector('.eco-grid')).toBeNull();
+    expect(sr(el).textContent ?? '').not.toContain('NaN');
+  });
+
+  test('AC1/AC4 — deep-link present on live, absent on calm empty', async () => {
+    const live = await mount(makeHass(states(awakeFx)));
+    expect(sr(live).querySelector('.eco-deeplink')).not.toBeNull();
+    const empty = await mount(makeHass(states(allUnresolvedFx)));
+    expect(sr(empty).querySelector('.eco-deeplink')).toBeNull();
+  });
+
+  test('AC3 — Home is a Sensor: NO write control', async () => {
+    const el = await mount(makeHass(states(awakeFx)));
+    expect(sr(el).querySelector('input, select, tc-slider, [role="switch"], [role="slider"]')).toBeNull();
+  });
+});
+
 describe('AC3 — standalone registered element', () => {
   test('tc-home is defined; getCardSize is a number; customCards entry present', async () => {
     expect(customElements.get('tc-home')).toBeDefined();

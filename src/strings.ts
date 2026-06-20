@@ -262,10 +262,18 @@ export const STRINGS = {
   // `.mode`. The direction words live per-card because each card's flow means a
   // different thing (grid import/export vs Powerwall charge/discharge).
   ecosystem: {
+    // Detail-layout chrome shared by every ecosystem card (Story 8.1). The
+    // deep-link chip navigates to HA's built-in Energy dashboard (`/energy`);
+    // `sensorTag` honestly marks read-only Sensor cards (UX-DR24) in the header.
+    deepLink: 'Open Energy dashboard',
+    sensorTag: 'Sensor',
     solar: {
       description: 'Standalone solar production card.',
       empty: 'No solar production reported yet.',
       production: 'Production',
+      // Detail stat-grid tile labels (Story 8.1) — cumulative energy totals.
+      generated: 'Generated',
+      exported: 'Exported',
       // Live weather vignette (Story 6.4). All copy centralized here (no inline
       // literals in the component). `names` is keyed by the day/night-RESOLVED
       // WeatherScene (mirrors the mockup's NAMES map); the renderer looks up a
@@ -293,6 +301,9 @@ export const STRINGS = {
       discharging: 'Discharging',
       idle: 'Idle',
       charge: 'Charge', // SoC ring sub-label
+      // Detail stat-grid tile labels (Story 8.1) — cumulative energy totals.
+      charged: 'Charged',
+      discharged: 'Discharged',
     },
     grid: {
       description: 'Standalone grid import/export card.',
@@ -300,6 +311,10 @@ export const STRINGS = {
       importing: 'Importing',
       exporting: 'Exporting',
       idle: 'Idle',
+      // Detail stat-grid tile labels (Story 8.1) — cumulative energy totals
+      // (nouns, distinct from the present-tense direction words above).
+      imported: 'Imported',
+      exported: 'Exported',
     },
     home: {
       description: 'Standalone home consumption card.',
@@ -317,6 +332,10 @@ export const STRINGS = {
       available: 'Available',
       connected: 'Connected',
       charging: 'Charging',
+      // Detail stat-grid tile labels (Story 8.1) — live measurement readings.
+      voltage: 'Voltage',
+      frequency: 'Frequency',
+      temperature: 'Temperature',
     },
   },
 

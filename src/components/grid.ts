@@ -1,11 +1,11 @@
 import { html, css, nothing, type PropertyValues, type TemplateResult } from 'lit';
 import { customElement } from 'lit/decorators.js';
-import { mdiTransmissionTower } from '@mdi/js';
+import { mdiTransmissionTower, mdiImport, mdiExport } from '@mdi/js';
 import { EcosystemCard, ecosystemShellStyles, accentVar } from './ecosystem-card';
 import { sharedStyles } from '../styles';
 import { STRINGS } from '../strings';
 import { statTile, formatAgeHint } from '../ui';
-import { resolveEnergyEntities, numById, stateById, type EnergyEntities } from '../data/energy';
+import { resolveEnergyEntities, numById, stateById, unitById, type EnergyEntities } from '../data/energy';
 import { read, referenceNow } from '../data/freshness';
 import { formatNumber, prettyText, isUnavailable } from '../helpers';
 import type { LovelaceCard, TeslaCardConfig } from '../types';
@@ -94,10 +94,39 @@ export class TcGrid extends EcosystemCard implements LovelaceCard {
             color: accentVar(accent),
           });
 
-    return this.renderShell(
-      { accent, label, stamp, ariaLabel: `${label} ${dir}` },
-      html`${chip}${tile}`
+    // Status dot: live while importing/exporting, idle sub-deadband, stale on age.
+    const state =
+      stamp !== undefined
+        ? 'stale'
+        : power !== undefined && Math.abs(power) > THRESH
+          ? 'live'
+          : 'idle';
+
+    // Detail stat-grid: cumulative grid energy totals (kWh), hide-when-missing.
+    const tiles: Array<TemplateResult | typeof nothing> = [
+      this._kwhTile(e.grid_imported, mdiImport, STRINGS.ecosystem.grid.imported),
+      this._kwhTile(e.grid_exported, mdiExport, STRINGS.ecosystem.grid.exported),
+    ];
+
+    return this.renderDetail(
+      { accent, label, stamp, state, subStatus: dir, kind: 'sensor', ariaLabel: `${label} ${dir}` },
+      { readout: html`${chip}${tile}`, tiles }
     );
+  }
+
+  /** A NaN-safe cumulative-energy (kWh) stat tile; hides when its entity is absent. */
+  private _kwhTile(
+    id: string | undefined,
+    iconPath: string,
+    label: string
+  ): TemplateResult | typeof nothing {
+    const v = numById(this.hass, id);
+    return statTile({
+      icon: iconPath,
+      label,
+      value: v === undefined ? undefined : `${formatNumber(v, 1)} ${unitById(this.hass, id) ?? 'kWh'}`,
+      color: accentVar('neutral'),
+    });
   }
 
   /** Grid-status chip — ok/warn dot, reusing the `panel-energy._gridChip` pattern. */

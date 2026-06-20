@@ -1,11 +1,11 @@
-import { html, type PropertyValues, type TemplateResult } from 'lit';
+import { html, nothing, type PropertyValues, type TemplateResult } from 'lit';
 import { customElement } from 'lit/decorators.js';
-import { mdiPowerPlug, mdiFlash, mdiCounter } from '@mdi/js';
+import { mdiPowerPlug, mdiFlash, mdiCounter, mdiCurrentAc, mdiSineWave, mdiThermometer } from '@mdi/js';
 import { EcosystemCard, ecosystemShellStyles, accentVar } from './ecosystem-card';
 import { sharedStyles } from '../styles';
 import { STRINGS } from '../strings';
 import { statTile, formatAgeHint } from '../ui';
-import { resolveEnergyEntities, numById, stateById, type EnergyEntities } from '../data/energy';
+import { resolveEnergyEntities, numById, stateById, unitById, type EnergyEntities } from '../data/energy';
 import { read, referenceNow } from '../data/freshness';
 import { formatNumber, prettyText, isUnavailable } from '../helpers';
 import type { LovelaceCard, TeslaCardConfig } from '../types';
@@ -148,10 +148,38 @@ export class TcWallConnector extends EcosystemCard implements LovelaceCard {
 
     const ariaLabel = `${label} — ${stateLabel}${kw ? ` ${kw}` : ''}`;
 
-    return this.renderShell(
-      { accent, label, stamp, ariaLabel },
-      html`${stateTile}${powerTile}${sessionTile}`
+    // Detail stat-grid: live electrical measurements. Units read from each entity
+    // (the handle temperature is °F on some installs, °C on others — never assume).
+    const tiles: Array<TemplateResult | typeof nothing> = [
+      this._measTile(e.wc_voltage, mdiCurrentAc, STRINGS.ecosystem.wallConnector.voltage, 0, 'V'),
+      this._measTile(e.wc_frequency, mdiSineWave, STRINGS.ecosystem.wallConnector.frequency, 1, 'Hz'),
+      this._measTile(e.wc_temperature, mdiThermometer, STRINGS.ecosystem.wallConnector.temperature, 0, '°'),
+    ];
+
+    const state = stamp !== undefined ? 'stale' : charging ? 'live' : 'idle';
+
+    return this.renderDetail(
+      { accent, label, stamp, state, subStatus: stateLabel, kind: 'sensor', ariaLabel },
+      { readout: html`${stateTile}${powerTile}${sessionTile}`, tiles }
     );
+  }
+
+  /** A NaN-safe measurement stat tile (unit read live from the entity); hides when absent. */
+  private _measTile(
+    id: string | undefined,
+    iconPath: string,
+    label: string,
+    decimals: number,
+    fallbackUnit: string
+  ): TemplateResult | typeof nothing {
+    const v = numById(this.hass, id);
+    return statTile({
+      icon: iconPath,
+      label,
+      value:
+        v === undefined ? undefined : `${formatNumber(v, decimals)} ${unitById(this.hass, id) ?? fallbackUnit}`,
+      color: accentVar('teal'),
+    });
   }
 
   static override styles = [sharedStyles, ecosystemShellStyles];

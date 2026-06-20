@@ -15,6 +15,7 @@ import gridImportFx from '../fixtures/flow-grid-import.json';
 import gridExportFx from '../fixtures/flow-grid-export.json';
 import islandingFx from '../fixtures/flow-islanding.json';
 import allUnresolvedFx from '../fixtures/all-unresolved.json';
+import detailFx from '../fixtures/energy-detail.json';
 import type { HassEntity, HomeAssistant, TeslaCardConfig } from '../types';
 
 const CONFIG: TeslaCardConfig = { type: 'custom:tesla-card' };
@@ -126,6 +127,35 @@ describe('AC2 — graceful degradation', () => {
     expect(stamp).not.toBeNull();
     expect(stamp!.classList.contains('tc-stale-copy')).toBe(true);
     expect(stamp!.textContent).toContain(STRINGS.hero.updatedPrefix);
+  });
+});
+
+describe('Story 8.1 — detail layout: stat grid, deep-link, sensor honesty', () => {
+  test('AC2 — present grid energy totals render (Imported / Exported)', async () => {
+    const el = await mount(makeHass(states(detailFx)));
+    const txt = bodyText(el);
+    expect(txt).toContain(STRINGS.ecosystem.grid.imported);
+    expect(txt).toContain('25.6'); // grid_imported value (kWh)
+    expect(txt).toContain(STRINGS.ecosystem.grid.exported);
+  });
+
+  test('AC2 — absent totals hide their tiles; the lead direction still renders', async () => {
+    const el = await mount(makeHass(states(awakeFx))); // no grid_imported/_exported
+    expect(bodyText(el)).not.toContain(STRINGS.ecosystem.grid.imported);
+    expect(bodyText(el)).not.toContain('NaN');
+    expect(sr(el).querySelector('.stat')).not.toBeNull();
+  });
+
+  test('AC1/AC4 — deep-link present on live, absent on calm empty', async () => {
+    const live = await mount(makeHass(states(detailFx)));
+    expect(sr(live).querySelector('.eco-deeplink')).not.toBeNull();
+    const empty = await mount(makeHass(states(allUnresolvedFx)));
+    expect(sr(empty).querySelector('.eco-deeplink')).toBeNull();
+  });
+
+  test('AC3 — Grid is a Sensor: NO write control', async () => {
+    const el = await mount(makeHass(states(detailFx)));
+    expect(sr(el).querySelector('input, select, tc-slider, [role="switch"], [role="slider"]')).toBeNull();
   });
 });
 

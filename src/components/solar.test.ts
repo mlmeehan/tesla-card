@@ -24,6 +24,7 @@ import { STRINGS } from '../strings';
 import { DEFAULT_ENTITIES } from '../const';
 import awakeFx from '../fixtures/model-y-awake.json';
 import allUnresolvedFx from '../fixtures/all-unresolved.json';
+import detailFx from '../fixtures/energy-detail.json';
 import type { HassEntity, HomeAssistant, TeslaCardConfig } from '../types';
 
 const CONFIG: TeslaCardConfig = { type: 'custom:tesla-card' };
@@ -160,9 +161,10 @@ describe('Story 6.4 — live weather vignette (AC1/AC2/AC4)', () => {
     const art = sr(el).querySelector('.wx-art');
     expect(art).not.toBeNull(); // vignette present
     expect(sr(el).querySelector('.stat')).not.toBeNull(); // production tile present
-    // DOM order: the vignette (.wx) is the FIRST child of the body, above the stat.
-    const body = sr(el).querySelector('.eco-body')!;
-    expect(body.firstElementChild!.classList.contains('wx')).toBe(true);
+    // Story 8.1: the vignette is Solar's hero-art slot (`.eco-hero`), and the
+    // production tile sits in the lead readout row below it.
+    const hero = sr(el).querySelector('.eco-hero')!;
+    expect(hero.querySelector('.wx')).not.toBeNull();
     const wx = sr(el).querySelector('.wx')!;
     const stat = sr(el).querySelector('.stat')!;
     // compareDocumentPosition: FOLLOWING (4) ⇒ stat comes after the vignette.
@@ -256,6 +258,38 @@ describe('Story 6.4 — live weather vignette (AC1/AC2/AC4)', () => {
     expect(wx!.querySelector('.eco-stamp')).toBeNull();
     expect(wx!.querySelector('.tc-stale-copy')).toBeNull();
     expect(wx!.textContent ?? '').not.toContain(STRINGS.hero.updatedPrefix);
+  });
+});
+
+describe('Story 8.1 — detail layout: stat grid, deep-link, sensor honesty', () => {
+  test('AC2 — present telemetry renders its tile (Generated / Exported), values shown', async () => {
+    const el = await mount(makeHass(states(detailFx)));
+    const txt = sr(el).textContent ?? '';
+    expect(txt).toContain(STRINGS.ecosystem.solar.generated);
+    expect(txt).toContain('15.7'); // solar_generated value (kWh)
+    expect(txt).toContain(STRINGS.ecosystem.solar.exported);
+  });
+
+  test('AC2 — absent telemetry hides its tile (no blank, no fabricated 0), lead still renders', async () => {
+    // awakeFx has solar_power but NO solar_generated/solar_exported → tiles hide.
+    const el = await mount(makeHass(states(awakeFx)));
+    const txt = sr(el).textContent ?? '';
+    expect(sr(el).querySelector('.stat')).not.toBeNull(); // lead production tile present
+    expect(txt).not.toContain(STRINGS.ecosystem.solar.generated);
+    expect(txt).not.toContain('NaN');
+  });
+
+  test('AC1 — the deep-link chip is present on the live layout, absent on calm empty', async () => {
+    const live = await mount(makeHass(states(detailFx)));
+    expect(sr(live).querySelector('.eco-deeplink')).not.toBeNull();
+    const empty = await mount(makeHass(states(allUnresolvedFx)));
+    expect(sr(empty).querySelector('.eco-deeplink')).toBeNull();
+  });
+
+  test('AC3 — Solar is a Sensor: NO write control (no input/select/slider/switch)', async () => {
+    const el = await mount(makeHass(states(detailFx)));
+    expect(sr(el).querySelector('input, select, tc-slider, [role="switch"], [role="slider"]')).toBeNull();
+    expect(sr(el).querySelector('.eco-kind')!.textContent).toContain(STRINGS.ecosystem.sensorTag);
   });
 });
 

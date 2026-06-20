@@ -1,12 +1,12 @@
 import { html, nothing, type PropertyValues, type TemplateResult } from 'lit';
 import { customElement } from 'lit/decorators.js';
-import { mdiSolarPower } from '@mdi/js';
+import { mdiSolarPower, mdiExport } from '@mdi/js';
 import { EcosystemCard, ecosystemShellStyles, accentVar } from './ecosystem-card';
 import { weatherVignette, weatherVignetteStyles } from './weather-vignette';
 import { sharedStyles } from '../styles';
 import { STRINGS } from '../strings';
 import { statTile, formatAgeHint } from '../ui';
-import { resolveEnergyEntities, numById, type EnergyEntities } from '../data/energy';
+import { resolveEnergyEntities, numById, unitById, type EnergyEntities } from '../data/energy';
 import { read, readRaw, referenceNow } from '../data/freshness';
 import { formatNumber } from '../helpers';
 import type { LovelaceCard, TeslaCardConfig } from '../types';
@@ -99,16 +99,46 @@ export class TcSolar extends EcosystemCard implements LovelaceCard {
     const stamp = r.staleness === 'fresh' ? undefined : formatAgeHint(r.lastUpdated, now);
     const kw = `${formatNumber(value, 1)} kW`;
 
-    return this.renderShell(
-      { accent, label, stamp, ariaLabel: `${label} ${kw}` },
-      // Vignette is the card's "hero" context; the kW reading sits below it.
-      html`${vignette}${statTile({
-        icon: mdiSolarPower,
-        label: STRINGS.ecosystem.solar.production,
-        value: kw,
-        color: accentVar(accent),
-      })}`
+    // Lead readout = production kW (unchanged tile, now in the readout row).
+    const production = statTile({
+      icon: mdiSolarPower,
+      label: STRINGS.ecosystem.solar.production,
+      value: kw,
+      color: accentVar(accent),
+    });
+
+    // Detail stat-grid: cumulative energy totals, resolved by function-name and
+    // hide-when-missing (NaN-safe). Unit read live from the entity (the totals
+    // are kWh on this integration; never assume).
+    const e = this._energy ?? {};
+    const tiles: Array<TemplateResult | typeof nothing> = [
+      this._kwhTile(e.solar_generated, mdiSolarPower, STRINGS.ecosystem.solar.generated),
+      this._kwhTile(e.solar_exported, mdiExport, STRINGS.ecosystem.solar.exported),
+    ];
+
+    // Status dot: live while producing, idle at rest, stale on old data.
+    const state = stamp ? 'stale' : value > 0.05 ? 'live' : 'idle';
+
+    return this.renderDetail(
+      { accent, label, stamp, state, kind: 'sensor', ariaLabel: `${label} ${kw}` },
+      // Vignette is the card's hero-art slot (8.2 reuses it); the kW is the lead.
+      { hero: vignette, readout: production, tiles }
     );
+  }
+
+  /** A NaN-safe cumulative-energy (kWh) stat tile; hides when its entity is absent. */
+  private _kwhTile(
+    id: string | undefined,
+    iconPath: string,
+    label: string
+  ): TemplateResult | typeof nothing {
+    const v = numById(this.hass, id);
+    return statTile({
+      icon: iconPath,
+      label,
+      value: v === undefined ? undefined : `${formatNumber(v, 1)} ${unitById(this.hass, id) ?? 'kWh'}`,
+      color: accentVar('amber'),
+    });
   }
 
   static override styles = [sharedStyles, ecosystemShellStyles, weatherVignetteStyles];

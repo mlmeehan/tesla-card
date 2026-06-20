@@ -458,6 +458,70 @@ export const sharedStyles = css`
     margin: 2px 0;
   }
 
+  /* ── ecosystem detail primitives (Story 8.1) ────────────────────────────
+     The rounded detail bits live HERE (not in ecosystemShellStyles), beside the
+     other shared rounded primitives — the ecosystem shell must declare no
+     border-radius/elevation recipe of its own (that belongs to .surface). The
+     status dot reads the inherited --node-accent (set by accentVar on .surface;
+     not a --tc-* token, so it needs no fallback) for the live state. */
+  .eco-dot {
+    flex: 0 0 auto;
+    width: 9px;
+    height: 9px;
+    border-radius: 50%;
+    background: var(--tc-text-mute, #64748b);
+  }
+  .eco-dot.live {
+    background: var(--node-accent, var(--tc-green, #34d399));
+    box-shadow: 0 0 8px var(--node-accent, var(--tc-green, #34d399));
+  }
+  .eco-dot.idle {
+    background: var(--tc-text-mute, #64748b);
+  }
+  .eco-dot.stale {
+    background: var(--tc-text-dim, #9aa7b8);
+  }
+  /* Honest "Sensor" mark (UX-DR24): a quiet read-only chip, never a control. */
+  .eco-kind {
+    flex: 0 0 auto;
+    padding: 2px 8px;
+    border-radius: var(--tc-pill, 999px);
+    background: var(--tc-surface-2, rgba(255, 255, 255, 0.07));
+    border: 1px solid var(--tc-border, rgba(255, 255, 255, 0.09));
+    color: var(--tc-text-dim, #9aa7b8);
+    font-size: var(--tc-fs-label, 11.5px);
+    font-weight: var(--tc-fw-body, 600);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    white-space: nowrap;
+  }
+  /* Dashed deep-link chip → HA Energy dashboard. ≥44px hit area; keyboard-
+     operable (role/tabindex/Enter/Space wired in ecosystem-card.ts). */
+  .eco-deeplink {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    min-height: 44px;
+    box-sizing: border-box;
+    padding: var(--tc-space-2, 8px) var(--tc-space-3, 12px);
+    border-radius: var(--tc-radius-md, 16px);
+    border: 1px dashed var(--tc-border, rgba(255, 255, 255, 0.09));
+    background: transparent;
+    color: var(--tc-text-dim, #9aa7b8);
+    font-size: var(--tc-fs-label, 11.5px);
+    font-weight: var(--tc-fw-body, 600);
+    cursor: pointer;
+    user-select: none;
+  }
+  .eco-deeplink:hover {
+    color: var(--tc-text, #f1f5f9);
+    border-color: var(--tc-text-mute, #64748b);
+  }
+  .eco-deeplink:focus-visible {
+    outline: var(--tc-focus, 2px solid #38bdf8);
+    outline-offset: var(--tc-focus-offset, 2px);
+  }
+
   /* ── battery gauge ─────────────────────────────────────────────────── */
   .tc-bat {
     position: relative;

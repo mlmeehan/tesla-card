@@ -22,7 +22,7 @@
 // the server reference (bumping one entity's last_updated) back-dates the read into
 // stale/asleep — referenceNow is the max stamp. Entity ids come from const.ts
 // DEFAULT_ENTITIES (never inlined); a FRESH hass clone per mount.
-import { css, nothing, type TemplateResult } from 'lit';
+import { css, html, nothing, type TemplateResult } from 'lit';
 import { mdiBatteryHigh } from '@mdi/js';
 import { afterEach, describe, expect, test } from 'vitest';
 import * as shellModule from './ecosystem-card';
@@ -32,6 +32,8 @@ import {
   accentVar,
   type Accent,
   type ShellOpts,
+  type DetailOpts,
+  type DetailParts,
 } from './ecosystem-card';
 import { sharedStyles, ACCENT_SEMANTICS } from '../styles';
 import { statTile } from '../ui';
@@ -359,5 +361,162 @@ describe('renderShell — header-omission and aria-label affordance branches', (
     expect(rawSurface(withAria).getAttribute('aria-label')).toBe('Solar');
     const noAria = await mountRaw({ accent: 'teal' });
     expect(rawSurface(noAria).hasAttribute('aria-label')).toBe(false); // not aria-label="undefined"
+  });
+});
+
+// ── Story 8.1 — the renderDetail full detail layout + deep-link chip ───────────
+// A minimal concrete card that exercises renderDetail directly (the calm-empty
+// path still routes through renderShell, so AC4 is provably unchanged). Drives the
+// shell's OWN detail contract — header / hero slot / readout / grid / deep-link —
+// independent of any one card's telemetry.
+class EcoDetail extends EcosystemCard {
+  static override styles = [sharedStyles, ecosystemShellStyles];
+  detailOpts: DetailOpts = { accent: 'amber', label: 'Solar', kind: 'sensor', state: 'live' };
+  parts: DetailParts = {};
+  empty = false;
+  override render(): TemplateResult {
+    return this.empty
+      ? this.renderShell({ accent: 'amber', label: 'Solar' }, html`<p class="eco-empty">No data yet.</p>`)
+      : this.renderDetail(this.detailOpts, this.parts);
+  }
+}
+customElements.define('tc-eco-detail', EcoDetail);
+
+type DetailEl = EcoDetail & { updateComplete: Promise<boolean> };
+async function mountDetail(
+  detailOpts: DetailOpts,
+  parts: DetailParts = {},
+  empty = false
+): Promise<DetailEl> {
+  const el = document.createElement('tc-eco-detail') as DetailEl;
+  el.detailOpts = detailOpts;
+  el.parts = parts;
+  el.empty = empty;
+  document.body.appendChild(el);
+  await el.updateComplete;
+  return el;
+}
+const dsr = (el: DetailEl) => el.shadowRoot!;
+const aTile = (label: string) =>
+  statTile({ icon: mdiBatteryHigh, label, value: '5.0 kWh', color: accentVar('amber') });
+
+describe('Story 8.1 AC1 — detail layout composes header + hero slot + grid + deep-link', () => {
+  test('renders the status header (dot + label) inside the .surface', async () => {
+    const el = await mountDetail({ accent: 'amber', label: 'Solar', state: 'live' });
+    const surf = dsr(el).querySelector('.surface.eco-detail');
+    expect(surf).not.toBeNull();
+    expect(dsr(el).querySelector('.eco-status .eco-dot')).not.toBeNull();
+    expect(dsr(el).querySelector('.eco-status .label')!.textContent).toContain('Solar');
+  });
+
+  test('the status dot reflects the derived state class (live/idle/stale)', async () => {
+    for (const state of ['live', 'idle', 'stale'] as const) {
+      const el = await mountDetail({ accent: 'amber', label: 'S', state });
+      expect(dsr(el).querySelector('.eco-dot')!.classList.contains(state)).toBe(true);
+    }
+  });
+
+  test('the hero-art slot (.eco-hero) renders; its content is the passed hero', async () => {
+    const el = await mountDetail(
+      { accent: 'amber', label: 'Solar' },
+      { hero: html`<div class="my-hero"></div>` }
+    );
+    expect(dsr(el).querySelector('.eco-hero .my-hero')).not.toBeNull();
+  });
+
+  test('a present tile renders in the .grid.g3 region; the region is omitted when all tiles hide', async () => {
+    const withTile = await mountDetail({ accent: 'amber', label: 'Solar' }, { tiles: [aTile('Generated')] });
+    expect(withTile.shadowRoot!.querySelector('.grid.g3.eco-grid .stat')).not.toBeNull();
+    // All-missing tiles (statTile → nothing) ⇒ no empty grid region rendered.
+    const noTiles = await mountDetail(
+      { accent: 'amber', label: 'Solar' },
+      { tiles: [statTile({ icon: mdiBatteryHigh, label: 'x', value: undefined })] }
+    );
+    expect(noTiles.shadowRoot!.querySelector('.eco-grid')).toBeNull();
+  });
+
+  test('the lead readout row renders when provided, omitted otherwise', async () => {
+    const withReadout = await mountDetail({ accent: 'amber', label: 'Solar' }, { readout: aTile('Production') });
+    expect(withReadout.shadowRoot!.querySelector('.eco-readout .stat')).not.toBeNull();
+    const noReadout = await mountDetail({ accent: 'amber', label: 'Solar' });
+    expect(noReadout.shadowRoot!.querySelector('.eco-readout')).toBeNull();
+  });
+
+  test('AC3 — kind:"sensor" marks the header with the honest Sensor tag', async () => {
+    const sensor = await mountDetail({ accent: 'amber', label: 'Solar', kind: 'sensor' });
+    expect(sensor.shadowRoot!.querySelector('.eco-kind')!.textContent).toContain(STRINGS.ecosystem.sensorTag);
+    const unmarked = await mountDetail({ accent: 'amber', label: 'Solar' });
+    expect(unmarked.shadowRoot!.querySelector('.eco-kind')).toBeNull();
+  });
+});
+
+describe('Story 8.1 AC1/AC4 — deep-link chip → HA Energy dashboard', () => {
+  test('the chip is a real keyboard-operable button (role/tabindex/aria/≥44px)', async () => {
+    const el = await mountDetail({ accent: 'amber', label: 'Solar' });
+    const chip = dsr(el).querySelector<HTMLElement>('.eco-deeplink')!;
+    expect(chip).not.toBeNull();
+    expect(chip.getAttribute('role')).toBe('button');
+    expect(chip.getAttribute('tabindex')).toBe('0');
+    expect(chip.getAttribute('aria-label')).toBe(STRINGS.ecosystem.deepLink);
+    // ≥44px hit area: jsdom computes no layout, so pin the CSS rule (gate-shaped).
+    const shared = (sharedStyles as unknown as { cssText: string }).cssText;
+    const rule = shared.match(/\.eco-deeplink\s*\{[^}]*\}/)![0];
+    expect(rule).toContain('min-height: 44px');
+  });
+
+  test('AC4 — the chip appears ONLY on the live detail layout, never on the calm empty state', async () => {
+    const live = await mountDetail({ accent: 'amber', label: 'Solar' });
+    expect(live.shadowRoot!.querySelector('.eco-deeplink')).not.toBeNull();
+    const empty = await mountDetail({ accent: 'amber', label: 'Solar' }, {}, true);
+    expect(empty.shadowRoot!.querySelector('.eco-deeplink')).toBeNull();
+    expect(empty.shadowRoot!.querySelector('.eco-empty')).not.toBeNull(); // calm empty unchanged
+  });
+
+  test('clicking pushes /energy then fires a bubbling+composed location-changed (no full reload)', async () => {
+    const el = await mountDetail({ accent: 'amber', label: 'Solar' });
+    const chip = dsr(el).querySelector<HTMLElement>('.eco-deeplink')!;
+    const origPush = history.pushState;
+    const pushed: string[] = [];
+    history.pushState = function (this: History, ...args: Parameters<History['pushState']>) {
+      pushed.push(String(args[2]));
+      return origPush.apply(this, args);
+    };
+    let located: CustomEvent | undefined;
+    const onLoc = (e: Event) => (located = e as CustomEvent);
+    document.addEventListener('location-changed', onLoc);
+    try {
+      chip.click();
+    } finally {
+      history.pushState = origPush;
+      document.removeEventListener('location-changed', onLoc);
+    }
+    expect(pushed).toContain('/energy'); // pushState('/energy') happened
+    expect(located).toBeDefined(); // location-changed escaped the shadow (composed) to document
+    expect((located as CustomEvent).bubbles).toBe(true);
+    expect((located as CustomEvent).composed).toBe(true);
+  });
+
+  test('Enter and Space also activate the chip (keyboard parity)', async () => {
+    for (const key of ['Enter', ' '] as const) {
+      const el = await mountDetail({ accent: 'amber', label: 'Solar' });
+      const chip = dsr(el).querySelector<HTMLElement>('.eco-deeplink')!;
+      const origPush = history.pushState;
+      const pushed: string[] = [];
+      history.pushState = function (this: History, ...args: Parameters<History['pushState']>) {
+        pushed.push(String(args[2]));
+        return origPush.apply(this, args);
+      };
+      let located = false;
+      const onLoc = () => (located = true);
+      document.addEventListener('location-changed', onLoc);
+      try {
+        chip.dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true }));
+      } finally {
+        history.pushState = origPush;
+        document.removeEventListener('location-changed', onLoc);
+      }
+      expect(pushed, `key=${key}`).toContain('/energy');
+      expect(located, `key=${key}`).toBe(true);
+    }
   });
 });

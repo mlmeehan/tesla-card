@@ -62,15 +62,21 @@ export class TcHome extends EcosystemCard implements LovelaceCard {
     const r = read(hass, id!);
     const stamp = r.staleness === 'fresh' ? undefined : formatAgeHint(r.lastUpdated, now);
     const kw = `${formatNumber(value, 1)} kW`;
+    const state = stamp ? 'stale' : value > 0.05 ? 'live' : 'idle';
 
-    return this.renderShell(
-      { accent, label, stamp, ariaLabel: `${label} ${kw}` },
-      statTile({
-        icon: mdiHomeLightningBolt,
-        label: STRINGS.ecosystem.home.consumption,
-        value: kw,
-        color: accentVar(accent),
-      })
+    // Home exposes no clean single energy-today/peak entity on this integration,
+    // so the detail layout is honestly lead-only (the stat grid stays empty and
+    // is omitted) — the minimal-install path AC2 calls out, by construction.
+    return this.renderDetail(
+      { accent, label, stamp, state, kind: 'sensor', ariaLabel: `${label} ${kw}` },
+      {
+        readout: statTile({
+          icon: mdiHomeLightningBolt,
+          label: STRINGS.ecosystem.home.consumption,
+          value: kw,
+          color: accentVar(accent),
+        }),
+      }
     );
   }
 
