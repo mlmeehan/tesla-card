@@ -281,3 +281,137 @@ describe('AC4 — registration + honest degradation', () => {
     expect(sr(el).querySelector('.scene-bus')).not.toBeNull();
   });
 });
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Story 6.6 — the polished composed view: ribbon, Gateway bus, focus, reflow.
+// jsdom returns zero rects, so the bus geometry pins WIRING (the Gateway trunk is
+// drawn, not the star; the axis flips on reflow); pixel geometry is the pure hub's
+// own concern (my-home.test.ts), proven there against synthetic anchors.
+// ═══════════════════════════════════════════════════════════════════════════
+const recompute = (el: Scene): void =>
+  (el as unknown as { _recomputeGeometry: () => void })._recomputeGeometry();
+
+describe('AC1 — the summary ribbon above the explicit two-row grid', () => {
+  test('a .ribbon renders ABOVE the .scene-grid, carrying the aggregate labels', async () => {
+    const el = await mount(makeHass(states(awakeFx)));
+    const scene = sr(el).querySelector('.scene')!;
+    const ribbon = scene.querySelector('.ribbon');
+    const grid = scene.querySelector('.scene-grid');
+    expect(ribbon).not.toBeNull();
+    expect(grid).not.toBeNull();
+    // ribbon comes before the grid in DOM order (above it).
+    expect(ribbon!.compareDocumentPosition(grid!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    const txt = ribbon!.textContent ?? '';
+    expect(txt).toContain(STRINGS.scene.ribbon.generation);
+    expect(txt).toContain(STRINGS.scene.ribbon.consumption);
+    expect(txt).toContain(STRINGS.scene.ribbon.net);
+  });
+
+  test('the grid uses the explicit 380px×3 / 80px-gap two-row layout (not auto-fit)', () => {
+    const flatten = (s: unknown): string =>
+      Array.isArray(s)
+        ? s.map(flatten).join('\n')
+        : ((s as { cssText?: string })?.cssText ?? '');
+    const cssText = flatten((TcMyHome as unknown as { styles: unknown }).styles);
+    expect(cssText).toContain('380px 380px 380px');
+    expect(cssText).toContain('column-gap: 80px');
+    expect(cssText).not.toContain('auto-fit');
+    // role-fixed placement + the phone breakpoint.
+    expect(cssText).toContain('grid-template-areas');
+    expect(/max-width:\s*540px/.test(cssText)).toBe(true);
+  });
+
+  test('an absent node still omits its cell + anchor (the 6.5 present-gating holds)', async () => {
+    const s = states(awakeFx);
+    const batteryId = energyIds(s).battery_power!;
+    delete s[batteryId];
+    const el = await mount(makeHass(s));
+    expect(sr(el).querySelector('.scene-cell[data-node="powerwall"]')).toBeNull();
+  });
+});
+
+describe('AC2 — the Gateway running-net trunk replaces the star', () => {
+  test('the overlay draws the Gateway trunk (rail + flows), not the star chips', async () => {
+    const el = await mount(makeHass(states(awakeFx)));
+    recompute(el); // jsdom: zero rects, but the trunk + segments still draw
+    await el.updateComplete;
+    const overlay = sr(el).querySelector('.scene-bus')!;
+    expect(overlay.querySelector('.gw-trunk-base')).not.toBeNull(); // the Gateway rail
+    expect(overlay.querySelectorAll('.gw-leg').length).toBeGreaterThan(0); // node legs
+    expect(overlay.querySelector('.sb-chip')).toBeNull(); // the star chips are retired
+  });
+
+  test('the bus aria-label still names each present node + kW (the colour-blind-safe floor)', async () => {
+    const el = await mount(makeHass(states(awakeFx)));
+    const label = sr(el).querySelector('.scene-bus')!.getAttribute('aria-label') ?? '';
+    expect(label).toContain(STRINGS.energy.nodes.solar);
+    expect(label).toMatch(/kW/);
+  });
+});
+
+describe('AC3 — hover/keyboard focus-highlight: dim the rest, light the coupled legs + cards', () => {
+  test('focusin on a SOURCE cell adds .focus and lights the coupled LOAD cells', async () => {
+    const el = await mount(makeHass(states(awakeFx)));
+    const solar = sr(el).querySelector('.scene-cell[data-node="solar"]')!;
+    solar.dispatchEvent(new Event('focusin', { bubbles: true }));
+    await el.updateComplete;
+    const scene = sr(el).querySelector('.scene')!;
+    expect(scene.classList.contains('focus')).toBe(true);
+    // solar (source) couples to the loads home + wall_connector, not the other sources.
+    expect(sr(el).querySelector('.scene-cell[data-node="home"]')!.classList.contains('lit')).toBe(true);
+    expect(
+      sr(el).querySelector('.scene-cell[data-node="wall_connector"]')!.classList.contains('lit')
+    ).toBe(true);
+    expect(sr(el).querySelector('.scene-cell[data-node="grid"]')!.classList.contains('lit')).toBe(false);
+  });
+
+  test('focusout clears the highlight', async () => {
+    const el = await mount(makeHass(states(awakeFx)));
+    const solar = sr(el).querySelector('.scene-cell[data-node="solar"]')!;
+    solar.dispatchEvent(new Event('focusin', { bubbles: true }));
+    await el.updateComplete;
+    solar.dispatchEvent(new Event('focusout', { bubbles: true }));
+    await el.updateComplete;
+    expect(sr(el).querySelector('.scene')!.classList.contains('focus')).toBe(false);
+  });
+
+  test('focusing a card does NOT add/remove cards (no navigation, no page change)', async () => {
+    const el = await mount(makeHass(states(awakeFx)));
+    const before = cellTags(el);
+    const solar = sr(el).querySelector('.scene-cell[data-node="solar"]')!;
+    solar.dispatchEvent(new Event('mouseenter', { bubbles: true }));
+    await el.updateComplete;
+    expect(cellTags(el)).toEqual(before); // same cards — a dim/light, not a swap
+  });
+
+  test('cards are keyboard-focusable (tabindex=0)', async () => {
+    const el = await mount(makeHass(states(awakeFx)));
+    const cells = [...sr(el).querySelectorAll('.scene-cell')];
+    expect(cells.length).toBeGreaterThan(0);
+    expect(cells.every((c) => c.getAttribute('tabindex') === '0')).toBe(true);
+  });
+});
+
+describe('AC4 — reflow: horizontal desktop bus → vertical phone bus', () => {
+  test('the trunk is HORIZONTAL on a wide spread (axis x)', async () => {
+    const el = await mount(makeHass(states(awakeFx)));
+    const inst = el as unknown as { _anchors: Record<string, unknown>; _axis: string };
+    inst._anchors = { solar: { left: 0, top: 0, width: 100, height: 50 }, home: { left: 400, top: 0, width: 100, height: 50 }, bus: { left: 250, top: 25, width: 0, height: 0 } };
+    inst._axis = 'x';
+    (el as unknown as { requestUpdate(): void }).requestUpdate();
+    await el.updateComplete;
+    const trunk = sr(el).querySelector('.gw-trunk-base')!;
+    expect(trunk.getAttribute('y1')).toBe(trunk.getAttribute('y2')); // constant y ⇒ horizontal
+  });
+
+  test('the trunk RE-ROUTES vertical on a tall spread (axis y — the ≤540px reflow)', async () => {
+    const el = await mount(makeHass(states(awakeFx)));
+    const inst = el as unknown as { _anchors: Record<string, unknown>; _axis: string };
+    inst._anchors = { solar: { left: 0, top: 0, width: 100, height: 50 }, home: { left: 0, top: 400, width: 100, height: 50 }, bus: { left: 50, top: 225, width: 0, height: 0 } };
+    inst._axis = 'y';
+    (el as unknown as { requestUpdate(): void }).requestUpdate();
+    await el.updateComplete;
+    const trunk = sr(el).querySelector('.gw-trunk-base')!;
+    expect(trunk.getAttribute('x1')).toBe(trunk.getAttribute('x2')); // constant x ⇒ vertical
+  });
+});

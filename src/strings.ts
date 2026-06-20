@@ -331,6 +331,19 @@ export const STRINGS = {
     // Group label for the composed container (the live overlay carries its own
     // state-bearing label from the renderer).
     label: 'My Home energy scene',
+    // Summary-ribbon aggregate labels (Story 6.6) — whole-home generation /
+    // consumption / net, all derived from the ONE `computeBalance` net the bus
+    // walks (so the ribbon and bus agree by construction). The grid term is the
+    // honest "net" headline: importing / exporting, or self-supplied when islanded.
+    ribbon: {
+      generation: 'Generation',
+      consumption: 'Consumption',
+      net: 'Net',
+      importing: 'Importing',
+      exporting: 'Exporting',
+      selfSupplied: 'Self-supplied',
+      unit: 'kW',
+    },
   },
 
   editor: {

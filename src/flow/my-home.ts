@@ -1,6 +1,8 @@
 import type { EnergyRole } from '../data/registry';
 import { ENERGY_ROLES } from './binding';
-import { BUS_NODE_ID } from './model';
+import { BUS_NODE_ID, IDLE_KW, type FlowModel } from './model';
+import { computeBalance, type Balance } from './balance';
+import { edgeVisual } from './renderer';
 import type { RectLike } from './scene-bus';
 
 /**
@@ -131,4 +133,215 @@ export class RafCoalescer {
   get pending(): boolean {
     return this._handle !== null;
   }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Story 6.6 — the Gateway running-net bus (a VIEW of the balance authority).
+//
+// FR-33 ↔ UX-DR14: the running-net is a RENDERING-LAYER derivation of the shared
+// `FlowModel` node-nets, NOT a new engine. `computeBalance(model).net[role]` is
+// each present node's signed bus injection (`+` source / `−` load — already
+// oriented by the registry `BUS_ORIENTATION`); walking the present taps along the
+// bus axis and accumulating those values IS the per-segment running net. No second
+// balance, no copied sign convention, no `flow/{model,balance,binding}` edit.
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * The trunk-flow WIDTH ceiling (`W_max`, canonical units) — the ONLY new constant
+ * this story introduces. It clamps a very-high-kW segment's `edgeVisual` width so a
+ * thick flow never overflows the bus trunk (whose neutral rail is {@link
+ * BUS_TRUNK_WIDTH} px), MIRRORING the intent of `edgeVisual`'s existing `dur` floor
+ * (a magnitude clamp at the high end). The kW→visual math itself stays the shared
+ * {@link edgeVisual} — we only cap its `width` output here, never fork the formula.
+ */
+export const BUS_WIDTH_MAX = 7;
+
+/** The neutral Gateway trunk rail width (px) — the channel the per-segment flows ride. */
+export const BUS_TRUNK_WIDTH = 7;
+
+/** Padding (px) the neutral rail extends past the outermost taps (the mockup pads the trunk). */
+export const BUS_TRUNK_PAD = 24;
+
+/** Which world axis the Gateway trunk runs along: `x` = horizontal (desktop), `y` = vertical (phone). */
+export type BusAxis = 'x' | 'y';
+
+/** A segment's flow sense: `forward` = toward increasing position (right/down), `reverse` = the converse. */
+export type SegDirection = 'forward' | 'reverse' | 'none';
+
+/**
+ * One trunk segment between two consecutive taps — geometry-AGNOSTIC: `from`/`to`
+ * are positions ALONG the bus axis and `cross` is the trunk's constant cross-axis
+ * coordinate, so the SAME walk serves the desktop horizontal bus (`axis:'x'` →
+ * `from`/`to` are x, `cross` is busY) and the phone vertical bus (`axis:'y'` →
+ * `from`/`to` are y, `cross` is busX). `net` is the running sum crossing this cut.
+ */
+export interface GatewaySegment {
+  /** Running net (kW, signed) crossing this segment: `+source / −load` accumulated along the axis. */
+  net: number;
+  /** Segment start position ALONG the bus axis (px). */
+  from: number;
+  /** Segment end position ALONG the bus axis (px) — the next tap, or the padded trunk end. */
+  to: number;
+  /** The trunk's constant CROSS-axis coordinate (px): busY for `axis:'x'`, busX for `axis:'y'`. */
+  cross: number;
+  /** Stroke width: `min(BUS_WIDTH_MAX, edgeVisual(net).width)` (the shared math + the new ceiling). */
+  width: number;
+  /** Dash-flow period (s): `edgeVisual(net).durSec` (the shared math — floor preserved). */
+  durSec: number;
+  /** Sign → sense: `net > 0` ⇒ `forward`, `net < 0` ⇒ `reverse`, `|net| < IDLE_KW` ⇒ `none`. */
+  direction: SegDirection;
+  /** `false` for a sub-deadband segment (`|net| < IDLE_KW`) — a dead/calm rail, no motion. */
+  active: boolean;
+}
+
+/** A node anchor's centre coordinate along the chosen axis. */
+function centreAlong(r: RectLike, axis: BusAxis): number {
+  return axis === 'x' ? r.left + r.width / 2 : r.top + r.height / 2;
+}
+
+/**
+ * Pick the bus axis from the present anchor SPREAD: the trunk runs along whichever
+ * world axis the taps are spread WIDER on (Task 5 — "drive the trunk orientation
+ * off the anchor spread"). The desktop `380px×3` grid spreads wide on x ⇒ `x`; the
+ * `≤540px` single-column reflow stacks tall on y ⇒ `y`. The reflow itself is what
+ * re-runs this (the 6.5 `ResizeObserver` → recompute), never a `hass` tick.
+ */
+export function busAxis(anchors: Readonly<Record<string, RectLike>>): BusAxis {
+  const rects = Object.keys(anchors)
+    .filter((k) => k !== BUS_NODE_ID)
+    .map((k) => anchors[k]);
+  if (rects.length < 2) return 'x';
+  const xs = rects.map((r) => r.left + r.width / 2);
+  const ys = rects.map((r) => r.top + r.height / 2);
+  const xr = Math.max(...xs) - Math.min(...xs);
+  const yr = Math.max(...ys) - Math.min(...ys);
+  return xr >= yr ? 'x' : 'y';
+}
+
+/**
+ * The Gateway running-net derivation (Task 1 — the #1 test target). PURE: a
+ * `FlowModel` (+ optional precomputed {@link Balance}) and relativized anchors in,
+ * a plain {@link GatewaySegment}[] out — no DOM, no `hass`.
+ *
+ * Algorithm (mirrors `myhome-cards-bus.html:907–917`, but sourced from `net[]`, not
+ * a hand-built tap array): take each present, anchored node's signed injection from
+ * `computeBalance(model).net[role]` (called ONCE — never twice, never re-signed),
+ * sort the taps by centre-position along the axis, walk them accumulating `run +=
+ * net[role]`, and emit a segment per consecutive pair carrying that running `run`.
+ * Each segment's width/dur come from the SHARED {@link edgeVisual} applied to the
+ * segment net, with the new {@link BUS_WIDTH_MAX} ceiling on width; its sign sets
+ * `direction`; a sub-`IDLE_KW` net is a dead rail (`active:false`). Where the
+ * running net flips sign across a load fed from both sides, the adjacent segments'
+ * directions CONVERGE on it — a truthful Kirchhoff read (falls out of the walk).
+ */
+export function gatewaySegments(
+  model: FlowModel,
+  anchors: Readonly<Record<string, RectLike>>,
+  opts: { balance?: Balance; axis?: BusAxis } = {}
+): GatewaySegment[] {
+  const net = (opts.balance ?? computeBalance(model)).net;
+  const axis = opts.axis ?? busAxis(anchors);
+
+  // Present, anchored taps — each tap's value IS its signed bus injection net[role]
+  // (do NOT re-apply orientation: BUS_ORIENTATION already baked +source/−load in).
+  const taps = model.nodes
+    .filter((n) => n.present && anchors[n.role])
+    .map((n) => ({ pos: centreAlong(anchors[n.role], axis), k: net[n.role] ?? 0 }))
+    .sort((a, b) => a.pos - b.pos);
+  if (!taps.length) return [];
+
+  // The trunk's cross-axis line: the bus-junction centre (reuse deriveBusAnchor's
+  // centroid when no explicit BUS_NODE_ID rect was supplied).
+  const bus = anchors[BUS_NODE_ID] ?? deriveBusAnchor(anchors);
+  const cross = bus ? (axis === 'x' ? bus.top + bus.height / 2 : bus.left + bus.width / 2) : 0;
+  const trunkEnd = taps[taps.length - 1].pos + BUS_TRUNK_PAD;
+
+  let run = 0;
+  const segs: GatewaySegment[] = [];
+  for (let i = 0; i < taps.length; i++) {
+    run += taps[i].k;
+    const netRun = run;
+    const to = i + 1 < taps.length ? taps[i + 1].pos : trunkEnd;
+    const mag = Math.abs(netRun);
+    const active = mag >= IDLE_KW;
+    const { width, durSec } = edgeVisual(netRun);
+    segs.push({
+      net: netRun,
+      from: taps[i].pos,
+      to,
+      cross,
+      width: Math.min(BUS_WIDTH_MAX, width),
+      durSec,
+      direction: !active ? 'none' : netRun > 0 ? 'forward' : 'reverse',
+      active,
+    });
+  }
+  return segs;
+}
+
+/** Whole-home aggregates for the summary ribbon — derived from the ONE balance net. */
+export interface SceneAggregates {
+  /** Σ of the positive node nets (sources injecting into the bus), kW. */
+  generation: number;
+  /** Σ of the |negative node nets| (loads drawing from the bus), kW. */
+  consumption: number;
+  /** The grid's signed net (`+` import / `−` export), kW; `0` when grid is absent. */
+  gridNet: number;
+  /** `true` when a grid node is present (else the site is islanded / self-supplied). */
+  gridPresent: boolean;
+}
+
+/**
+ * Compute the ribbon aggregates from `computeBalance(model).net` — the SAME source
+ * the bus segments walk, so the ribbon and bus AGREE BY CONSTRUCTION (a mismatch
+ * would be a defect, the Hero halo-vs-edge authority class). Role-generic: source
+ * vs load is read off the net SIGN (the registry orientation), never a per-role
+ * branch. The grid term is the honest "net" headline (import/export, or
+ * self-supplied when the grid is absent).
+ */
+export function sceneAggregates(model: FlowModel, balance?: Balance): SceneAggregates {
+  const net = (balance ?? computeBalance(model)).net;
+  let generation = 0;
+  let consumption = 0;
+  let gridPresent = false;
+  for (const node of model.nodes) {
+    if (!node.present) continue;
+    if (node.role === 'grid') gridPresent = true;
+    const v = net[node.role] ?? 0;
+    if (v > IDLE_KW) generation += v;
+    else if (v < -IDLE_KW) consumption += -v;
+  }
+  return { generation, consumption, gridNet: gridPresent ? (net['grid'] ?? 0) : 0, gridPresent };
+}
+
+/** A node's role THIS tick, by net sign (Powerwall flips source↔load honestly). */
+export type RoleKind = 'source' | 'load' | 'idle';
+
+/** Classify a role as a source/load/idle by its signed net (`> IDLE_KW` / `< −IDLE_KW`). */
+export function roleKind(net: Readonly<Record<string, number>>, role: EnergyRole): RoleKind {
+  const n = net[role] ?? 0;
+  if (n > IDLE_KW) return 'source';
+  if (n < -IDLE_KW) return 'load';
+  return 'idle';
+}
+
+/**
+ * The focus-highlight coupling (Task 4), COMPUTED from the present model — never a
+ * hard-coded 6-node map (the mockup `HILITE`). On a shared bus every present source
+ * couples to every present load (and the converse): focusing a source lights all
+ * current loads; focusing a load lights all current sources. The focused node is
+ * always in the set. An idle-tick node (sub-deadband) lights only itself. Returns
+ * the set of roles to LIGHT (the rest dim).
+ */
+export function coupledRoles(model: FlowModel, focused: EnergyRole, balance?: Balance): Set<EnergyRole> {
+  const net = (balance ?? computeBalance(model)).net;
+  const present = model.nodes.filter((n) => n.present).map((n) => n.role);
+  const lit = new Set<EnergyRole>([focused]);
+  const kind = roleKind(net, focused);
+  if (kind === 'source') {
+    for (const r of present) if (roleKind(net, r) === 'load') lit.add(r);
+  } else if (kind === 'load') {
+    for (const r of present) if (roleKind(net, r) === 'source') lit.add(r);
+  }
+  return lit;
 }

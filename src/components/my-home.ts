@@ -2,20 +2,39 @@ import {
   LitElement,
   html,
   css,
+  svg,
   nothing,
   type PropertyValues,
+  type SVGTemplateResult,
   type TemplateResult,
 } from 'lit';
 import { customElement, property, state, query } from 'lit/decorators.js';
 import { sharedStyles } from '../styles';
 import { STRINGS } from '../strings';
+import { formatNumber } from '../helpers';
+import { formatAgeHint } from '../ui';
 import { resolveEntities } from '../data/resolve';
 import { resolveEnergyEntities, type EnergyEntities } from '../data/energy';
 import { sliceChanged } from '../data/slice';
-import { bindFlowModel } from '../flow/binding';
-import { BUS_NODE_ID, type FlowModel } from '../flow/model';
+import { read, referenceNow } from '../data/freshness';
+import { bindFlowModel, POWER_KEY } from '../flow/binding';
+import { BUS_NODE_ID, IDLE_KW, type FlowEdge, type FlowModel } from '../flow/model';
 import { SceneBusRenderer, sceneBusStyles, type RectLike } from '../flow/scene-bus';
-import { SCENE_NODES, relativeAnchors, deriveBusAnchor, RafCoalescer } from '../flow/my-home';
+import { edgeVisual, NODE_COLOR } from '../flow/renderer';
+import {
+  SCENE_NODES,
+  relativeAnchors,
+  deriveBusAnchor,
+  RafCoalescer,
+  gatewaySegments,
+  sceneAggregates,
+  coupledRoles,
+  busAxis,
+  BUS_WIDTH_MAX,
+  BUS_TRUNK_PAD,
+  type BusAxis,
+  type GatewaySegment,
+} from '../flow/my-home';
 import type { EnergyRole } from '../data/registry';
 import type { HomeAssistant, LovelaceCard, TeslaCardConfig } from '../types';
 
@@ -29,6 +48,15 @@ import './powerwall';
 import './grid';
 import './home';
 import './wall-connector';
+
+/**
+ * The Gateway-bus trunk stroke — the ONE new sanctioned literal this story adds
+ * (DESIGN.md:361), a deliberate named exception alongside the `panel-location` map
+ * gradient and the `tc-slider` `#fff` thumb. It is the VALUE itself (a cool blue
+ * over the navy trunk), NOT a `var(--tc-*)` token, so it carries no DESIGN.md
+ * fallback — it is generic (not a brand colour), so the trade-dress gate passes.
+ */
+const GATEWAY_STROKE = '#cfe2ff';
 
 /** node-id (EnergyRole) → the registered child-card tag that renders it. */
 const NODE_TAG: Readonly<Record<EnergyRole, string>> = {
@@ -87,6 +115,14 @@ export class TcMyHome extends LitElement implements LovelaceCard {
   private _visible = true;
   /** The present-node set the grid last rendered — geometry recomputes when it changes. */
   private _presentKey = '';
+
+  // ── Story 6.6 — Gateway bus + focus-highlight state ─────────────────────────
+  /** The latest container-relative anchors (incl. the {@link BUS_NODE_ID} junction) the overlay draws from. */
+  private _anchors?: Record<string, RectLike>;
+  /** The bus axis the last reflow resolved (`x` desktop horizontal / `y` phone vertical) — geometry-driven. */
+  private _axis: BusAxis = 'x';
+  /** The hovered/keyboard-focused role; drives the dim/light highlight (`undefined` = no focus). */
+  @state() private _focused?: EnergyRole;
 
   // ── LovelaceCard contract (AC4) ────────────────────────────────────────────
 
@@ -257,6 +293,12 @@ export class TcMyHome extends LitElement implements LovelaceCard {
     const bus = deriveBusAnchor(rel);
     if (bus) rel[BUS_NODE_ID] = bus;
     this._bus.setAnchors(rel);
+    // Story 6.6: cache the relativized anchors + the reflow-resolved bus axis for
+    // the Gateway overlay. The axis is geometry-driven (wider anchor spread = the
+    // trunk run) so the `≤540px` single-column reflow flips it to vertical without
+    // a per-`hass`-tick recompute — this runs ONLY from the reflow path (AC4).
+    this._anchors = rel;
+    this._axis = busAxis(rel);
     this.requestUpdate(); // redraw the overlay over the cached geometry
   }
 
@@ -266,29 +308,243 @@ export class TcMyHome extends LitElement implements LovelaceCard {
     if (!this._config) return nothing;
     const cfg = this._resolvedConfig ?? this._config;
     const present = new Set(this._model.nodes.filter((n) => n.present).map((n) => n.role));
+    // The focus coupling (Task 4): when a card is hovered/focused, light it + every
+    // node the shared bus couples it to (a source lights all loads, and converse);
+    // the rest dim. Computed from the present model — never a hard-coded map.
+    const lit = this._focused ? coupledRoles(this._model, this._focused) : undefined;
+
     // Render a card ONLY for present nodes — an absent node is omitted with its
     // bus edge (AC4), never an empty card holding a grid cell + a dead anchor.
+    // Each cell is keyboard-focusable (`tabindex=0`) and drives the SAME highlight
+    // on hover (`mouseenter`) and keyboard focus (`focusin`) — the a11y floor.
     const cards = SCENE_NODES.filter((role) => present.has(role)).map(
       (role) => html`
-        <div class="scene-cell" data-node=${role}>${this._childCard(role, cfg)}</div>
+        <div
+          class="scene-cell ${lit?.has(role) ? 'lit' : ''}"
+          data-node=${role}
+          tabindex="0"
+          @mouseenter=${() => this._focus(role)}
+          @mouseleave=${this._blur}
+          @focusin=${() => this._focus(role)}
+          @focusout=${this._blur}
+        >
+          ${this._childCard(role, cfg)}
+        </div>
       `
     );
 
-    // Layering, back-to-front: the cards (each composites its own vignette
-    // internally — no Scene-level vignette layer) → ONE pointer-events:none bus
-    // overlay SVG. The overlay draws in container-relative px (no viewBox), so the
-    // live anchors line up 1:1 with the cards beneath. A vehicle-only / empty model
-    // ⇒ `_bus.empty` ⇒ the overlay is omitted (no occluding box).
+    // Layering, back-to-front: the summary RIBBON (whole-home aggregates, above the
+    // cards) → the cards (each composites its own vignette internally) → ONE
+    // pointer-events:none bus overlay SVG drawing the Gateway running-net trunk. The
+    // overlay draws in container-relative px (no viewBox), so the live anchors line
+    // up 1:1 with the cards beneath. A vehicle-only / empty model ⇒ `_bus.empty` ⇒
+    // the overlay is omitted (no occluding box).
     return html`
-      <div class="scene" role="group" aria-label=${STRINGS.scene.label}>
+      <div class="scene ${this._focused ? 'focus' : ''}" role="group" aria-label=${STRINGS.scene.label}>
+        ${this._ribbon()}
         <div class="scene-grid">${cards}</div>
         ${this._bus.empty
           ? nothing
           : html`<svg class="scene-bus" role="img" aria-label=${this._bus.label()}>
-              ${this._bus.view()}
+              ${this._gatewayView(lit)}
             </svg>`}
       </div>
     `;
+  }
+
+  // ── focus-highlight (AC3) ───────────────────────────────────────────────────
+  private _focus(role: EnergyRole): void {
+    this._focused = role;
+  }
+  private _blur = (): void => {
+    this._focused = undefined;
+  };
+
+  // ── the summary ribbon (AC1b) ───────────────────────────────────────────────
+  /**
+   * The whole-home aggregate ribbon, derived from the SAME `computeBalance` net the
+   * Gateway bus walks (so ribbon and bus agree by construction — a mismatch would be
+   * a defect). Freshness-honest: a fully-quiescent (stale/asleep) Scene de-emphasizes
+   * the confident tone (`.dim`) AND shows a last-known "updated Nm ago" stamp (via
+   * `referenceNow`/`formatAgeHint`, never `Date.now()`) — never overstating freshness.
+   */
+  private _ribbon(): TemplateResult | typeof nothing {
+    const presentNodes = this._model.nodes.filter((n) => n.present);
+    if (!presentNodes.length) return nothing; // empty Scene ⇒ no ribbon (calm)
+
+    const agg = sceneAggregates(this._model);
+    const quiescent =
+      this._model.edges.length > 0 && this._model.edges.every((e) => e.provenance === 'quiescent');
+    const ageHint = quiescent ? this._sceneAgeHint() : undefined;
+    const r = STRINGS.scene.ribbon;
+    const kw = (v: number): string => `${formatNumber(Math.abs(v), 1)} ${r.unit}`;
+
+    const netValue = !agg.gridPresent
+      ? r.selfSupplied
+      : agg.gridNet > IDLE_KW
+        ? `${r.importing} ${kw(agg.gridNet)}`
+        : agg.gridNet < -IDLE_KW
+          ? `${r.exporting} ${kw(agg.gridNet)}`
+          : r.selfSupplied;
+
+    return html`
+      <div class="ribbon ${quiescent ? 'dim' : ''}">
+        <div class="ribbon-tile">
+          <span class="rk">${r.generation}</span><span class="rv">${kw(agg.generation)}</span>
+        </div>
+        <div class="ribbon-tile">
+          <span class="rk">${r.consumption}</span><span class="rv">${kw(agg.consumption)}</span>
+        </div>
+        <div class="ribbon-tile net">
+          <span class="rk">${r.net}</span><span class="rv">${netValue}</span>
+        </div>
+        ${ageHint ? html`<span class="ribbon-age">${ageHint}</span>` : nothing}
+      </div>
+    `;
+  }
+
+  /**
+   * The freshest "updated Nm ago" stamp across the present energy power reads — the
+   * honest last-known hint when the Scene is quiescent. Routes the `hass.states`
+   * access through `data/freshness` `read` (the sanctioned subtree) and measures age
+   * against `referenceNow` (HA's own clock), never `Date.now()`.
+   */
+  private _sceneAgeHint(): string | undefined {
+    if (!this._energy) return undefined;
+    const now = referenceNow(this.hass);
+    let newest: string | undefined;
+    for (const node of this._model.nodes) {
+      if (!node.present) continue;
+      const id = this._energy[POWER_KEY[node.role]];
+      if (!id) continue;
+      const lu = read(this.hass, id, { now }).lastUpdated;
+      if (lu && (!newest || Date.parse(lu) > Date.parse(newest))) newest = lu;
+    }
+    return formatAgeHint(newest, now);
+  }
+
+  // ── the Gateway running-net overlay (AC2) — drawn from the Task-1 segments ────
+  /**
+   * The Gateway bus overlay: ONE neutral trunk rail with per-segment Kirchhoff flows
+   * (the {@link gatewaySegments} running net) + each present node's leg tapping onto
+   * it. Option (b) of Task 2 — drawn in the element overlay from the pure segments,
+   * leaving the Epic-4 engine files (`scene-bus.ts` data path) untouched (the
+   * cleanest FR-33 story). The state-bearing colour-blind-safe text floor stays the
+   * renderer's `label()` (the overlay's `aria-label`).
+   */
+  private _gatewayView(lit?: Set<EnergyRole>): SVGTemplateResult {
+    const anchors = this._anchors;
+    if (!anchors) return svg``;
+    const segs = gatewaySegments(this._model, anchors, { axis: this._axis });
+    return svg`${this._trunk(segs)}${this._legs(anchors, lit)}`;
+  }
+
+  /** The neutral trunk rail + per-segment animated flows + Kirchhoff arrowheads. */
+  private _trunk(segs: GatewaySegment[]): SVGTemplateResult {
+    if (!segs.length) return svg``;
+    const horiz = this._axis === 'x';
+    // Map an (along-axis pos, cross) pair to (x, y) for the chosen orientation.
+    const P = (pos: number, cross: number): { x: number; y: number } =>
+      horiz ? { x: pos, y: cross } : { x: cross, y: pos };
+
+    const first = segs[0];
+    const last = segs[segs.length - 1];
+    const a = P(first.from - BUS_TRUNK_PAD, first.cross);
+    const b = P(last.to, last.cross);
+    const rail = svg`<line
+      class="gw-trunk-base"
+      x1=${a.x} y1=${a.y} x2=${b.x} y2=${b.y}
+    ></line>`;
+
+    const flows = segs.map((sg) => {
+      if (!sg.active) return svg``; // dead rail (balanced cut) — calm, no flow
+      const forward = sg.direction === 'forward';
+      const s = P(forward ? sg.from : sg.to, sg.cross);
+      const k = P(forward ? sg.to : sg.from, sg.cross);
+      const mid = P((sg.from + sg.to) / 2, sg.cross);
+      return svg`
+        <line
+          class="sb-flow"
+          style="stroke:${GATEWAY_STROKE};animation-duration:${sg.durSec}s"
+          stroke-width=${sg.width}
+          x1=${s.x} y1=${s.y} x2=${k.x} y2=${k.y}
+        ></line>
+        ${this._arrow(mid, k, GATEWAY_STROKE)}
+      `;
+    });
+    return svg`<g class="gw-trunk">${rail}${flows}</g>`;
+  }
+
+  /** A small arrowhead at `at`, pointing from `at` toward `toward`. */
+  private _arrow(at: { x: number; y: number }, toward: { x: number; y: number }, color: string): SVGTemplateResult {
+    const dx = toward.x - at.x;
+    const dy = toward.y - at.y;
+    const d = Math.hypot(dx, dy) || 1;
+    const ux = dx / d;
+    const uy = dy / d;
+    const px = -uy;
+    const py = ux;
+    const L = 9; // tip length
+    const W = 5; // half-spread
+    const tx = at.x + ux * L;
+    const ty = at.y + uy * L;
+    return svg`<path
+      class="gw-head"
+      style="fill:${color}"
+      d="M ${tx} ${ty} L ${at.x + px * W} ${at.y + py * W} L ${at.x - px * W} ${at.y - py * W} Z"
+    ></path>`;
+  }
+
+  /**
+   * Each present node's leg: from the card edge FACING the trunk to the trunk line,
+   * in the node's accent colour (motion when its edge is active). Source cards sit
+   * one side of the trunk and load cards the other, so the near edge (and thus the
+   * leg's down/up sense) falls straight out of the anchor's position vs the trunk.
+   */
+  private _legs(anchors: Readonly<Record<string, RectLike>>, lit?: Set<EnergyRole>): SVGTemplateResult {
+    const horiz = this._axis === 'x';
+    const bus = anchors[BUS_NODE_ID];
+    const cross = bus ? (horiz ? bus.top + bus.height / 2 : bus.left + bus.width / 2) : 0;
+    const edgeByRole = new Map<string, FlowEdge>();
+    for (const e of this._model.edges) edgeByRole.set(e.from, e);
+
+    const legs = this._model.nodes
+      .filter((n) => n.present && anchors[n.role])
+      .map((n) => {
+        const rect = anchors[n.role];
+        const cx = rect.left + rect.width / 2;
+        const cy = rect.top + rect.height / 2;
+        const pos = horiz ? cx : cy; // along-axis position of this tap
+        // Near edge of the card (the one facing the trunk) along the cross axis.
+        const near = horiz
+          ? cy < cross
+            ? rect.top + rect.height
+            : rect.top
+          : cx < cross
+            ? rect.left + rect.width
+            : rect.left;
+        const start = horiz ? { x: pos, y: near } : { x: near, y: pos };
+        const end = horiz ? { x: pos, y: cross } : { x: cross, y: pos };
+
+        const edge = edgeByRole.get(n.role);
+        const active = !!edge && edge.direction !== 'none';
+        const color = NODE_COLOR[n.role];
+        const flow = active
+          ? svg`<line
+              class="sb-flow"
+              style="stroke:${color};animation-duration:${edgeVisual(edge!.kW).durSec}s"
+              stroke-width=${Math.min(BUS_WIDTH_MAX, edgeVisual(edge!.kW).width)}
+              x1=${start.x} y1=${start.y} x2=${end.x} y2=${end.y}
+            ></line>`
+          : nothing;
+        return svg`
+          <g class="gw-leg ${lit?.has(n.role) ? 'on' : ''}" data-role=${n.role}>
+            <line class="gw-leg-base" style="stroke:${color}" x1=${start.x} y1=${start.y} x2=${end.x} y2=${end.y}></line>
+            ${flow}
+          </g>
+        `;
+      });
+    return svg`${legs}`;
   }
 
   /** The Scene-unaware child for one role — same shared `.hass` + resolved `.config`. */
@@ -322,18 +578,109 @@ export class TcMyHome extends LitElement implements LovelaceCard {
       .scene {
         position: relative;
       }
-      /* A functional responsive grid (6.5). The polished 380px×3 / 80px-gap layout
-         and the phone-reflow single-column vertical bus are Story 6.6. */
+
+      /* ── The summary ribbon (AC1b) — whole-home aggregates ABOVE the cards, so
+         the cards stay the detail layer. Scene-local tiles (NOT a surface class, so
+         the styles.test surface consumer gate stays untouched — the 6.2-6.5 trap). */
+      .ribbon {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: baseline;
+        gap: var(--tc-space-4, 16px);
+        margin-bottom: var(--tc-space-4, 16px);
+      }
+      .ribbon-tile {
+        display: flex;
+        flex-direction: column;
+        gap: var(--tc-space-1, 4px);
+      }
+      .ribbon .rk {
+        font-size: var(--tc-fs-xs, 12px);
+        font-weight: var(--tc-fw-medium, 550);
+        letter-spacing: 0.04em;
+        text-transform: uppercase;
+        color: var(--tc-text-dim, #9aa7b8);
+      }
+      .ribbon .rv {
+        font-family: var(--tc-font-display, var(--tc-font, ui-sans-serif, system-ui, sans-serif));
+        font-size: var(--tc-fs-lg, 20px);
+        font-weight: var(--tc-fw-bold, 760);
+        color: var(--tc-text, #f1f5f9);
+      }
+      .ribbon-tile.net .rv {
+        color: var(--tc-blue, #38bdf8);
+      }
+      .ribbon-age {
+        font-size: var(--tc-fs-xs, 12px);
+        color: var(--tc-text-mute, #6b7787);
+        margin-left: auto;
+        align-self: center;
+      }
+      /* Honest freshness (UX-DR18): a fully-quiescent (stale/asleep) Scene
+         de-emphasizes the confident tone — never overstates freshness. Reuse the
+         canonical stale-dim token (--tc-dim-opacity, the same one the asleep card
+         treatment uses) so the ribbon's de-emphasis matches the rest of the card. */
+      .ribbon.dim {
+        opacity: var(--tc-dim-opacity, 0.5);
+      }
+
+      /* ── The explicit two-row source/load grid (AC1a): sources (Solar · Powerwall
+         · Grid) over loads (Home · Wall Connector · [Vehicle slot]) in a 380px×3 /
+         80px-gap layout — the wide gap is the channel the Gateway bus runs through.
+         Cards are placed by grid-template-areas (role-fixed), NOT auto-flow, so an
+         absent node leaves its area empty without shuffling the others. The canvas
+         centres (a glance surface, not full-bleed). */
       .scene-grid {
         display: grid;
-        grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
-        gap: var(--tc-space-4, 16px);
+        grid-template-columns: 380px 380px 380px;
+        column-gap: 80px;
+        row-gap: 150px;
+        justify-content: center;
+        grid-template-areas:
+          'solar powerwall grid'
+          'home wc veh';
       }
       .scene-cell {
         min-width: 0;
       }
-      /* ONE overlay, strictly pass-through so taps reach the cards' own controls
-         beneath (AC3d). No viewBox: it draws in the container's own px space. */
+      .scene-cell[data-node='solar'] {
+        grid-area: solar;
+      }
+      .scene-cell[data-node='powerwall'] {
+        grid-area: powerwall;
+      }
+      .scene-cell[data-node='grid'] {
+        grid-area: grid;
+      }
+      .scene-cell[data-node='home'] {
+        grid-area: home;
+      }
+      .scene-cell[data-node='wall_connector'] {
+        grid-area: wc;
+      }
+      /* Keyboard focus ring — the 2px blue outline (EXPERIENCE.md:175 a11y floor),
+         never the hairline border alone. */
+      .scene-cell:focus-visible {
+        outline: 2px solid var(--tc-blue, #38bdf8);
+        outline-offset: 2px;
+        border-radius: var(--tc-radius, 14px);
+      }
+
+      /* ── Focus-highlight (AC3): hover/keyboard focus dims the rest and lights the
+         active legs + endpoint cards. A dim/light enhancement over the always-
+         complete view — NO page change (the baked crossfade is retired). */
+      .scene.focus .scene-cell {
+        /* The mockup-specified focus de-emphasis (.4) — a distinct interaction value,
+           not the stale-dim token; a literal like the sibling .gw-leg opacities. */
+        opacity: 0.4;
+        transition: opacity 0.18s ease;
+      }
+      .scene.focus .scene-cell.lit {
+        opacity: 1;
+      }
+
+      /* ── The Gateway bus overlay (AC2): ONE pass-through SVG over the container
+         (AC3d — taps reach the cards beneath). No viewBox: container px space. */
       .scene-bus {
         position: absolute;
         inset: 0;
@@ -341,6 +688,56 @@ export class TcMyHome extends LitElement implements LovelaceCard {
         height: 100%;
         pointer-events: none;
         overflow: visible;
+      }
+      /* The neutral trunk rail (the navy channel the #cfe2ff flows ride). */
+      .gw-trunk-base {
+        stroke: var(--tc-border-strong, rgba(255, 255, 255, 0.16));
+        stroke-width: 7;
+        stroke-linecap: round;
+      }
+      .gw-head {
+        stroke: none;
+      }
+      /* Each present node's leg: a calm base in the node accent + (when active) a
+         flowing sb-flow dash (reused from sceneBusStyles). */
+      .gw-leg-base {
+        stroke-width: 2;
+        stroke-linecap: round;
+        opacity: 0.45;
+      }
+      /* Focus: legs fade back; the coupled legs stay lit. Reduced-motion = instant
+         cut (kill the motion, keep the data). */
+      .scene.focus .gw-leg {
+        opacity: 0.12;
+        transition: opacity 0.18s ease;
+      }
+      .scene.focus .gw-leg.on {
+        opacity: 1;
+      }
+      @media (prefers-reduced-motion: reduce) {
+        .scene.focus .scene-cell,
+        .scene.focus .gw-leg {
+          transition: none;
+        }
+      }
+
+      /* ── Phone reflow (AC4, ≤540px): the six cards stack into ONE full-width
+         column (source → load by DOM order); the Gateway bus re-routes VERTICALLY
+         (the busAxis flips off the now-tall anchor spread — geometry-driven, no
+         per-hass recompute). CSS @media can't read the --tc-* props, so the literal
+         540px (the established breakpoint, DESIGN.md:256) is used directly. */
+      @media (max-width: 540px) {
+        .scene-grid {
+          grid-template-columns: 1fr;
+          column-gap: 0;
+          row-gap: var(--tc-space-4, 16px);
+          grid-template-areas:
+            'solar'
+            'powerwall'
+            'grid'
+            'home'
+            'wc';
+        }
       }
     `,
   ];
