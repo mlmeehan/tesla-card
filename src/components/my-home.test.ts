@@ -47,6 +47,7 @@ import { STRINGS } from '../strings';
 import awakeFx from '../fixtures/model-y-awake.json';
 import asleepFx from '../fixtures/model-y-asleep.json';
 import { wcVehicleEdge } from '../flow/my-home';
+import { NODE_COLOR } from '../flow/renderer';
 import type { HassEntity, HomeAssistant, TeslaCardConfig } from '../types';
 
 const CONFIG: TeslaCardConfig = { type: 'tc-my-home' };
@@ -785,5 +786,258 @@ describe('Story 8.5 — AC4: arbitrary-topology + the full-union slice-gate', ()
     // would thrash the whole composition on irrelevant churn).
     expect(ids.has(e.lock)).toBe(false);
     expect(ids.has(e.inside_temp)).toBe(false);
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Story 8.6 — the ENRICHED Gateway bus: each present leg (incl. the Story-8.5
+// WC→Vehicle edge) gains a kW pill at its midpoint, a terminal at its card end,
+// and (for trunk legs) a tap at its trunk end — all from the SAME shared
+// FlowModel (no second engine), all STATIC SVG inside the `.gw-leg` group (so
+// focus dim/light + reduced-motion are inherited by construction).
+// ═══════════════════════════════════════════════════════════════════════════
+const U = STRINGS.scene.ribbon.unit;
+/** Energy node legs only (excludes the WC→Vehicle overlay edge). */
+const energyLegs = (el: Scene): Element[] =>
+  [...sr(el).querySelectorAll('.scene-bus .gw-leg:not([data-role="vehicle"])')];
+const legOf = (el: Scene, role: string): Element | null =>
+  sr(el).querySelector(`.scene-bus .gw-leg[data-role="${role}"]`);
+const pillTxt = (group: Element | null): string =>
+  group?.querySelector('.gw-pill-txt')?.textContent?.trim() ?? '';
+/** Inject a model directly + force a re-render (the 6.6/6.7 geometry-test pattern). */
+async function injectModel(el: Scene, model: FlowModel): Promise<void> {
+  (el as unknown as { _model: FlowModel })._model = model;
+  (el as unknown as { requestUpdate(): void }).requestUpdate();
+  await el.updateComplete;
+}
+
+describe('Story 8.6 — AC1: every present leg carries a kW pill from the SHARED model', () => {
+  test('each energy leg has a `.gw-pill-txt` reading |edge.kW| N.N kW (the same value the flow uses)', async () => {
+    const el = await mount(makeHass(states(awakeFx)));
+    recompute(el); // populate anchors (jsdom: zero rects, but the legs still draw)
+    await el.updateComplete;
+    const legs = energyLegs(el);
+    expect(legs.length).toBeGreaterThan(0);
+    // Every leg carries exactly one pill (a present node always has an edge).
+    expect(legs.every((g) => g.querySelector('.gw-pill-txt') !== null)).toBe(true);
+    // The pill text equals the node's OWN edge magnitude — never a recomputed value.
+    const model = (el as unknown as { _model: FlowModel })._model;
+    const edgeByRole = new Map(model.edges.map((e) => [e.from, e]));
+    for (const role of ['solar', 'powerwall', 'grid', 'home', 'wall_connector'] as const) {
+      const edge = edgeByRole.get(role);
+      if (!edge) continue;
+      const expected = `${Math.abs(edge.kW).toFixed(1)} ${U}`;
+      expect(pillTxt(legOf(el, role))).toBe(expected);
+    }
+  });
+
+  test('the pill background is a token fill + the text uses the node accent (no new raw hex)', async () => {
+    const el = await mount(makeHass(states(awakeFx)));
+    recompute(el);
+    await el.updateComplete;
+    const solarLeg = legOf(el, 'solar')!;
+    // bg present (a flat rect, not a gradient) and text coloured inline by the accent.
+    expect(solarLeg.querySelector('.gw-pill-bg')).not.toBeNull();
+    expect(solarLeg.querySelector('.gw-pill-txt')!.getAttribute('style')).toContain('fill:');
+  });
+});
+
+describe('Story 8.6 — AC1: terminals at the card end + taps at the trunk end', () => {
+  test('each energy leg has a terminal ring (`.gw-term`) and a trunk tap (`.gw-tap`)', async () => {
+    const el = await mount(makeHass(states(awakeFx)));
+    recompute(el);
+    await el.updateComplete;
+    for (const leg of energyLegs(el)) {
+      expect(leg.querySelectorAll('.gw-term').length).toBe(1); // one card-end terminal
+      expect(leg.querySelector('.gw-tap')).not.toBeNull(); // one trunk tap
+    }
+  });
+
+  test('the WC→Vehicle leg has TWO terminals (both card ends) and NO tap', async () => {
+    const el = await mount(makeHass(states(awakeFx)));
+    recompute(el);
+    await el.updateComplete;
+    const edge = vehEdge(el)!;
+    expect(edge).not.toBeNull();
+    expect(edge.querySelectorAll('.gw-term').length).toBe(2); // one per card end
+    expect(edge.querySelector('.gw-tap')).toBeNull(); // never touches the trunk
+  });
+});
+
+describe('Story 8.6 — AC2: the pill is honest — never a fabricated magnitude', () => {
+  test('a sub-deadband leg reads 0.0 kW (its true, calm reading — no flow dash)', async () => {
+    const el = await mount(makeHass(states(awakeFx)));
+    (el as unknown as { _anchors: Record<string, unknown> })._anchors = {
+      home: { left: 0, top: 100, width: 100, height: 50 },
+      grid: { left: 0, top: 0, width: 100, height: 50 },
+      bus: { left: 50, top: 75, width: 0, height: 0 },
+    };
+    await injectModel(
+      el,
+      buildFlowModel([
+        { role: 'home', kW: 0.02, provenance: 'measured' }, // sub-IDLE_KW ⇒ calm
+        { role: 'grid', kW: 5, provenance: 'measured' },
+      ])
+    );
+    const home = legOf(el, 'home')!;
+    expect(pillTxt(home)).toBe(`0.0 ${U}`); // honest calm value
+    expect(home.querySelector('.sb-flow')).toBeNull(); // no flow dash on the calm leg
+  });
+
+  test('an absent node has no leg AND no pill (nothing to label)', async () => {
+    const s = states(awakeFx);
+    const batteryPowerId = energyIds(s).battery_power!;
+    delete s[batteryPowerId]; // drop the Powerwall power sensor ⇒ node absent
+    const el = await mount(makeHass(s));
+    recompute(el);
+    await el.updateComplete;
+    expect(legOf(el, 'powerwall')).toBeNull(); // no leg
+    expect(sr(el).querySelector('.gw-leg[data-role="powerwall"] .gw-pill-txt')).toBeNull(); // no pill
+  });
+});
+
+describe('Story 8.6 — AC3: focus lights the coupled legs AND their enriched pills', () => {
+  test('focusin on a SOURCE lights its coupled load legs (with pills); the rest do not', async () => {
+    const el = await mount(makeHass(states(awakeFx)));
+    recompute(el);
+    await el.updateComplete;
+    const solar = sr(el).querySelector('.scene-cell[data-node="solar"]')!;
+    solar.dispatchEvent(new Event('focusin', { bubbles: true }));
+    await el.updateComplete;
+    // solar (source) couples to the loads; the coupled legs light, with their pills inside.
+    const homeLeg = legOf(el, 'home')!;
+    expect(homeLeg.classList.contains('on')).toBe(true);
+    expect(homeLeg.querySelector('.gw-pill-txt')).not.toBeNull(); // the pill rides the lit leg
+    // a non-coupled source leg stays un-lit.
+    expect(legOf(el, 'grid')!.classList.contains('on')).toBe(false);
+    // releasing focus clears it.
+    solar.dispatchEvent(new Event('focusout', { bubbles: true }));
+    await el.updateComplete;
+    expect(legOf(el, 'home')!.classList.contains('on')).toBe(false);
+  });
+});
+
+describe('Story 8.6 — AC4: reduced-motion keeps the data — static decorations, no new animation', () => {
+  test('the pill/terminal/tap CSS introduces no animation or keyframe', () => {
+    const flatten = (s: unknown): string =>
+      Array.isArray(s)
+        ? s.map(flatten).join('\n')
+        : ((s as { cssText?: string })?.cssText ?? '');
+    const cssText = flatten((TcMyHome as unknown as { styles: unknown }).styles);
+    // The decorations are STATIC SVG — no keyframe was authored for them.
+    expect(cssText).not.toMatch(/@keyframes\s+gw-/);
+    // None of the decoration rules carry an `animation` property.
+    for (const rule of ['.gw-pill-bg', '.gw-pill-txt', '.gw-term', '.gw-tap']) {
+      const idx = cssText.indexOf(rule);
+      if (idx === -1) continue;
+      const block = cssText.slice(idx, cssText.indexOf('}', idx));
+      expect(block).not.toContain('animation');
+    }
+  });
+
+  test('the decorations render identically regardless of the dash-freeze (markup is static)', async () => {
+    const el = await mount(makeHass(states(awakeFx)));
+    recompute(el);
+    await el.updateComplete;
+    // The pills/terminals/taps are present and carry no inline animation — the dash
+    // freeze (covered by the existing sceneBusStyles reduced-motion test) removes the
+    // motion, never the data.
+    const solarLeg = legOf(el, 'solar')!;
+    expect(solarLeg.querySelector('.gw-pill-txt')).not.toBeNull();
+    expect(solarLeg.querySelector('.gw-term')).not.toBeNull();
+    expect(solarLeg.querySelector('.gw-tap')).not.toBeNull();
+    expect(solarLeg.querySelector('.gw-pill-txt')!.getAttribute('style')).not.toContain('animation');
+  });
+});
+
+describe('Story 8.6 — AC1: the WC→Vehicle pill agrees with the cell by construction', () => {
+  test('the vehicle leg pill = |wcVehicleEdge(model).kW| N.N kW = the cell "Charging · N.N kW"', async () => {
+    const el = await mount(makeHass(states(awakeFx)));
+    recompute(el);
+    await el.updateComplete;
+    const model = (el as unknown as { _model: FlowModel })._model;
+    const ch = wcVehicleEdge(model);
+    expect(ch.active).toBe(true);
+    const expected = `${Math.abs(ch.kW).toFixed(1)} ${U}`;
+    // The overlay pill and the cell badge both read the ONE wcVehicleEdge view.
+    expect(pillTxt(vehEdge(el))).toBe(expected);
+    expect(vehCell(el)!.textContent).toContain(expected);
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Story 8.6 — QA gap coverage (qa-generate-e2e-tests): honesty + a11y branches
+// the AC text requires that the dev suite above does not yet assert directly:
+//   • AC1 — the terminal RING + the tap DOT carry the node accent (NODE_COLOR),
+//     not just the pill text (the colour-blind cue must be the WHOLE leg).
+//   • AC2 — a non-finite (`unavailable`) power read must NEVER surface a
+//     "NaN kW" pill (a DISTINCT path from a deleted sensor: the sensor is
+//     present but unreadable, exercising bindFlowModel's NaN-safe coercion).
+//   • AC3 — HOVER (`mouseenter`) — not only `focusin` — must light the coupled
+//     leg AND its pill, and `mouseleave` must clear it ("hover OR keyboard").
+//   • AC4 — every pill text is a NUMBER (the colour-blind-safe magnitude floor,
+//     UX-DR12 "never hue-only") — the whole point of the kW pill with motion off.
+// ═══════════════════════════════════════════════════════════════════════════
+describe('Story 8.6 — AC1 (gap): the terminal ring + the tap dot carry the node accent', () => {
+  test('a leg`s `.gw-term` stroke and `.gw-tap` fill are NODE_COLOR[role], not bare', async () => {
+    const el = await mount(makeHass(states(awakeFx)));
+    recompute(el);
+    await el.updateComplete;
+    const solarLeg = legOf(el, 'solar')!;
+    const term = solarLeg.querySelector('.gw-term')!;
+    const tap = solarLeg.querySelector('.gw-tap')!;
+    // The accent is the whole-leg colour cue (UX-DR12), set INLINE from NODE_COLOR.
+    expect(term.getAttribute('style')).toContain(`stroke:${NODE_COLOR.solar}`);
+    expect(tap.getAttribute('style')).toContain(`fill:${NODE_COLOR.solar}`);
+  });
+});
+
+describe('Story 8.6 — AC2 (gap): a non-finite power read never surfaces a "NaN kW" pill', () => {
+  test('an `unavailable` power sensor degrades to an absent node (no leg, no pill), never NaN', async () => {
+    const s = states(awakeFx);
+    const solarPowerId = energyIds(s).solar_power!;
+    // Sensor PRESENT but unreadable — the distinct bindFlowModel NaN-safe path
+    // (vs the existing test that DELETES the sensor). A non-finite read ⇒ kW
+    // undefined ⇒ `present:false` ⇒ no leg and no pill (never "NaN kW").
+    s[solarPowerId] = { ...s[solarPowerId], state: 'unavailable' };
+    const el = await mount(makeHass(s));
+    recompute(el);
+    await el.updateComplete;
+    expect(legOf(el, 'solar')).toBeNull(); // absent node ⇒ no leg
+    // And NO pill anywhere ever reads a fabricated "NaN" magnitude.
+    const allPills = [...sr(el).querySelectorAll('.gw-pill-txt')].map((p) => p.textContent ?? '');
+    expect(allPills.some((t) => /NaN/i.test(t))).toBe(false);
+  });
+});
+
+describe('Story 8.6 — AC3 (gap): HOVER (mouseenter) lights the coupled leg + its pill', () => {
+  test('mouseenter on a SOURCE lights its coupled load leg (with pill); mouseleave clears it', async () => {
+    const el = await mount(makeHass(states(awakeFx)));
+    recompute(el);
+    await el.updateComplete;
+    const solar = sr(el).querySelector('.scene-cell[data-node="solar"]')!;
+    solar.dispatchEvent(new Event('mouseenter', { bubbles: true }));
+    await el.updateComplete;
+    const homeLeg = legOf(el, 'home')!;
+    expect(homeLeg.classList.contains('on')).toBe(true);
+    expect(homeLeg.querySelector('.gw-pill-txt')).not.toBeNull(); // the pill rides the lit leg
+    expect(legOf(el, 'grid')!.classList.contains('on')).toBe(false); // non-coupled stays dim
+    solar.dispatchEvent(new Event('mouseleave', { bubbles: true }));
+    await el.updateComplete;
+    expect(legOf(el, 'home')!.classList.contains('on')).toBe(false);
+  });
+});
+
+describe('Story 8.6 — AC4 (gap): every pill text is a NUMBER (the colour-blind-safe floor)', () => {
+  test('each present leg`s pill text carries a digit — the magnitude reads without hue', async () => {
+    const el = await mount(makeHass(states(awakeFx)));
+    recompute(el);
+    await el.updateComplete;
+    const pills = [...energyLegs(el), vehEdge(el)]
+      .filter((g): g is Element => g !== null)
+      .map((g) => pillTxt(g));
+    expect(pills.length).toBeGreaterThan(0);
+    // UX-DR12: with motion off the leg reads from this NUMBER, never hue alone.
+    expect(pills.every((t) => /\d/.test(t) && t.endsWith(U))).toBe(true);
   });
 });

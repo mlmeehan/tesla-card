@@ -662,10 +662,19 @@ export class TcMyHome extends LitElement implements LovelaceCard {
           ${this._arrow({ x: (start.x + end.x) / 2, y }, end, color)}
         `
       : nothing;
+    // Story 8.6: the WC→Vehicle leg is horizontal and touches NO trunk — so it gets
+    // TWO terminals (one per card end) + one pill, and NO tap. The pill shows
+    // `wcVehicleEdge(model).kW` (= `ch.kW`), agreeing by construction with the cell's
+    // "Charging · N.N kW" (both read the one `wcVehicleEdge`). All inside the leg
+    // group so the widened (Role) focus coupling dims/lights them.
+    const mid = { x: (start.x + end.x) / 2, y };
     return svg`
       <g class="gw-leg ${lit?.has('vehicle') ? 'on' : ''}" data-role=${VEHICLE_NODE_ID}>
         <line class="gw-leg-base" style="stroke:${color}" x1=${start.x} y1=${start.y} x2=${end.x} y2=${end.y}></line>
         ${flow}
+        ${this._terminal(start, color)}
+        ${this._terminal(end, color)}
+        ${this._pill(mid, color, `${formatNumber(Math.abs(ch.kW), 1)} ${STRINGS.scene.ribbon.unit}`)}
       </g>
     `;
   }
@@ -726,6 +735,53 @@ export class TcMyHome extends LitElement implements LovelaceCard {
     ></path>`;
   }
 
+  // ── Story 8.6: enriched-leg decorations (kW pill · terminal · tap) ────────────
+  // Static SVG primitives, drawn INSIDE each `.gw-leg` group (so the focus
+  // dim/light inherits, and reduced-motion keeps them as the legible read). Colour
+  // is always the leg's node accent (`NODE_COLOR[role]`/`GATEWAY_STROKE`) set INLINE
+  // — the same gate-safe `var(--tc-*, #hex)` pattern `_trunk`/`_legs` already use;
+  // no new raw hex, no new animation source, no recomputed magnitude.
+
+  /**
+   * A kW pill at a leg's midpoint (mockup `pill`, ~64×26, `rx≈13`) — a rounded,
+   * token-filled rect + the node-accent-coloured `${kwText}` centred on it. The
+   * NUMBER is the colour-blind-safe magnitude floor (AC4): with motion off the leg
+   * reads from this text, never hue alone. `_legs`/`_vehicleEdge` pass the SAME
+   * `edge.kW` the flow already uses — the pill never invents a second value.
+   */
+  private _pill(at: { x: number; y: number }, color: string, kwText: string): SVGTemplateResult {
+    const W = 64;
+    const H = 26;
+    return svg`
+      <g class="gw-pill" transform="translate(${at.x - W / 2} ${at.y - H / 2})">
+        <rect class="gw-pill-bg" width=${W} height=${H} rx="13"></rect>
+        <text class="gw-pill-txt" x=${W / 2} y=${H / 2} style="fill:${color}">${kwText}</text>
+      </g>
+    `;
+  }
+
+  /**
+   * A terminal at the CARD-facing end of a leg (mockup `term`): an accent-stroked
+   * ring (r≈7) + a small filled centre dot (r≈ ring·0.34). Marks where the leg meets
+   * its card.
+   */
+  private _terminal(at: { x: number; y: number }, color: string): SVGTemplateResult {
+    const r = 7;
+    return svg`
+      <circle class="gw-term" style="stroke:${color}" cx=${at.x} cy=${at.y} r=${r}></circle>
+      <circle class="gw-term-dot" style="fill:${color}" cx=${at.x} cy=${at.y} r=${r * 0.34}></circle>
+    `;
+  }
+
+  /**
+   * A tap at the TRUNK-facing end of a leg (mockup `tap`): a small filled dot (r≈5)
+   * where the leg meets the bus rail. The WC→Vehicle leg has no tap (it never touches
+   * the trunk).
+   */
+  private _tap(at: { x: number; y: number }, color: string): SVGTemplateResult {
+    return svg`<circle class="gw-tap" style="fill:${color}" cx=${at.x} cy=${at.y} r="5"></circle>`;
+  }
+
   /**
    * Each present node's leg: from the card edge FACING the trunk to the trunk line,
    * in the node's accent colour (motion when its edge is active). Source cards sit
@@ -768,10 +824,22 @@ export class TcMyHome extends LitElement implements LovelaceCard {
               x1=${start.x} y1=${start.y} x2=${end.x} y2=${end.y}
             ></line>`
           : nothing;
+        // Story 8.6: the leg's enriched decorations — all INSIDE the `.gw-leg`
+        // group so the focus dim/light (AC3) applies to them by construction, and
+        // all STATIC SVG so reduced-motion (AC4) keeps them as the legible read.
+        // The pill shows the SAME `edge.kW` the flow uses (never a recomputed
+        // value); an absent edge draws NO pill (AC2 honesty — but a present leg
+        // always carries an edge, so this is a defensive guard).
+        const mid = { x: (start.x + end.x) / 2, y: (start.y + end.y) / 2 };
         return svg`
           <g class="gw-leg ${lit?.has(n.role) ? 'on' : ''}" data-role=${n.role}>
             <line class="gw-leg-base" style="stroke:${color}" x1=${start.x} y1=${start.y} x2=${end.x} y2=${end.y}></line>
             ${flow}
+            ${this._terminal(start, color)}
+            ${this._tap(end, color)}
+            ${edge
+              ? this._pill(mid, color, `${formatNumber(Math.abs(edge.kW), 1)} ${STRINGS.scene.ribbon.unit}`)
+              : nothing}
           </g>
         `;
       });
@@ -1007,6 +1075,27 @@ export class TcMyHome extends LitElement implements LovelaceCard {
         stroke-width: 2;
         stroke-linecap: round;
         opacity: 0.45;
+      }
+      /* ── Story 8.6: enriched-leg decorations (kW pill · terminal · tap). All
+         STATIC SVG (no @media, no keyframe) so reduced-motion keeps them as the
+         "keep the data" read; colours come INLINE from NODE_COLOR/GATEWAY_STROKE
+         (gate-safe var(--tc-*, #hex) reads), so no new raw hex is introduced. The
+         pill bg is a FLAT token fill (mirrors sb-chip-bg), never a gradient. */
+      .gw-pill-bg {
+        fill: var(--tc-surface-2, rgba(255, 255, 255, 0.07));
+        stroke: var(--tc-border, rgba(255, 255, 255, 0.09));
+        stroke-width: 1;
+      }
+      .gw-pill-txt {
+        font-family: var(--tc-font, ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif);
+        font-size: 13px;
+        font-weight: 700;
+        text-anchor: middle;
+        dominant-baseline: central;
+      }
+      .gw-term {
+        fill: none;
+        stroke-width: 2;
       }
       /* Focus: legs fade back; the coupled legs stay lit. Reduced-motion = instant
          cut (kill the motion, keep the data). */
