@@ -216,6 +216,7 @@ export const STRINGS = {
     pause: 'Pause',
     next: 'Next',
     mute: 'Mute',
+    volume: 'Volume', // slider SR label (UX-DR21 state-bearing name)
   },
 
   location: {

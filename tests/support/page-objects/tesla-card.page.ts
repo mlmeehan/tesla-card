@@ -251,6 +251,57 @@ export class TeslaCardPage {
     return this.locationPanel.locator('.map-stale');
   }
 
+  // ── Media panel (Story 5.10) ───────────────────────────────────────────────
+  /** The media panel root (`tc-panel-media`) — rendered only when the Media tab is open. */
+  get mediaPanel(): Locator {
+    return this.card.locator('tc-panel-media');
+  }
+
+  /** The now-playing art well (`.art`) — holds the `<img>` cover or the music-note glyph fallback. */
+  get mediaArt(): Locator {
+    return this.mediaPanel.locator('.art');
+  }
+
+  /** The cover-art `<img src=entity_picture>` — present only when the player exposes entity_picture. */
+  get mediaArtImg(): Locator {
+    return this.mediaPanel.locator('.art img');
+  }
+
+  /** The now-playing title ("Bohemian Rhapsody" / "Not playing"). */
+  get mediaTitle(): Locator {
+    return this.mediaPanel.locator('.title');
+  }
+
+  /** The now-playing artist ("Queen" / "Media player idle"). */
+  get mediaArtist(): Locator {
+    return this.mediaPanel.locator('.artist');
+  }
+
+  /** Every transport button in render order: [previous, play/pause, next]. */
+  get transportButtons(): Locator {
+    return this.mediaPanel.locator('.transport .tbtn');
+  }
+
+  /** A transport button by its state-bearing aria-label ("Previous"/"Next"). */
+  transportButton(label: 'Previous' | 'Next'): Locator {
+    return this.mediaPanel.locator(`.transport .tbtn[aria-label="${label}"]`);
+  }
+
+  /** The central play/pause button (`.tbtn.play`) — its aria-label reflects the settled transport state. */
+  get playButton(): Locator {
+    return this.mediaPanel.locator('.tbtn.play');
+  }
+
+  /** The mute toggle (`.mute`) — `.on` + red tint + glyph swap when muted; carries settled aria-pressed. */
+  get muteButton(): Locator {
+    return this.mediaPanel.locator('.mute');
+  }
+
+  /** The volume `tc-slider` (5.5 primitive) — carries label="Volume" for SR context. */
+  get volumeSlider(): Locator {
+    return this.mediaPanel.locator('tc-slider');
+  }
+
   async setEnv(env: 'default' | 'renamed'): Promise<void> {
     // Harness env toggles live in the page's light DOM (stable ids), not the card.
     await this.page.locator(env === 'renamed' ? '#b-renamed' : '#b-default').click();
