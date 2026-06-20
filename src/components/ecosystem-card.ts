@@ -115,6 +115,18 @@ export interface DetailParts {
   hero?: TemplateResult | typeof nothing;
   /** Lead readout row — the card's headline value (kW / SoC ring / direction tile). */
   readout?: TemplateResult | typeof nothing;
+  /**
+   * Write-control slot (Story 8.4) — Powerwall's segmented operation-mode +
+   * backup-reserve `tc-slider`, rendered in a `.eco-controls` region AFTER the
+   * lead readout and BEFORE the stat grid (mockup order: SoC readout → controls →
+   * stat grid → charts). Hide-when-empty by construction (`nothing` → the region
+   * collapses). Additive to the live path only — the calm-empty `renderShell`
+   * path is untouched (AC3). The control chrome lives in the concrete card's own
+   * `css` (powerwall.ts); the shell owns only the layout order + stacking. The
+   * field is type-only (compiler-erased) → invisible to the FR-32 export-list gate
+   * exactly as 8.1's `tiles`/8.3's `charts` were.
+   */
+  controls?: TemplateResult | typeof nothing;
   /** Stat-grid tiles (`.grid.g3`); each `statTile` hides itself (`nothing`) when its entity is absent. */
   tiles?: Array<TemplateResult | typeof nothing>;
   /**
@@ -184,6 +196,7 @@ export class EcosystemCard extends TcBase {
     const hasReadout = parts.readout !== undefined && parts.readout !== nothing;
     const charts = parts.charts ?? [];
     const hasCharts = charts.some((c) => c !== nothing);
+    const hasControls = parts.controls !== undefined && parts.controls !== nothing;
     return html`
       <section
         class="surface eco-card eco-detail"
@@ -206,6 +219,7 @@ export class EcosystemCard extends TcBase {
         </header>
         <div class="eco-hero">${parts.hero ?? nothing}</div>
         ${hasReadout ? html`<div class="eco-readout">${parts.readout}</div>` : nothing}
+        ${hasControls ? html`<div class="eco-controls">${parts.controls}</div>` : nothing}
         ${hasTiles ? html`<div class="grid g3 eco-grid">${tiles}</div>` : nothing}
         ${hasCharts ? html`<div class="eco-charts">${charts}</div>` : nothing}
         ${this._deepLinkChip()}
@@ -331,6 +345,19 @@ export const ecosystemShellStyles: CSSResult = css`
     flex-direction: column;
     gap: var(--tc-space-2, 8px);
     min-width: 0;
+  }
+  /* Story 8.4 write-controls region (Powerwall mode + reserve) — stacking +
+     rhythm ONLY. The control chrome (segmented buttons, reserve block) lives in
+     the concrete card's own css (powerwall.ts), the way quick-actions/panel-
+     climate own theirs. NO radius/elevation/gradient here (those belong to
+     .surface — re-declaring them trips the styles gates). Collapses when empty. */
+  .eco-controls {
+    display: flex;
+    flex-direction: column;
+    gap: var(--tc-space-3, 12px);
+  }
+  .eco-controls:empty {
+    display: none;
   }
   /* Stat-grid region uses the shared responsive .grid.g3 (collapses to 2-col
      ≤540px via BREAKPOINTS.compact) — only the vertical rhythm is set here. */

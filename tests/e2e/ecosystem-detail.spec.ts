@@ -36,7 +36,13 @@ const ENERGY_DETAIL = JSON.parse(
 ) as { states: Record<string, unknown> };
 
 type EcoTag = 'tc-solar' | 'tc-grid' | 'tc-home' | 'tc-wall-connector' | 'tc-powerwall';
-const SENSOR_TAGS: EcoTag[] = ['tc-solar', 'tc-grid', 'tc-home', 'tc-wall-connector', 'tc-powerwall'];
+// The genuinely READ-ONLY ecosystem cards (UX-DR24). Powerwall is deliberately
+// EXCLUDED: Story 8.4 gave it its two real write controls (operation-mode segments
+// + a backup-reserve tc-slider), flipping it `kind: 'sensor'` → `kind: 'control'`,
+// so it no longer carries the "Sensor" mark and DOES expose write surfaces. Its
+// control contract is proven in tests/e2e/powerwall-controls.spec.ts. Solar/Grid/
+// Home/Wall-Connector stay read-only Sensors (no control was added to them — UX-DR24).
+const SENSOR_TAGS: EcoTag[] = ['tc-solar', 'tc-grid', 'tc-home', 'tc-wall-connector'];
 
 interface MountOpts {
   /** Host width in px (sizes the card; the @540 grid collapse follows the VIEWPORT, set separately). */
@@ -279,8 +285,8 @@ test.describe('Story 8.1 — ecosystem card detail layout, stat grids & deep-lin
       const surf = detail(page, tag);
       await expect(surf, `${tag} renders the detail layout`).toHaveCount(1);
 
-      // The header honestly marks the card as a Sensor (UX-DR24) — Powerwall stays a
-      // Sensor too this story (its write controls are Story 8.4).
+      // The header honestly marks the card as a Sensor (UX-DR24). Powerwall is no
+      // longer in this list — Story 8.4 made it a control card (see SENSOR_TAGS note).
       await expect(surf.locator('.eco-kind'), `${tag} marks Sensor`).toContainText('Sensor');
 
       // No write surface anywhere in the card: no slider, input, select, native

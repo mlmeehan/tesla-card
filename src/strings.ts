@@ -312,6 +312,19 @@ export const STRINGS = {
       // Detail stat-grid tile labels (Story 8.1) — cumulative energy totals.
       charged: 'Charged',
       discharged: 'Discharged',
+      // ── Story 8.4 control surface ────────────────────────────────────────
+      // The Powerwall's two genuine write controls (operation_mode select +
+      // backup_reserve number). `operationMode` names the segment group;
+      // `backupReserve` labels the slider block. `modes` maps the raw tesla_fleet
+      // select options to friendly display copy — an unknown/future option falls
+      // back to prettyText() at the call site (honest + forward-compatible).
+      operationMode: 'Operation mode',
+      backupReserve: 'Backup reserve',
+      modes: {
+        self_consumption: 'Self-Powered',
+        backup: 'Backup',
+        autonomous: 'Time-Based',
+      },
     },
     grid: {
       description: 'Standalone grid import/export card.',

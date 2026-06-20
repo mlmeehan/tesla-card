@@ -250,3 +250,24 @@ export function unitById(
 ): string | undefined {
   return id ? readRaw(hass, id, 'unit_of_measurement') : undefined;
 }
+
+/**
+ * Raw attribute value for an entity by id (Story 8.4) — the array/non-string
+ * sibling of {@link unitById}. `readRaw` returns only STRINGS (it yields
+ * `undefined` for a non-string like a `select`'s `options: string[]`), so a
+ * control needing the raw `options` array, or a `number`'s numeric `min`/`max`/
+ * `step`, reads them here. Leaf `data/` accessor — it reads `hass.states[id]`
+ * like the rest of the `numById`/`stateById`/`unitById` family, so this is the
+ * sanctioned home for the access (the `no-bare-hass.states` gate exempts the
+ * `data/` subtree). Returns `unknown`; the caller coerces (e.g. `as string[]` for
+ * options, `Number(...)` for min/max/step). `undefined` when the entity or the
+ * attribute is absent.
+ */
+export function attrById(
+  hass: HomeAssistant | undefined,
+  id: string | undefined,
+  name: string
+): unknown {
+  if (!id) return undefined;
+  return hass?.states?.[id]?.attributes?.[name];
+}

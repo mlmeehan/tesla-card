@@ -3,9 +3,12 @@
 // Element-level gate for the `tc-powerwall` card (Story 6.2). See solar.test.ts
 // for the fixture/freshness method. Focus: AC4 — Powerwall flow direction read
 // DIRECTLY from the RAW battery_power sign (− charging / + discharging), pinned
-// both ways; plus the SoC ring, reserve/mode tiles, green accent, and AC1–AC3.
+// both ways; plus the SoC ring, the Story-8.4 live write controls (segmented
+// operation-mode + backup-reserve slider) that replaced the old reserve/mode
+// read-only tiles, green accent, and AC1–AC5.
 import { afterEach, describe, expect, test, vi } from 'vitest';
 import './powerwall';
+import { TcPowerwall } from './powerwall';
 import { accentVar } from './ecosystem-card';
 import { resolveEnergyEntities } from '../data/energy';
 import { STRINGS } from '../strings';
@@ -68,11 +71,17 @@ describe('AC1 — resolves SoC + flow, renders the shell, green accent', () => {
     expect(r!.textContent).toContain('44');
   });
 
-  test('surfaces backup_reserve and operation_mode tiles when present', async () => {
+  test('Story 8.4 — surfaces the LIVE mode + reserve controls (not read-only tiles)', async () => {
+    // The read-only reserve/mode stat tiles (Story 6.2) are REPLACED by the live
+    // controls when the entities resolve — the card flips to kind: 'control'.
     const el = await mount(makeHass(states(awakeFx)));
+    expect(sr(el).querySelectorAll('.seg').length).toBeGreaterThan(0); // segmented mode
+    expect(sr(el).querySelector('tc-slider')).not.toBeNull(); // reserve slider
+    expect(sr(el).querySelector('.eco-kind')).toBeNull(); // no "Sensor" mark on a control
+    // reserve/mode are no longer .stat .k tiles (no double-render).
     const labels = statLabels(el);
-    expect(labels).toContain(STRINGS.energy.reserve);
-    expect(labels).toContain(STRINGS.energy.mode);
+    expect(labels).not.toContain(STRINGS.energy.reserve);
+    expect(labels).not.toContain(STRINGS.energy.mode);
   });
 });
 
@@ -135,20 +144,23 @@ describe('Story 8.1 — detail layout: charge/discharge tiles, read-only, deep-l
     expect(txt).toContain(STRINGS.ecosystem.powerwall.discharged);
   });
 
-  test('AC2 — absent totals hide; reserve + mode (today) still render read-only', async () => {
+  test('AC2 — absent kWh totals hide; SoC + controls still render, no NaN', async () => {
     const el = await mount(makeHass(states(awakeFx))); // has reserve+mode, no charged/discharged
     const txt = sr(el).textContent ?? '';
-    expect(txt).toContain(STRINGS.energy.reserve);
-    expect(txt).toContain(STRINGS.energy.mode);
-    expect(txt).not.toContain(STRINGS.ecosystem.powerwall.charged);
+    expect(sr(el).querySelector('.tc-ring')).not.toBeNull(); // SoC ring intact
+    expect(sr(el).querySelector('tc-slider')).not.toBeNull(); // reserve control intact
+    expect(txt).not.toContain(STRINGS.ecosystem.powerwall.charged); // kWh total absent
     expect(txt).not.toContain('NaN');
   });
 
-  test('AC3 — Powerwall stays a Sensor this story (controls are 8.4): NO write control', async () => {
-    // reserve/mode are read-only statTiles — NOT a number/select input or slider.
+  test('Story 8.4 — with controls present the card is a CONTROL, exposing real write controls', async () => {
+    // The inverse of the old 6.2/8.1 "stays a Sensor" assertion: when the writable
+    // entities resolve, the card now exposes a tc-slider + segmented control and
+    // drops the "Sensor" mark (UX-DR24 read-vs-control honesty).
     const el = await mount(makeHass(states(detailFx)));
-    expect(sr(el).querySelector('input, select, tc-slider, [role="switch"], [role="slider"]')).toBeNull();
-    expect(sr(el).querySelector('.eco-kind')!.textContent).toContain(STRINGS.ecosystem.sensorTag);
+    expect(sr(el).querySelector('tc-slider')).not.toBeNull();
+    expect(sr(el).querySelector('.seg')).not.toBeNull();
+    expect(sr(el).querySelector('.eco-kind')).toBeNull(); // no "Sensor" mark
   });
 
   test('AC1/AC4 — deep-link present on live, absent on calm empty', async () => {
@@ -252,5 +264,169 @@ describe('Story 8.3 — inline history charts', () => {
     el.hass = makeHassWS(states(detailFx), callWS);
     await settle(el);
     expect(callWS.mock.calls.length).toBe(n);
+  });
+});
+
+// ── Story 8.4 — Powerwall control surface (segmented mode + reserve slider) ──
+type SvcHass = HomeAssistant & { callService: ReturnType<typeof vi.fn> };
+/** A mock hass with a `callService` spy (the fixtures ship a bare `{ states }`). */
+function makeHassSvc(s: Record<string, HassEntity>): SvcHass {
+  return { states: s, callService: vi.fn() } as unknown as SvcHass;
+}
+/** Delete the two writable control entities so the card degrades to a read-only Sensor. */
+function stripControls(s: Record<string, HassEntity>): Record<string, HassEntity> {
+  const e = resolveEnergyEntities(makeHass(s), CONFIG);
+  if (e.operation_mode) delete s[e.operation_mode];
+  if (e.backup_reserve) delete s[e.backup_reserve];
+  return s;
+}
+const MODES = STRINGS.ecosystem.powerwall.modes;
+const segByLabel = (el: Card, label: string): HTMLButtonElement =>
+  [...sr(el).querySelectorAll<HTMLButtonElement>('.seg')].find(
+    (b) => (b.textContent ?? '').trim() === label
+  )!;
+
+describe('Story 8.4 — operation-mode segmented control', () => {
+  test('(a) one .seg per live option; the live mode is .on + aria-pressed="true"', async () => {
+    const el = await mount(makeHass(states(detailFx))); // options: self_consumption/autonomous/backup
+    const segs = [...sr(el).querySelectorAll('.seg')];
+    expect(segs.length).toBe(3);
+    const on = sr(el).querySelector('.seg.on')!;
+    expect(on.getAttribute('aria-pressed')).toBe('true');
+    expect((on.textContent ?? '').trim()).toBe(MODES.self_consumption); // live mode
+    // friendly labels, not raw option ids
+    expect(segs.map((b) => (b.textContent ?? '').trim())).toEqual([
+      MODES.self_consumption,
+      MODES.autonomous,
+      MODES.backup,
+    ]);
+  });
+
+  test('(b) tapping a segment calls select_option AND flips sighted .on while aria-pressed stays settled', async () => {
+    const hass = makeHassSvc(states(detailFx));
+    const el = await mount(hass);
+    const modeId = resolveEnergyEntities(hass, CONFIG).operation_mode!;
+    segByLabel(el, MODES.backup).click();
+    await el.updateComplete;
+    expect(hass.callService).toHaveBeenCalledWith('select', 'select_option', {
+      entity_id: modeId,
+      option: 'backup',
+    });
+    // sighted: the tapped segment is optimistically .on …
+    expect(segByLabel(el, MODES.backup).classList.contains('on')).toBe(true);
+    // … but the SR truth (aria-pressed) still follows the settled live state (UX-DR21).
+    expect(segByLabel(el, MODES.backup).getAttribute('aria-pressed')).toBe('false');
+    expect(segByLabel(el, MODES.self_consumption).getAttribute('aria-pressed')).toBe('true');
+  });
+
+  test('(e) reconcile: a hass tick whose live mode equals the request drops the override', async () => {
+    const hass = makeHassSvc(states(detailFx));
+    const el = await mount(hass);
+    const modeId = resolveEnergyEntities(hass, CONFIG).operation_mode!;
+    segByLabel(el, MODES.backup).click();
+    await el.updateComplete;
+    expect(segByLabel(el, MODES.backup).classList.contains('on')).toBe(true); // optimistic
+
+    // The write lands: live == requested → reconcile (override + fence dropped).
+    const s2 = states(detailFx);
+    s2[modeId].state = 'backup';
+    el.hass = makeHassSvc(s2);
+    await el.updateComplete;
+    expect(segByLabel(el, MODES.backup).classList.contains('on')).toBe(true); // now follows live
+
+    // An external change back: with the override gone, the card follows live —
+    // it does NOT cling to the stale optimistic request (proves reconcile happened).
+    const s3 = states(detailFx);
+    s3[modeId].state = 'self_consumption';
+    el.hass = makeHassSvc(s3);
+    await el.updateComplete;
+    expect(segByLabel(el, MODES.self_consumption).classList.contains('on')).toBe(true);
+    expect(segByLabel(el, MODES.backup).classList.contains('on')).toBe(false);
+  });
+
+  test('(f) disconnectedCallback clears the pending reconcile fence (no orphaned timer)', async () => {
+    const el = await mount(makeHassSvc(states(detailFx)));
+    segByLabel(el, MODES.backup).click(); // arms one RECONCILE_TIMEOUT_MS fence
+    await el.updateComplete;
+    const clearSpy = vi.spyOn(globalThis, 'clearTimeout');
+    el.remove(); // → disconnectedCallback
+    expect(clearSpy).toHaveBeenCalled(); // the pending fence was torn down
+    clearSpy.mockRestore();
+  });
+});
+
+describe('Story 8.4 — backup-reserve slider', () => {
+  test('(c) tc-slider reads value + min/max/step from attributes; value-changed → set_value', async () => {
+    const s = states(awakeFx); // backup_reserve_2 has explicit min/max/step attrs
+    const reserveId = resolveEnergyEntities(makeHass(s), CONFIG).backup_reserve!;
+    // Distinctive attrs prove the slider reads them (not the 0/100/1 defaults).
+    s[reserveId].attributes = { ...s[reserveId].attributes, min: 5, max: 95, step: 5 };
+    const hass = makeHassSvc(s);
+    const el = await mount(hass);
+    const slider = sr(el).querySelector('tc-slider') as unknown as {
+      value: number;
+      min: number;
+      max: number;
+      step: number;
+      dispatchEvent(e: Event): boolean;
+    };
+    expect(slider.value).toBe(20); // live reserve
+    expect(slider.min).toBe(5);
+    expect(slider.max).toBe(95);
+    expect(slider.step).toBe(5);
+    slider.dispatchEvent(
+      new CustomEvent('value-changed', { detail: { value: 35 }, bubbles: true, composed: true })
+    );
+    await el.updateComplete;
+    expect(hass.callService).toHaveBeenCalledWith('number', 'set_value', {
+      entity_id: reserveId,
+      value: 35,
+    });
+  });
+
+  test('reserve slider defaults to 0/100/1 when the number entity omits min/max/step', async () => {
+    const el = await mount(makeHass(states(detailFx))); // backup_reserve has no min/max/step
+    const slider = sr(el).querySelector('tc-slider') as unknown as {
+      min: number;
+      max: number;
+      step: number;
+    };
+    expect(slider.min).toBe(0);
+    expect(slider.max).toBe(100);
+    expect(slider.step).toBe(1);
+  });
+});
+
+describe('Story 8.4 — AC3 hide-when-missing + AC4 a11y floor', () => {
+  test('(d) absent control entities → no .seg/tc-slider, card stays a Sensor, SoC + kWh intact', async () => {
+    const el = await mount(makeHass(stripControls(states(detailFx))));
+    expect(sr(el).querySelector('.seg')).toBeNull();
+    expect(sr(el).querySelector('tc-slider')).toBeNull();
+    expect(sr(el).querySelector('.eco-kind')!.textContent).toContain(STRINGS.ecosystem.sensorTag);
+    expect(sr(el).querySelector('.tc-ring')).not.toBeNull(); // SoC ring intact
+    expect(sr(el).textContent ?? '').toContain(STRINGS.ecosystem.powerwall.charged); // kWh tile intact
+  });
+
+  test('a genuinely-unavailable control entity is omitted, never shown disabled-but-fake', async () => {
+    const s = states(detailFx);
+    const e = resolveEnergyEntities(makeHass(s), CONFIG);
+    s[e.operation_mode!].state = 'unavailable';
+    s[e.backup_reserve!].state = 'unavailable';
+    const el = await mount(makeHass(s));
+    expect(sr(el).querySelector('.seg')).toBeNull();
+    expect(sr(el).querySelector('tc-slider')).toBeNull();
+    expect(sr(el).querySelector('.eco-kind')!.textContent).toContain(STRINGS.ecosystem.sensorTag);
+  });
+
+  test('(g) each mode segment is ≥44px min-height (CSS) with a state-bearing aria-label + aria-pressed', async () => {
+    const allCss = (TcPowerwall.styles as Array<{ cssText?: string }>)
+      .map((c) => c.cssText ?? '')
+      .join('\n');
+    expect(allCss).toMatch(/\.seg\s*\{[^}]*min-height:\s*44px/);
+    const el = await mount(makeHass(states(detailFx)));
+    for (const b of sr(el).querySelectorAll('.seg')) {
+      expect((b.getAttribute('aria-label') ?? '').length).toBeGreaterThan(0);
+      expect(b.hasAttribute('aria-pressed')).toBe(true);
+    }
   });
 });
