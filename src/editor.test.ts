@@ -253,3 +253,154 @@ describe('AC3 — per-entity-override boundary documented in the UI (YAML-only)'
     el.remove();
   });
 });
+
+// ── QA-added coverage (qa-generate-e2e-tests, Story 7.2) ───────────────────────
+// The above pins each AC in isolation; these close the gaps a reviewer would flag:
+//   • AC4 LITERAL: the emitted config is consumed by a REAL `tesla-card` without
+//     throwing (the existing AC4 tests assert the emitted SHAPE, never feed it back
+//     into the card — which is the actual AC wording).
+//   • the `image` text field shares the keyed `_text` path with `name` but was
+//     untested — pin its edit + clear-to-remove so a per-key regression can't hide.
+//   • the panel `<select>` must present the full `PanelId` union, not just reflect.
+//   • whitespace-only input must trim to a removal (the `.trim()` branch).
+//   • the `config-changed` event must bubble + compose (HA's wiring contract).
+//   • un-toggling a hide checkbox emits an explicit `false` (carried, not dropped).
+
+describe('AC4 — a real tesla-card consumes the editor-emitted config without error', () => {
+  test('an editor edit produces a config the live card accepts via setConfig', async () => {
+    const ed = makeEditor();
+    ed.setConfig({ type: 'custom:tesla-card' } as TeslaCardConfig);
+    await ed.updateComplete;
+    const cap = captureEmit(ed);
+
+    // Drive the editor the way a user would: set a name, pick a default panel.
+    const input = $(ed, 'input[type="text"]') as HTMLInputElement;
+    input.value = 'Garage Y';
+    input.dispatchEvent(new Event('change'));
+    const select = $(ed, 'select') as HTMLSelectElement;
+    select.value = 'media';
+    select.dispatchEvent(new Event('change'));
+
+    const emitted = cap.get() as unknown as TeslaCardConfig;
+    expect(emitted).toBeDefined();
+
+    // Feed the editor's output straight into a live card — exactly what HA does on
+    // every `config-changed`. AC4: it must consume it without throwing.
+    const card = document.createElement('tesla-card') as unknown as {
+      setConfig(c: TeslaCardConfig): void;
+      updateComplete: Promise<boolean>;
+    };
+    document.body.appendChild(card as unknown as HTMLElement);
+    expect(() => card.setConfig(emitted)).not.toThrow();
+    await expect(card.updateComplete).resolves.toBeDefined();
+    (card as unknown as HTMLElement).remove();
+    ed.remove();
+  });
+
+  test('a cleared-field config (name removed) is still consumed by the card', async () => {
+    const ed = makeEditor();
+    ed.setConfig({ type: 'custom:tesla-card', name: 'Foo' } as TeslaCardConfig);
+    await ed.updateComplete;
+    const cap = captureEmit(ed);
+
+    const input = $(ed, 'input[type="text"]') as HTMLInputElement;
+    input.value = '';
+    input.dispatchEvent(new Event('change'));
+    const emitted = cap.get() as unknown as TeslaCardConfig;
+    expect('name' in (emitted as object)).toBe(false);
+
+    const card = document.createElement('tesla-card') as unknown as {
+      setConfig(c: TeslaCardConfig): void;
+      updateComplete: Promise<boolean>;
+    };
+    document.body.appendChild(card as unknown as HTMLElement);
+    expect(() => card.setConfig(emitted)).not.toThrow();
+    await expect(card.updateComplete).resolves.toBeDefined();
+    (card as unknown as HTMLElement).remove();
+    ed.remove();
+  });
+});
+
+describe('AC1/AC4 — the image text field mirrors name (edit + clear-to-remove)', () => {
+  test('editing image emits the new value; clearing removes the key', async () => {
+    const el = makeEditor();
+    el.setConfig({ type: 'custom:tesla-card', image: '/local/y.png' } as TeslaCardConfig);
+    await el.updateComplete;
+    const cap = captureEmit(el);
+
+    // image is the 2nd text input (name is the 1st).
+    const img = el.shadowRoot?.querySelectorAll(
+      'input[type="text"]'
+    )[1] as HTMLInputElement;
+    img.value = '/local/z.png';
+    img.dispatchEvent(new Event('change'));
+    expect(cap.get()?.image).toBe('/local/z.png');
+    expect(cap.get()?.type).toBe('custom:tesla-card');
+
+    img.value = '';
+    img.dispatchEvent(new Event('change'));
+    expect('image' in (cap.get() as object)).toBe(false); // keyed clear works for image too
+    el.remove();
+  });
+});
+
+describe('AC1 — the default-panel select presents the full panel union', () => {
+  test('all six vehicle panels are selectable options, in render order', async () => {
+    const el = makeEditor();
+    el.setConfig({ type: 'custom:tesla-card' } as TeslaCardConfig);
+    await el.updateComplete;
+    const options = el.shadowRoot?.querySelectorAll(
+      'select option'
+    ) as NodeListOf<HTMLOptionElement>;
+    const values = Array.from(options).map((o) => o.value);
+    expect(values).toEqual(['climate', 'charging', 'closures', 'tyres', 'location', 'media']);
+    el.remove();
+  });
+});
+
+describe('AC4 — text-field hygiene + event wiring contract', () => {
+  test('a whitespace-only value trims to empty and REMOVES the key', async () => {
+    const el = makeEditor();
+    el.setConfig({ type: 'custom:tesla-card', name: 'Foo' } as TeslaCardConfig);
+    await el.updateComplete;
+    const cap = captureEmit(el);
+
+    const input = $(el, 'input[type="text"]') as HTMLInputElement;
+    input.value = '   '; // only whitespace — `.trim()` → '' → treated as a clear
+    input.dispatchEvent(new Event('change'));
+    expect('name' in (cap.get() as object)).toBe(false);
+    el.remove();
+  });
+
+  test('config-changed bubbles AND is composed (crosses the shadow boundary for HA)', async () => {
+    const el = makeEditor();
+    el.setConfig({ type: 'custom:tesla-card' } as TeslaCardConfig);
+    await el.updateComplete;
+    let evt: Event | undefined;
+    el.addEventListener('config-changed', (e) => (evt = e));
+
+    const input = $(el, 'input[type="text"]') as HTMLInputElement;
+    input.value = 'Named';
+    input.dispatchEvent(new Event('change'));
+
+    expect(evt).toBeDefined();
+    expect(evt!.bubbles).toBe(true);
+    expect(evt!.composed).toBe(true);
+    el.remove();
+  });
+
+  test('un-toggling a hide checkbox emits an explicit false (carried, not dropped)', async () => {
+    const el = makeEditor();
+    el.setConfig({ type: 'custom:tesla-card', hide_commands: true } as TeslaCardConfig);
+    await el.updateComplete;
+    const cap = captureEmit(el);
+
+    const checks = el.shadowRoot?.querySelectorAll(
+      'input[type="checkbox"]'
+    ) as NodeListOf<HTMLInputElement>;
+    checks[2].checked = false; // hide_commands → off
+    checks[2].dispatchEvent(new Event('change'));
+    expect(cap.get()?.hide_commands).toBe(false);
+    el.remove();
+  });
+});
