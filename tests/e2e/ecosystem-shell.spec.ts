@@ -30,7 +30,7 @@ test.describe('ecosystem shell (6.1) — deliberate no-runtime-surface contract'
     // The abstract base stays unregistered by design and the jsdom test-only
     // fixtures (tc-eco-fixture / tc-eco-raw) must never leak into the shipped
     // bundle. Story 6.2 registered the four concrete ecosystem cards (tc-solar /
-    // tc-powerwall / tc-grid / tc-home); tc-wall-connector lands in 6.3.
+    // tc-powerwall / tc-grid / tc-home); Story 6.3 added tc-wall-connector.
     const strays = await demo.page.evaluate(() =>
       ['ecosystem-card', 'tc-ecosystem-card', 'tc-eco-fixture', 'tc-eco-raw'].filter(
         (tag) => customElements.get(tag) !== undefined,
@@ -38,15 +38,22 @@ test.describe('ecosystem shell (6.1) — deliberate no-runtime-surface contract'
     );
     expect(strays).toEqual([]);
 
-    // The 6.2 concrete cards ARE registered now (side-effect imported in
+    // The concrete ecosystem cards ARE registered now (side-effect imported in
     // tesla-card.ts) — assert they landed, so a regression that drops a
-    // registration is caught here too.
-    const registered62 = await demo.page.evaluate(() =>
-      ['tc-solar', 'tc-powerwall', 'tc-grid', 'tc-home'].filter(
+    // registration is caught here too. Story 6.3 added tc-wall-connector (the
+    // fifth/final ecosystem card) to the 6.2 four.
+    const registeredEco = await demo.page.evaluate(() =>
+      ['tc-solar', 'tc-powerwall', 'tc-grid', 'tc-home', 'tc-wall-connector'].filter(
         (tag) => customElements.get(tag) !== undefined,
       ),
     );
-    expect(registered62).toEqual(['tc-solar', 'tc-powerwall', 'tc-grid', 'tc-home']);
+    expect(registeredEco).toEqual([
+      'tc-solar',
+      'tc-powerwall',
+      'tc-grid',
+      'tc-home',
+      'tc-wall-connector',
+    ]);
   });
 
   test('the shell ships no inter-card messaging on the page (shared-hass-only interlink)', async ({

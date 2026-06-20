@@ -287,6 +287,18 @@ export const STRINGS = {
       empty: 'No home consumption reported yet.',
       consumption: 'Consumption',
     },
+    // Wall Connector (Story 6.3 — the fifth/final ecosystem card). Card TITLE
+    // reuses `STRINGS.energy.nodes.wall_connector` ("Wall connector"); the
+    // connector status detail reuses `STRINGS.energy.connected`/`.unplugged`.
+    // The three state words live here because they are the card's derived
+    // three-state classification (available/connected/charging).
+    wallConnector: {
+      description: 'Standalone Wall Connector state, power & session card.',
+      empty: 'No Wall Connector data reported yet.',
+      available: 'Available',
+      connected: 'Connected',
+      charging: 'Charging',
+    },
   },
 
   editor: {
