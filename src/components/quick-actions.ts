@@ -13,6 +13,7 @@ import { TcBase } from '../base';
 import { sharedStyles } from '../styles';
 import { STRINGS } from '../strings';
 import { icon } from '../ui';
+import { normalizeCoverState, normalizeLockState } from '../data/dialect';
 import type { EntityKey } from '../const';
 import {
   entityId,
@@ -50,7 +51,9 @@ const ACTIONS: QuickAction[] = [
     accent: 'var(--tc-green, #34d399)',
     iconOn: mdiLock,
     iconOff: mdiLockOpenVariant,
-    on: (s) => s === 'locked',
+    // Route through the dialect seam (Story 5.11) — no inline fleet-shaped
+    // `=== 'locked'`; behaviour-identical for tesla_fleet (default LOCK_MAP).
+    on: (s) => normalizeLockState(s) === 'locked',
   },
   {
     key: 'climate',
@@ -66,7 +69,7 @@ const ACTIONS: QuickAction[] = [
     accent: 'var(--tc-blue, #38bdf8)',
     iconOn: mdiEvStation,
     iconOff: mdiEvStation,
-    on: (s) => s === 'open',
+    on: (s) => normalizeCoverState(s) === 'open',
   },
   {
     key: 'frunk',
@@ -74,7 +77,7 @@ const ACTIONS: QuickAction[] = [
     accent: 'var(--tc-amber, #fbbf24)',
     iconOn: mdiCar,
     iconOff: mdiCar,
-    on: (s) => s === 'open',
+    on: (s) => normalizeCoverState(s) === 'open',
   },
   {
     key: 'trunk',
@@ -82,7 +85,7 @@ const ACTIONS: QuickAction[] = [
     accent: 'var(--tc-amber, #fbbf24)',
     iconOn: mdiCarBack,
     iconOff: mdiCarBack,
-    on: (s) => s === 'open',
+    on: (s) => normalizeCoverState(s) === 'open',
   },
   {
     key: 'sentry',

@@ -14,7 +14,7 @@ import { TcBase } from '../base';
 import { sharedStyles } from '../styles';
 import { STRINGS } from '../strings';
 import { icon, batteryGauge, statTile } from '../ui';
-import { normalizeChargingState } from '../data/dialect';
+import { normalizeChargingState, normalizeCoverState } from '../data/dialect';
 import './slider';
 import {
   num,
@@ -249,7 +249,9 @@ export class TcPanelCharging extends TcBase {
             label: STRINGS.charging.chargePort,
             // Present (open/closed/etc.) → prettyText; missing/unavailable → hide (AC1).
             value: portState && !isUnavailable(portState) ? prettyText(portState) : undefined,
-            color: portState === 'open' ? 'var(--tc-amber, #fbbf24)' : 'var(--tc-text-dim, #9aa7b8)',
+            // Open-state cue routes through the dialect seam (Story 5.11), not an
+            // inline `=== 'open'`; identity for tesla_fleet (default COVER_MAP).
+            color: normalizeCoverState(portState) === 'open' ? 'var(--tc-amber, #fbbf24)' : 'var(--tc-text-dim, #9aa7b8)',
           })}
         </div>
       </div>

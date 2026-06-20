@@ -13,6 +13,7 @@ import {
   srState,
 } from '../helpers';
 import { readKey, referenceNow, type Staleness } from '../data/freshness';
+import { normalizeCoverState, normalizeLockState } from '../data/dialect';
 import type { EntityKey } from '../const';
 
 const DOOR = 'var(--tc-red, #f87171)';
@@ -36,19 +37,23 @@ export class TcPanelClosures extends TcBase {
   /**
    * The single honest read per closure (AC3). Routes through the Epic-1
    * `data/freshness` model — the same model the Hero consumes — so staleness is
-   * never re-derived here. `openLiteral` differs by domain: covers report
-   * `'open'`, door binary-sensors report `'on'`. `now` is the HA time base,
-   * computed once in `render` and threaded down (one `referenceNow` scan, not one
-   * per closure). An `unavailable`/absent read becomes `unknown` (neutral), never
-   * a confident "closed".
+   * never re-derived here. The open/closed decision goes through the dialect seam
+   * (`normalizeCoverState`, Story 5.11): covers report `'open'`/`'closed'`, door
+   * binary-sensors report `'on'`/`'off'`, and the canonical `COVER_MAP` collapses
+   * BOTH spellings to one `open`/`closed`/`unknown` union — so this no longer
+   * hard-codes a fleet-shaped `=== 'open'`/`=== 'on'` literal (the AC4 leak). For
+   * `tesla_fleet` it is behaviour-identical (the default map is identity for those
+   * spellings). `now` is the HA time base, computed once in `render` and threaded
+   * down (one `referenceNow` scan, not one per closure). An `unavailable`/absent
+   * read becomes `unknown` (neutral), never a confident "closed".
    */
-  private _closure(key: EntityKey, openLiteral: 'open' | 'on', now: number): Closure {
+  private _closure(key: EntityKey, now: number): Closure {
     const r = readKey(this.hass, this.config, key, { now });
     if (!r.available) {
       return { state: 'unknown', staleness: r.staleness, available: false, lastUpdated: r.lastUpdated };
     }
     return {
-      state: r.value === openLiteral ? 'open' : 'closed',
+      state: normalizeCoverState(r.value) === 'open' ? 'open' : 'closed',
       staleness: r.staleness,
       available: true,
       lastUpdated: r.lastUpdated,
@@ -68,7 +73,7 @@ export class TcPanelClosures extends TcBase {
     return !isUnavailable(rawState(this.hass, this.config, key));
   }
   private _open(key: EntityKey): boolean {
-    return rawState(this.hass, this.config, key) === 'open';
+    return normalizeCoverState(rawState(this.hass, this.config, key)) === 'open';
   }
   private _toggle(key: EntityKey): void {
     if (!this.hass || !this._avail(key)) return;
@@ -105,7 +110,7 @@ export class TcPanelClosures extends TcBase {
     label: string,
     now: number
   ): SVGTemplateResult {
-    const c = this._closure(key, 'open', now);
+    const c = this._closure(key, now);
     const stale = c.available && c.staleness !== 'fresh';
     // Only an available zone is a live control: focusable + actuable. An
     // unavailable zone is a dead control — non-focusable, pointer-events:none.
@@ -122,7 +127,7 @@ export class TcPanelClosures extends TcBase {
   /** A door indicator — status-only (AC1): rendered + coloured by state, NOT
    *  tappable and NOT focusable. Announces a read-only state to SR (L176). */
   private _door(key: EntityKey, x: number, y: number, name: string, now: number): SVGTemplateResult {
-    const c = this._closure(key, 'on', now);
+    const c = this._closure(key, now);
     const stale = c.available && c.staleness !== 'fresh';
     return svg`<rect
       class="zone door ${c.state}${c.available ? '' : ' na'}${stale ? ' stale' : ''}"
@@ -143,26 +148,26 @@ export class TcPanelClosures extends TcBase {
     const lock = readKey(this.hass, this.config, 'lock', { now });
     const lockWord = !lock.available
       ? STRINGS.closures.lockUnavailable
-      : lock.value === 'locked'
+      : normalizeLockState(lock.value) === 'locked'
         ? STRINGS.status.locked
         : STRINGS.status.unlocked;
 
     const items: { name: string; c: Closure }[] = [
-      { name: STRINGS.closures.parts.frunk, c: this._closure('frunk', 'open', now) },
-      { name: STRINGS.closures.parts.trunk, c: this._closure('trunk', 'open', now) },
-      { name: STRINGS.closures.parts.windows, c: this._closure('windows', 'open', now) },
-      { name: STRINGS.closures.parts.chargePort, c: this._closure('charge_port', 'open', now) },
-      { name: STRINGS.closures.parts.doorFL, c: this._closure('door_fl', 'on', now) },
-      { name: STRINGS.closures.parts.doorFR, c: this._closure('door_fr', 'on', now) },
-      { name: STRINGS.closures.parts.doorRL, c: this._closure('door_rl', 'on', now) },
-      { name: STRINGS.closures.parts.doorRR, c: this._closure('door_rr', 'on', now) },
+      { name: STRINGS.closures.parts.frunk, c: this._closure('frunk', now) },
+      { name: STRINGS.closures.parts.trunk, c: this._closure('trunk', now) },
+      { name: STRINGS.closures.parts.windows, c: this._closure('windows', now) },
+      { name: STRINGS.closures.parts.chargePort, c: this._closure('charge_port', now) },
+      { name: STRINGS.closures.parts.doorFL, c: this._closure('door_fl', now) },
+      { name: STRINGS.closures.parts.doorFR, c: this._closure('door_fr', now) },
+      { name: STRINGS.closures.parts.doorRL, c: this._closure('door_rl', now) },
+      { name: STRINGS.closures.parts.doorRR, c: this._closure('door_rr', now) },
     ];
     // The sunroof counts toward honesty ONLY when the install has one (entity
     // present): a sunroof we render `unknown` must block a false "All closed",
     // but an absent sunroof on a car without one must not invent doubt.
     const sunroof = readKey(this.hass, this.config, 'sunroof', { now });
     if (sunroof.value !== undefined) {
-      items.push({ name: STRINGS.closures.zones.sunroof, c: this._closure('sunroof', 'open', now) });
+      items.push({ name: STRINGS.closures.zones.sunroof, c: this._closure('sunroof', now) });
     }
 
     const openNames = items.filter((i) => i.c.state === 'open').map((i) => i.name);
@@ -187,7 +192,7 @@ export class TcPanelClosures extends TcBase {
     const anyStale = items.some((i) => i.c.available && i.c.staleness !== 'fresh');
     return {
       text: `${STRINGS.closures.allClosed} · ${lockWord}`,
-      tone: !lock.available || anyStale ? 'dim' : lock.value === 'locked' ? 'good' : 'warn',
+      tone: !lock.available || anyStale ? 'dim' : normalizeLockState(lock.value) === 'locked' ? 'good' : 'warn',
     };
   }
 
@@ -218,7 +223,7 @@ export class TcPanelClosures extends TcBase {
     const now = referenceNow(this.hass);
     const lock = readKey(this.hass, cfg, 'lock', { now });
     const lockAvail = lock.available;
-    const locked = lockAvail && lock.value === 'locked';
+    const locked = lockAvail && normalizeLockState(lock.value) === 'locked';
     const status = this._statusLine(now);
     const staleNote = this._staleNote(now);
     // Show the sunroof zone whenever the entity is PRESENT (value defined) — even

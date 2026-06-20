@@ -214,6 +214,12 @@
       const ENVIRONMENTS = {
         default: { prefix: 'garage_model_y', deviceName: 'Garage Model Y', platform: 'teslemetry' },
         renamed: { prefix: 'my_tesla', deviceName: 'My Tesla', platform: 'tesla_fleet' },
+        // ?env=tesla_custom — the COSTLY distinct dialect (Story 5.11 AC4). Same
+        // vehicle, registry platform 'tesla_custom' so detectDialect probes it and
+        // the remediated cover/lock/aperture reads exercise the dialect seam. The
+        // exact tesla_custom spellings are the dialect.ts ASSUMPTION set (no captured
+        // corpus); this proves the MECHANISM, not the literals.
+        tesla_custom: { prefix: 'garage_model_y', deviceName: 'Garage Model Y (tesla_custom)', platform: 'tesla_custom' },
       };
 
       function reprefix(src, prefix) {
@@ -277,7 +283,7 @@
       };
       const apAny = apFlags.frunk || apFlags.liftgate || apFlags.door || apFlags.window;
       const apUnavail = params.get('unavail'); // ?unavail=frunk|liftgate|door|window
-      let envKey = params.get('env') === 'renamed' ? 'renamed' : 'default';
+      let envKey = ENVIRONMENTS[params.get('env')] ? params.get('env') : 'default';
       const startPanel = params.get('panel') || 'charging';
       // ?colorentity=blue (or a #hex, or a generic preset name) drives paint from an entity.
       const colorEntity = params.get('colorentity');

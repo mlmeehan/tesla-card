@@ -10,7 +10,7 @@ import { bindFlowModel } from '../flow/binding';
 import { HeroSvgRenderer, flowOverlayStyles } from '../flow/hero-svg';
 import { resolvePaint } from '../paint';
 import { HERO_VIEWBOX } from '../const';
-import { normalizeChargingState } from '../data/dialect';
+import { normalizeChargingState, normalizeCoverState, normalizeLockState } from '../data/dialect';
 import {
   num,
   rawState,
@@ -86,8 +86,9 @@ export class TcHero extends TcBase {
    * combinatorial — types.ts ApertureState). Mirrors panel-closures.ts's read
    * idiom (`_open` = cover 'open', `_doorOpen` = binary_sensor 'on').
    *
-   * Graceful degrade (AC3) is STRUCTURAL: `rawState(...) === 'open'` and `isOn(...)`
-   * return `false` for `undefined` / `unavailable` / any non-open value, so a
+   * Graceful degrade (AC3) is STRUCTURAL: the cover read (`normalizeCoverState`,
+   * Story 5.11) and `isOn(...)` both yield `false`/non-open for
+   * `undefined` / `unavailable` / any non-open value, so a
    * missing or asleep aperture entity yields `false` (closed/hidden) — NEVER a
    * fabricated "open". Absence reads as closed; the card never asserts an aperture
    * state it can't confirm (the UX-DR18 honesty floor). The aggregate `windows`
@@ -95,15 +96,21 @@ export class TcHero extends TcBase {
    * zone); on a Model Y the rear hatch IS the `trunk` cover (the design's "liftgate").
    */
   private _apertures(): ApertureState {
+    // Cover apertures route through the dialect seam (`normalizeCoverState`,
+    // Story 5.11) instead of an inline fleet-shaped `=== 'open'`; the doors are
+    // `binary_sensor` on/off, kept on `isOn` (already canonical). Behaviour-
+    // identical for tesla_fleet (the default COVER_MAP is identity for 'open').
+    const isCoverOpen = (key: 'frunk' | 'trunk' | 'windows'): boolean =>
+      normalizeCoverState(rawState(this.hass, this.config, key)) === 'open';
     return {
-      frunk: rawState(this.hass, this.config, 'frunk') === 'open',
-      liftgate: rawState(this.hass, this.config, 'trunk') === 'open',
+      frunk: isCoverOpen('frunk'),
+      liftgate: isCoverOpen('trunk'),
       door:
         isOn(this.hass, this.config, 'door_fl') ||
         isOn(this.hass, this.config, 'door_fr') ||
         isOn(this.hass, this.config, 'door_rl') ||
         isOn(this.hass, this.config, 'door_rr'),
-      window: rawState(this.hass, this.config, 'windows') === 'open',
+      window: isCoverOpen('windows'),
     };
   }
 
@@ -142,7 +149,7 @@ export class TcHero extends TcBase {
     }
     const shift = rawState(this.hass, this.config, 'shift_state');
     const visual = this._chargeVisual();
-    const locked = rawState(this.hass, this.config, 'lock') === 'locked';
+    const locked = normalizeLockState(rawState(this.hass, this.config, 'lock')) === 'locked';
     // Lock sub-line — useful while either parked OR plugged-idle (both stationary).
     const lockSub = html`<span class="lockline">
       ${icon(locked ? mdiLock : mdiLockOpenVariant, { size: 14 })}

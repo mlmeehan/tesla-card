@@ -17,7 +17,7 @@
 
 export type Scenario = 'awake' | 'asleep' | 'parked' | 'plugged' | 'apertures' | 'unresolved';
 export type ApertureName = 'frunk' | 'liftgate' | 'door' | 'window';
-export type Env = 'default' | 'renamed';
+export type Env = 'default' | 'renamed' | 'tesla_custom';
 export type PanelId =
   | 'climate'
   | 'charging'
@@ -51,6 +51,7 @@ export function buildDemoUrl(opts: DemoOptions = {}): string {
   if (opts.scenario === 'apertures') q.set('scenario', 'apertures');
   if (opts.scenario === 'unresolved') q.set('scenario', 'unresolved');
   if (opts.env === 'renamed') q.set('env', 'renamed');
+  if (opts.env === 'tesla_custom') q.set('env', 'tesla_custom'); // AC4 — costly dialect
   if (opts.panel) q.set('panel', opts.panel);
   if (opts.paint) q.set('paint', opts.paint);
   if (opts.image) q.set('image', '1');
