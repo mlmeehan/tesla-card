@@ -1,6 +1,6 @@
 import type { VehicleKey } from './data/registry';
 
-export const CARD_VERSION = '0.1.0';
+export const CARD_VERSION = '0.2.0';
 
 /**
  * The hero's fixed coordinate contract: the 1024×687 SVG viewBox every hero
