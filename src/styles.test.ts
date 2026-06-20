@@ -201,6 +201,9 @@ describe('.surface is the single elevation primitive (Story 2.2 AC2)', () => {
     const consumers = [
       'panel-tyres.ts', 'panel-climate.ts', 'panel-charging.ts', 'panel-closures.ts',
       'panel-location.ts', 'panel-energy.ts', 'panel-media.ts', 'hero.ts',
+      // Epic 6: the shared ecosystem-card shell renders the surface for the
+      // concrete ecosystem cards (tc-solar/tc-powerwall/… in 6.2/6.3).
+      'ecosystem-card.ts',
     ];
     const missing: string[] = [];
     for (const name of consumers) {
