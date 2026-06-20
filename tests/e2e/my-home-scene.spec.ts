@@ -1,3 +1,5 @@
+// [NFR-3 matrix axis: renders mobile + desktop] — Story 7.4 traceability marker
+// (375/500px phone vs 1280px desktop axis-selection sweep).
 // Story 6.6 — `tc-my-home` polished composed view, the LIVE-GEOMETRY + REAL-INTERACTION E2E layer.
 //
 // 6.5 shipped the orchestrator + the SceneBus STAR over a functional grid; this

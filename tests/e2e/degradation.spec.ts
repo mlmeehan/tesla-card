@@ -1,3 +1,4 @@
+// [NFR-3 matrix axis: renders WITHOUT a device registry] — Story 7.4 traceability marker.
 // Degradation e2e (Story 1.6, AC1 + AC2 rendered proof). A foreign / unconfigured
 // install — no Tesla entities resolve, no registry — must still upgrade and render
 // a calm, designed empty state in a real browser: vehicle name + neutral em-dash

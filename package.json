@@ -12,7 +12,7 @@
     "test:watch": "vitest",
     "typecheck": "tsc --noEmit",
     "typecheck:e2e": "tsc -p tests/tsconfig.json",
-    "lint": "node scripts/lint/no-bare-hass-states.mjs && node scripts/lint/no-cycle.mjs && node scripts/lint/trade-dress-denylist.mjs && node scripts/lint/import-allowlist.mjs && node scripts/lint/no-network-egress.mjs",
+    "lint": "node scripts/lint/no-bare-hass-states.mjs && node scripts/lint/no-cycle.mjs && node scripts/lint/trade-dress-denylist.mjs && node scripts/lint/import-allowlist.mjs && node scripts/lint/no-network-egress.mjs && node scripts/lint/version-sync.mjs",
     "demo": "npm run build && echo 'Open demo/index.html in a browser'",
     "serve:demo": "http-server . -a 127.0.0.1 -p 4173 -c-1 -s",
     "test:e2e": "playwright test",

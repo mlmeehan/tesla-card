@@ -36,15 +36,18 @@ jobs:
       - name: Verify bundle was produced
         run: test -s dist/tesla-card.js
 
-  # Structural + policy CI gates: the data-access boundary lint suite
+  # Structural + policy CI gates (6): the data-access boundary lint suite
   # (no-bare-hass.states + no-cycle, Story 1.7), the trade-dress denylist
   # (Story 2.6 — fails on Tesla brand red / option codes / wordmark ®™ / logo
   # asset filenames), the import-allowlist gate (Story 2.7 — runtime imports
-  # ⊆ {lit, @mdi/js}; @mdi/js named-path only, never the barrel — NFR-2), and the
+  # ⊆ {lit, @mdi/js}; @mdi/js named-path only, never the barrel — NFR-2), the
   # no-network-egress gate (Story 2.8 — fails on any direct browser network
   # primitive (fetch / XMLHttpRequest / WebSocket / EventSource / RTCPeerConnection
   # / navigator.sendBeacon) in the bundled src/ graph; hass.callService/states ride
-  # HA's own connection — AR-17 privacy affirmation, no telemetry).
+  # HA's own connection — AR-17 privacy affirmation, no telemetry), and the
+  # version-sync gate (Story 7.4 — fails on package.json `version` ↔ src/const.ts
+  # `CARD_VERSION` drift and pins hacs.json `filename` ↔ rollup output basename =
+  # tesla-card.js; the git TAG leg is checked at release time in release.yml — NFR-5 / AC1).
   # Merge-blocking, same tier as type-check/build. Dep-light scripts
   # (scripts/lint/*.mjs); no ESLint, no new deps.
   lint:

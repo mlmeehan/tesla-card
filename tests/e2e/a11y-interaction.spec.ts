@@ -1,3 +1,5 @@
+// [NFR-3 matrix axis: renders mobile + desktop] — Story 7.4 traceability marker
+// (setViewportSize sweep across compact ≤540px and wide ≥1280px widths).
 // Accessibility, responsive & interaction contracts — RUNTIME E2E for Story 2.3
 // (UX-DR21 a11y floor / UX-DR22 responsive / UX-DR23 interaction + bans).
 //

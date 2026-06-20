@@ -71,10 +71,18 @@ For one-click discoverability without the custom-repo step:
 
 ## Release checklist
 
-- [ ] `package.json` `version` and `src/const.ts` `CARD_VERSION` match the tag
+> **Now CI-enforced (Story 7.4):** the first and fifth items below are no longer a
+> manual tick — the `version-sync` lint gate (`scripts/lint/version-sync.mjs`, the
+> 6th structural gate in `npm run lint`) fails CI on any `package.json` `version` ↔
+> `src/const.ts` `CARD_VERSION` drift and pins `hacs.json` `filename` ↔ the Rollup
+> output basename = `tesla-card.js`. The **git tag** leg (`tag === v${version}`) is
+> asserted at release time in `release.yml`. Keep the boxes for the human's awareness,
+> but a drift can no longer slip past CI.
+
+- [ ] `package.json` `version` and `src/const.ts` `CARD_VERSION` match the tag *(CI-enforced: `version-sync` gate + `release.yml` tag check)*
 - [ ] `npm run typecheck` clean
 - [ ] `npm run build` produces `dist/tesla-card.js`
 - [ ] `docs/screenshot-charging.png` (and any others referenced) committed
-- [ ] `hacs.json` `filename` matches the release asset name
+- [ ] `hacs.json` `filename` matches the release asset name *(CI-enforced: `version-sync` gate)*
 - [ ] CI green on the default branch
 - [ ] GitHub Release created → `tesla-card.js` attached as an asset

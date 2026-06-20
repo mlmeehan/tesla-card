@@ -1,3 +1,4 @@
+// [NFR-3 matrix axis: light + dark host theme] — Story 7.4 traceability marker.
 // Token contract — runtime E2E for Story 2.1 (`--tc-*` token contract / FR-28).
 //
 // The unit gate (src/styles.test.ts) proves the tokens *exist* and that every

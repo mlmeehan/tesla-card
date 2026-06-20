@@ -1,3 +1,5 @@
+// [NFR-3 matrix axis: renders mobile + desktop] — Story 7.4 traceability marker
+// (per-test setViewportSize sweep incl. a ≤540px mobile width).
 // Commands (fire-and-forget) — RUNTIME E2E for Story 5.3 (FR-15 / UX-DR7).
 //
 // The unit gate (src/components/commands.test.ts) proves the component's logic in
