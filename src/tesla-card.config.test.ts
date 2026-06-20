@@ -114,6 +114,27 @@ describe('AC3 — card setConfig is forward-compatible (tolerates unknown keys)'
     );
     el.remove();
   });
+
+  test('garbage VALUES in known optional fields do not throw and still render (FR-24)', async () => {
+    // "Validates only what it consumes": setConfig stores the config and never
+    // eagerly type-checks optional fields — resolution is lazy and degrades. A
+    // config whose typed-optional fields carry wrong-typed garbage must render,
+    // not crash or blank (the degradation face of the forward-compat contract).
+    const el = makeCard();
+    const cfg = {
+      type: 'custom:tesla-card',
+      tyres: 'not-an-object',
+      energy: 7,
+      weather: [],
+      wake_cooldown: 'soon',
+      entities: 'nope',
+    } as unknown as TeslaCardConfig;
+    expect(() => el.setConfig(cfg)).not.toThrow();
+    el.hass = fullHass();
+    await expect(el.updateComplete).resolves.toBeDefined();
+    expect(hasRoot(el)).toBe(true);
+    el.remove();
+  });
 });
 
 describe('AC3 — editor setConfig is equally tolerant', () => {

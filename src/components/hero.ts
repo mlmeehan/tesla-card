@@ -84,7 +84,7 @@ export class TcHero extends TcBase {
    * `components/` read rule). A flat record of four booleans, NOT a single enum:
    * apertures are physically independent (frunk up + door ajar + window down can
    * all hold at once), so each is read and rendered on its own (linear, never
-   * combinatorial — types.ts ApertureState). Mirrors panel-closures.ts's read
+   * combinatorial — car.ts ApertureState). Mirrors panel-closures.ts's read
    * idiom (`_open` = cover 'open', `_doorOpen` = binary_sensor 'on').
    *
    * Graceful degrade (AC3) is STRUCTURAL: the cover read (`normalizeCoverState`,
