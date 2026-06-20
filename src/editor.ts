@@ -30,8 +30,12 @@ export class TeslaCardEditor extends LitElement implements LovelaceCardEditor {
     this._config = { ...config };
   }
 
-  private _patch(patch: Partial<TeslaCardConfig>): void {
-    this._config = { ...this._config, ...patch };
+  // Commit a WHOLE config as the new state and notify HA. The caller owns the
+  // shape — so a removal (a copy with a key deleted) actually propagates, unlike
+  // a merge which can only add/override. Unknown/future keys live on whatever
+  // copy the caller passes, so they round-trip intact.
+  private _emit(config: TeslaCardConfig): void {
+    this._config = config;
     this.dispatchEvent(
       new CustomEvent('config-changed', {
         detail: { config: this._config },
@@ -41,12 +45,22 @@ export class TeslaCardEditor extends LitElement implements LovelaceCardEditor {
     );
   }
 
+  // Add/override a key — correct for bool toggles + the panel select, which only
+  // ever SET a value (a `false`/explicit panel is harmless to carry).
+  private _patch(patch: Partial<TeslaCardConfig>): void {
+    this._emit({ ...this._config, ...patch });
+  }
+
   private _text(e: Event, key: 'name' | 'image'): void {
     const v = (e.target as HTMLInputElement).value.trim();
+    // Build the full next config and REPLACE (via `_emit`), not merge: clearing a
+    // field deletes its key, and a merge (`_patch`) would re-add it from the old
+    // `_config` (omission ≠ override). The `{ ...this._config }` copy preserves
+    // unknown/future keys, so replacement stays forward-compatible.
     const next = { ...this._config };
     if (v) next[key] = v;
     else delete next[key];
-    this._patch(next);
+    this._emit(next);
   }
 
   private _bool(key: 'hide_quick_actions' | 'hide_panels' | 'hide_commands', e: Event): void {
