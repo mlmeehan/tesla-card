@@ -160,6 +160,18 @@ describe('centralized strings — voice contract (Story 2.5)', () => {
     }
   });
 
+  test('Story 5.8: tyres panel gains the freshness-honest summary fragment', () => {
+    // The honesty-first summary needs a fragment for "present but unconfirmable"
+    // corners — surfaced instead of a confident "All normal" on stale data
+    // (UX-DR18). Single-sourced here; the per-corner staleness stamp reuses
+    // STRINGS.hero.updatedPrefix/ago/justNow (no duplicate age copy).
+    expect(STRINGS.tyres.someUnconfirmed).toBe('Some readings unconfirmed');
+    // Sentence-case (first word capitalized, the rest lower) like the other copy.
+    const words = STRINGS.tyres.someUnconfirmed.split(' ');
+    expect(words[0]).toMatch(/^[A-Z]/);
+    for (const w of words.slice(1)) expect(w).toMatch(/^[a-z]/);
+  });
+
   test('migration backstop: copy-bearing components import from ./strings', () => {
     const consumers = [
       'tesla-card.ts',

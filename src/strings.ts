@@ -192,6 +192,11 @@ export const STRINGS = {
     title: 'Tyre pressure',
     checkPressure: 'Check pressure',
     allNormal: 'All normal',
+    // Freshness-honest summary (Story 5.8 / UX-DR18): shown instead of a confident
+    // "All normal" when a present corner is stale/unconfirmable — never claim an
+    // all-clear we cannot confirm. The per-corner staleness stamp reuses
+    // STRINGS.hero.updatedPrefix/ago/justNow (no duplicate age copy).
+    someUnconfirmed: 'Some readings unconfirmed',
     noData: 'No data',
     low: 'Low',
     corners: {

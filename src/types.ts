@@ -54,6 +54,25 @@ export interface EnergyConfig {
 }
 
 /**
+ * Tyre low-pressure check tuning (FR-19). Values are in the sensor's NATIVE
+ * unit (bar or psi) — never assume one.
+ */
+export interface TyresConfig {
+  /**
+   * Recommended cold pressure. Default: the MAX of the four live corner
+   * readings (peer baseline — a cold morning lowers all four together, so a
+   * relative check is inherently overnight-temp-robust).
+   */
+  recommended?: number;
+  /**
+   * How far below `recommended` a corner must fall to warn. Default tuned to
+   * clear a normal overnight temp dip (~0.3 bar / ~4 psi by unit) — NOT a
+   * fixed absolute PSI threshold.
+   */
+  margin?: number;
+}
+
+/**
  * @unstable — the published Layer contract (FR-7). PUBLIC SURFACE; its freeze is
  * a one-way door (architecture.md D6), so this shape MAY change before it freezes
  * — bring-your-own pack authors (Story 3.7) must expect it to shift. The
@@ -170,6 +189,13 @@ export interface TeslaCardConfig {
    * asleep. Defaults to a short built-in window (1 min) when unset/≤0.
    */
   wake_cooldown?: number;
+  /**
+   * Tyre low-pressure check tuning (Story 5.8 / FR-19). Additive, forward-
+   * compatible — Epic 7 owns the consolidated schema + GUI editor; this is the
+   * data field only. When omitted, the panel derives a peer-baseline
+   * `recommended` (max of the four corners) and a unit-aware default `margin`.
+   */
+  tyres?: TyresConfig;
 }
 
 /** Detail emitted when the hero / quick actions request a panel switch. */

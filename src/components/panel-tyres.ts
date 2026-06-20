@@ -4,8 +4,9 @@ import { mdiAlertCircle } from '@mdi/js';
 import { TcBase } from '../base';
 import { sharedStyles } from '../styles';
 import { STRINGS } from '../strings';
-import { icon } from '../ui';
-import { num, attr, rawState, isOn, formatNumber } from '../helpers';
+import { icon, formatAgeHint } from '../ui';
+import { num, unit as unitOf, isOn, formatNumber } from '../helpers';
+import { readKey, referenceNow } from '../data/freshness';
 import type { EntityKey } from '../const';
 
 interface Corner {
@@ -22,45 +23,169 @@ const CORNERS: Corner[] = [
   { key: 'tire_rr', warn: 'tire_warn_rr', label: STRINGS.tyres.corners.rr, pos: 'rr' },
 ];
 
+/**
+ * Unit-aware default margin (Story 5.8 / AC2). NOT a fixed PSI constant: a corner
+ * warns at `recommended − margin`, and `margin` lives in the sensor's native unit.
+ * ~0.3 bar ≈ ~4 psi ≈ ~30 kPa — enough to clear a normal overnight cold-soak dip
+ * (~0.1–0.2 bar) while still catching a real slow leak. Falls through to the psi
+ * value for an unknown/absent unit (harmless — `recommended` is undefined with no
+ * present corners, so no computed warn can fire anyway).
+ */
+function defaultMargin(u: string): number {
+  if (/bar/i.test(u)) return 0.3;
+  if (/kpa/i.test(u)) return 30;
+  return 4; // psi (and the conservative fallback)
+}
+
+/** One corner's raw read — computed once per render BEFORE the peer baseline, so
+ *  the baseline can be derived from the fresh subset (see `render`). */
+interface CornerRead {
+  c: Corner;
+  value: number | undefined;
+  unit: string;
+  isBar: boolean;
+  /** Read is available AND `fresh` (the only state a computed warn / baseline may use). */
+  fresh: boolean;
+  /** Present but `stale`/`asleep` (annotate, don't assert). */
+  stale: boolean;
+  /** The integration's own TPMS `binary_sensor` warning. */
+  tpms: boolean;
+  /** Freshness stamp for the staleness hint. */
+  lastUpdated: string | undefined;
+}
+
+/** One corner's derived render state (computed once in render, reused by the summary). */
+interface CornerView {
+  c: Corner;
+  value: number | undefined;
+  unit: string;
+  isBar: boolean;
+  /** TPMS binary_sensor warn OR the computed low-pressure margin warn. */
+  warn: boolean;
+  /** This corner is present but its read is stale/asleep (annotate, don't assert). */
+  stale: boolean;
+  /** Honest "updated Nm ago" stamp, or undefined when fresh / no stamp. */
+  ageHint: string | undefined;
+}
+
 @customElement('tc-panel-tyres')
 export class TcPanelTyres extends TcBase {
-  private _corner(c: Corner): TemplateResult {
+  /** Read one corner once (freshness + value + unit + TPMS), reused for both the
+   *  baseline derivation and the per-corner view — no repeated `hass.states` walks. */
+  private _read(c: Corner, now: number): CornerRead {
+    const r = readKey(this.hass, this.config, c.key, { now });
     const value = num(this.hass, this.config, c.key);
-    const unit: string = attr(this.hass, this.config, c.key, 'unit_of_measurement') ?? '';
-    const isBar = /bar/i.test(unit);
-    const warn = isOn(this.hass, this.config, c.warn);
-    const text =
-      value !== undefined ? formatNumber(value, isBar ? 1 : 0) : '—';
+    const u = unitOf(this.hass, this.config, c.key);
+    return {
+      c,
+      value,
+      unit: u,
+      isBar: /bar/i.test(u),
+      fresh: r.available && r.staleness === 'fresh',
+      stale: r.available && r.staleness !== 'fresh',
+      tpms: isOn(this.hass, this.config, c.warn),
+      lastUpdated: r.lastUpdated,
+    };
+  }
+
+  /**
+   * Derive one corner's render state. The low signal is the integration's TPMS
+   * `binary_sensor` (`tpms`) OR-ed with a computed margin check — the computed
+   * check AUGMENTS the car's own sensor, never replaces it (we must not under-warn
+   * vs. the vehicle). The computed warn fires ONLY on a fresh, present reading with
+   * a derivable `recommended`: an absent/`unavailable` value or an underivable
+   * baseline must never ghost-trip (`num` is NaN-safe → `undefined`, never `NaN`),
+   * and we do NOT assert a confident fresh-looking alarm on a stale read we cannot
+   * confirm (UX-DR18 — annotate staleness instead). The car's own TPMS warn still
+   * stands on stale data (that is the vehicle's assertion, not ours).
+   */
+  private _view(read: CornerRead, now: number, recommended: number | undefined, margin: number): CornerView {
+    const computedLow =
+      read.fresh &&
+      read.value !== undefined &&
+      recommended !== undefined &&
+      read.value < recommended - margin;
+    return {
+      c: read.c,
+      value: read.value,
+      unit: read.unit,
+      isBar: read.isBar,
+      warn: read.tpms || computedLow,
+      stale: read.stale,
+      ageHint: read.stale ? formatAgeHint(read.lastUpdated, now) : undefined,
+    };
+  }
+
+  private _corner(v: CornerView): TemplateResult {
+    const text = v.value !== undefined ? formatNumber(v.value, v.isBar ? 1 : 0) : '—';
     return html`
-      <div class="corner ${c.pos} ${warn ? 'warn' : ''}">
-        <span class="c-label">${c.label}</span>
+      <div class="corner ${v.c.pos} ${v.warn ? 'warn' : ''}">
+        <span class="c-label">${v.c.label}</span>
         <span class="c-val">
-          ${text}<span class="c-unit">${value !== undefined ? unit : ''}</span>
+          ${text}<span class="c-unit">${v.value !== undefined ? v.unit : ''}</span>
         </span>
-        ${warn
+        ${v.warn
           ? html`<span class="c-warn">${icon(mdiAlertCircle, { size: 13 })} ${STRINGS.tyres.low}</span>`
+          : nothing}
+        ${v.ageHint
+          ? html`<span class="c-stale tc-stale-copy">${v.ageHint}</span>`
           : nothing}
       </div>
     `;
   }
 
   protected override render(): TemplateResult {
-    const anyWarn = CORNERS.some((c) => isOn(this.hass, this.config, c.warn));
-    const anyData = CORNERS.some(
-      (c) => rawState(this.hass, this.config, c.key) !== undefined
-    );
+    const now = referenceNow(this.hass);
+    const reads = CORNERS.map((c) => this._read(c, now));
+
+    // Peer baseline: recommended defaults to the MAX of the FRESH corners only. A
+    // cold morning lowers all four together so the gap stays small (nothing trips);
+    // a real slow leak makes one corner diverge below `max − margin`. We use only
+    // FRESH values (spec: "max of the four LIVE corner readings"): a stale
+    // last-known reading is not confirmable, so it must NOT inflate the baseline and
+    // false-trip a fresh, uniformly-lower corner (UX-DR18 — never assert off
+    // unconfirmable data). An explicit `config.tyres.recommended` overrides. ≤1
+    // fresh ⇒ derived recommended is the lone value (no corner is `< itself − margin`)
+    // ⇒ no computed warn — only TPMS.
+    const freshVals = reads
+      .filter((x) => x.fresh && x.value !== undefined)
+      .map((x) => x.value as number);
+    // Margin unit is the native unit of the first FRESH corner (else any present, else '').
+    const unitSrc =
+      reads.find((x) => x.fresh && x.value !== undefined) ??
+      reads.find((x) => x.value !== undefined);
+    const unitStr = unitSrc ? unitSrc.unit : '';
+    const recommended =
+      this.config.tyres?.recommended ?? (freshVals.length >= 1 ? Math.max(...freshVals) : undefined);
+    const margin = this.config.tyres?.margin ?? defaultMargin(unitStr);
+
+    const views = reads.map((x) => this._view(x, now, recommended, margin));
+
+    const anyWarn = views.some((v) => v.warn);
+    const present_ = views.filter((v) => v.value !== undefined);
+    const anyData = present_.length > 0;
+    // Freshness-honest summary: "All normal" ONLY when every present corner is
+    // confirmable (not stale) and not warning; any stale corner surfaces
+    // "Some readings unconfirmed" instead of a confident all-clear (UX-DR18).
+    const anyStale = present_.some((v) => v.stale);
+    const summaryTone = anyWarn ? 'warn' : !anyData ? '' : anyStale ? 'dim' : 'good';
+    const summaryText = anyWarn
+      ? STRINGS.tyres.checkPressure
+      : !anyData
+        ? STRINGS.tyres.noData
+        : anyStale
+          ? STRINGS.tyres.someUnconfirmed
+          : STRINGS.tyres.allNormal;
 
     return html`
       <section class="surface block">
         <div class="head">
           <span class="label">${STRINGS.tyres.title}</span>
-          <span class="summary ${anyWarn ? 'warn' : anyData ? 'good' : ''}">
-            ${anyWarn ? STRINGS.tyres.checkPressure : anyData ? STRINGS.tyres.allNormal : STRINGS.tyres.noData}
-          </span>
+          <span class="summary ${summaryTone}">${summaryText}</span>
         </div>
 
         <div class="layout">
-          ${this._corner(CORNERS[0])} ${this._corner(CORNERS[1])}
+          ${this._corner(views[0])} ${this._corner(views[1])}
           <div class="car">
             <svg viewBox="0 0 120 200" aria-hidden="true">
               <rect x="28" y="14" width="64" height="172" rx="26"></rect>
@@ -69,7 +194,7 @@ export class TcPanelTyres extends TcBase {
               <polygon points="46,140 74,140 80,166 40,166"></polygon>
             </svg>
           </div>
-          ${this._corner(CORNERS[2])} ${this._corner(CORNERS[3])}
+          ${this._corner(views[2])} ${this._corner(views[3])}
         </div>
       </section>
     `;
@@ -100,6 +225,10 @@ export class TcPanelTyres extends TcBase {
       }
       .summary.warn {
         color: var(--tc-red, #f87171);
+      }
+      /* Honest unconfirmed-summary tone (UX-DR18) — dim, never confident green. */
+      .summary.dim {
+        color: var(--tc-text-dim, #9aa7b8);
       }
 
       .layout {
@@ -194,6 +323,12 @@ export class TcPanelTyres extends TcBase {
         font-size: 11px;
         font-weight: 700;
         color: var(--tc-red, #f87171);
+      }
+      /* Honest per-corner staleness stamp (UX-DR18) — colour via .tc-stale-copy
+         (--tc-text-dim), NEVER --tc-text-mute (fails 4.5:1 for load-bearing copy). */
+      .c-stale {
+        font-size: 10.5px;
+        font-weight: 600;
       }
     `,
   ];
