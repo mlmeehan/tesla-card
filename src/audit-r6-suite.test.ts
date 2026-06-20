@@ -88,8 +88,11 @@ async function mount(
   await el.updateComplete;
   return el;
 }
+// Excludes the Story-8.5 vehicle cell (an inline `.scene-cell[data-node="vehicle"]`
+// whose firstElementChild is a `<div class="surface">`, NOT a `tc-*` child element) —
+// this query enumerates the registered ECOSYSTEM child cards only.
 const cellTags = (el: Scene): string[] =>
-  [...sr(el).querySelectorAll<HTMLElement>('.scene-cell')].map(
+  [...sr(el).querySelectorAll<HTMLElement>('.scene-cell:not([data-node="vehicle"])')].map(
     (c) => (c.firstElementChild?.tagName ?? '').toLowerCase()
   );
 

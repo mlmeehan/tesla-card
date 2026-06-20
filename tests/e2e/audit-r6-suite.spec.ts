@@ -202,10 +202,14 @@ test.describe('R6 suite — the composed Scene under a non-default install prefi
 
   test('AC4 — re-prefixed energy ids still compose five cards + a named bus, zero console errors', async ({ page }) => {
     await mountScene(page, { reslug: true });
-    await expect(scene(page).locator('.scene-cell')).toHaveCount(5); // all roles resolved by slug
-    const tags = await scene(page)
-      .locator('.scene-cell')
-      .evaluateAll((cs) => cs.map((c) => (c.firstElementChild?.tagName ?? '').toLowerCase()));
+    // The five ENERGY ecosystem cards (the Story-8.5 vehicle cell is appended to the
+    // load row and is asserted in my-home-scene.spec.ts — exclude it here, mirroring
+    // the jsdom suite's `:not([data-node="vehicle"])` scoping).
+    const ecoCells = scene(page).locator('.scene-cell:not([data-node="vehicle"])');
+    await expect(ecoCells).toHaveCount(5); // all roles resolved by slug
+    const tags = await ecoCells.evaluateAll((cs) =>
+      cs.map((c) => (c.firstElementChild?.tagName ?? '').toLowerCase()),
+    );
     expect(tags).toEqual(['tc-solar', 'tc-powerwall', 'tc-grid', 'tc-home', 'tc-wall-connector']);
     // The bus overlay names a present node (no blank) and carries a kW magnitude.
     const label = (await scene(page).locator('.scene-bus').getAttribute('aria-label')) ?? '';

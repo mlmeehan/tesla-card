@@ -11,6 +11,8 @@ import {
   axisForWidth,
   SCENE_PHONE_MAX,
   BUS_WIDTH_MAX,
+  VEHICLE_NODE_ID,
+  wcVehicleEdge,
 } from './my-home';
 import { ENERGY_ROLES, bindFlowModel } from './binding';
 import { BUS_NODE_ID, IDLE_KW, buildFlowModel, type FlowModel, type FlowInput } from './model';
@@ -466,5 +468,73 @@ describe('half-alive model — mixed measured + quiescent reads stay calm (AC3)'
     expect(model.edges.length).toBeGreaterThan(0);
     expect(model.edges.every((e) => e.provenance === 'quiescent')).toBe(true);
     expect(model.edges.every((e) => e.direction === 'none')).toBe(true);
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Story 8.5 — the vehicle node: the WC→Vehicle agreement view + the anchor
+// exclusion. wcVehicleEdge is the SINGLE source the cell badge + the overlay edge
+// consume, so they agree by construction (AC2); the vehicle anchor must NOT move
+// the trunk junction / axis (AC4 — it is a presentation cell, not a bus tap).
+// ═══════════════════════════════════════════════════════════════════════════
+describe('wcVehicleEdge — the WC edge IS the car-charging edge (AC2 agree-by-construction)', () => {
+  test('a charging WC ⇒ active, magnitude = |WC edge kW| (never re-signed), direction carried', () => {
+    // wall_connector + = charging draw; buildFlowModel applies BUS_ORIENTATION(−1),
+    // so the WC edge kW is NEGATIVE (drawing from the bus to feed the car).
+    const model = modelOf([measured('wall_connector', 7.4)]);
+    const wcEdge = model.edges.find((e) => e.from === 'wall_connector')!;
+    expect(wcEdge.kW).toBeLessThan(0); // charging WC draws from the bus
+    const ch = wcVehicleEdge(model);
+    expect(ch.active).toBe(true);
+    expect(ch.direction).toBe(wcEdge.direction); // carried, never re-derived
+    // The #1 agreement assertion: the cell's shown magnitude == |the WC edge kW|.
+    expect(ch.kW).toBeCloseTo(Math.abs(wcEdge.kW), 6);
+    expect(ch.kW).toBeCloseTo(7.4, 6);
+  });
+
+  test('charging fixture: agreement holds through the production binding path', () => {
+    const model = fixtureModel(charging);
+    const wcEdge = model.edges.find((e) => e.from === 'wall_connector')!;
+    const ch = wcVehicleEdge(model);
+    expect(ch.active).toBe(true);
+    expect(ch.kW).toBeCloseTo(Math.abs(wcEdge.kW), 6);
+  });
+
+  test('an idle (sub-deadband) WC ⇒ inactive, kW 0 — never a false charge', () => {
+    const ch = wcVehicleEdge(modelOf([measured('wall_connector', 0)]));
+    expect(ch).toEqual({ active: false, kW: 0, direction: 'none' });
+  });
+
+  test('an absent WC (no edge) ⇒ inactive, kW 0', () => {
+    expect(wcVehicleEdge(modelOf([absent('wall_connector')]))).toEqual({
+      active: false,
+      kW: 0,
+      direction: 'none',
+    });
+    expect(wcVehicleEdge({ nodes: [], edges: [] })).toEqual({ active: false, kW: 0, direction: 'none' });
+  });
+});
+
+describe('VEHICLE_NODE_ID is excluded from the trunk junction & axis math (Task 2, AC4)', () => {
+  const base = { grid: r(0, 0), home: r(200, 0), wall_connector: r(400, 0) };
+  // A vehicle anchor placed far off the tap line — if it leaked into the centroid
+  // or the spread it would visibly move the junction / could flip the axis.
+  const withVehicle = { ...base, [VEHICLE_NODE_ID]: r(600, 500) };
+
+  test('deriveBusAnchor is identical with vs without a present vehicle anchor', () => {
+    expect(deriveBusAnchor(withVehicle)).toEqual(deriveBusAnchor(base));
+  });
+
+  test('busAxis is identical with vs without a present vehicle anchor', () => {
+    expect(busAxis(withVehicle)).toBe(busAxis(base));
+  });
+
+  test('the off-axis vehicle anchor does NOT flip the axis (would, if counted)', () => {
+    // Taps spread wide on x ⇒ axis x. A vehicle anchor with a huge y would pull the
+    // y-spread above the x-spread if (wrongly) counted — it must not.
+    const taps = { grid: r(0, 0), home: r(400, 0) };
+    const withTallVehicle = { ...taps, [VEHICLE_NODE_ID]: r(0, 5000) };
+    expect(busAxis(taps)).toBe('x');
+    expect(busAxis(withTallVehicle)).toBe('x'); // unchanged — vehicle excluded
   });
 });

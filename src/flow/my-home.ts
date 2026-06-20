@@ -1,6 +1,6 @@
 import type { EnergyRole } from '../data/registry';
 import { ENERGY_ROLES } from './binding';
-import { BUS_NODE_ID, IDLE_KW, type FlowModel } from './model';
+import { BUS_NODE_ID, IDLE_KW, type Direction, type FlowModel } from './model';
 import { computeBalance, type Balance } from './balance';
 import { edgeVisual } from './renderer';
 import type { RectLike } from './scene-bus';
@@ -32,6 +32,41 @@ import type { RectLike } from './scene-bus';
  * {@link BUS_NODE_ID} junction is the only other anchor the Scene reads.
  */
 export const SCENE_NODES: readonly EnergyRole[] = ENERGY_ROLES;
+
+/**
+ * The Scene's vehicle PRESENTATION-anchor id (Story 8.5). It is the `data-node`
+ * value of the compact vehicle cell so the element's live-rect read captures it —
+ * but it is deliberately NOT a flow node: there is no `vehicle` {@link
+ * import('../data/registry').EnergyRole}, no `BUS_ORIENTATION` entry, no sixth
+ * `FlowNode`. The car's charge comes from the EXISTING Wall-Connector edge
+ * ({@link wcVehicleEdge}) — the composed-view authority split (FR-33 / AR-6: the
+ * WC edge IS the car-charging edge). Distinct from {@link BUS_NODE_ID} so the two
+ * non-tap anchors are filtered out of the trunk junction / axis math below.
+ */
+export const VEHICLE_NODE_ID = 'vehicle';
+
+/**
+ * The car-charging read (Story 8.5, AC2 — the #1 test target) — a PURE VIEW of the
+ * UNCHANGED Epic-4 model's existing Wall-Connector edge, the SINGLE source both the
+ * vehicle cell's charging badge AND the WC→Vehicle overlay edge consume (so the
+ * shown "Charging · N.N kW" and the drawn edge AGREE BY CONSTRUCTION — the
+ * Hero-halo-vs-edge authority class). This is NOT a FR-33-frozen engine edit: like
+ * {@link gatewaySegments}/{@link sceneAggregates} it derives a presentation value
+ * from `model.edges`, never a second balance / sign convention / sixth node.
+ *
+ * The WC edge is `{ from:'wall_connector', to:'bus', kW }` where `kW =
+ * BUS_ORIENTATION.wall_connector(−1) × canonical wc_power` — so a CHARGING WC reads
+ * NEGATIVE kW (it DRAWS from the bus to feed the car). The sign already encodes the
+ * bus-direction; the magnitude the cell shows is the charge RATE, so we return
+ * `Math.abs(kW)` — never re-deriving sign or orientation here. Charging is active
+ * iff the edge exists and `direction !== 'none'`; an absent/idle WC ⇒ inactive
+ * (the cell then falls back to the discrete `charging_status` for plugged/parked).
+ */
+export function wcVehicleEdge(model: FlowModel): { active: boolean; kW: number; direction: Direction } {
+  const e = model.edges.find((x) => x.from === 'wall_connector');
+  if (!e || e.direction === 'none') return { active: false, kW: 0, direction: 'none' };
+  return { active: true, kW: Math.abs(e.kW), direction: e.direction };
+}
 
 /**
  * Convert ABSOLUTE viewport rects (`getBoundingClientRect()`) to
@@ -73,8 +108,11 @@ export function relativeAnchors(
 export function deriveBusAnchor(
   anchors: Readonly<Record<string, RectLike>>
 ): RectLike | undefined {
+  // Exclude both non-tap anchors: the bus junction (idempotency) and the vehicle
+  // presentation cell (Story 8.5 — it has a data-node but is NOT a bus tap, so it
+  // must not move the trunk junction / flip the axis).
   const rects = Object.keys(anchors)
-    .filter((k) => k !== BUS_NODE_ID)
+    .filter((k) => k !== BUS_NODE_ID && k !== VEHICLE_NODE_ID)
     .map((k) => anchors[k]);
   if (!rects.length) return undefined;
   const n = rects.length;
@@ -207,8 +245,11 @@ function centreAlong(r: RectLike, axis: BusAxis): number {
  * re-runs this (the 6.5 `ResizeObserver` → recompute), never a `hass` tick.
  */
 export function busAxis(anchors: Readonly<Record<string, RectLike>>): BusAxis {
+  // Exclude the bus junction AND the vehicle presentation cell (Story 8.5) — the
+  // spread that picks the axis must be the BUS TAPS' spread, not perturbed by the
+  // non-tap vehicle anchor.
   const rects = Object.keys(anchors)
-    .filter((k) => k !== BUS_NODE_ID)
+    .filter((k) => k !== BUS_NODE_ID && k !== VEHICLE_NODE_ID)
     .map((k) => anchors[k]);
   if (rects.length < 2) return 'x';
   const xs = rects.map((r) => r.left + r.width / 2);

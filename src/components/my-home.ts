@@ -11,14 +11,16 @@ import {
 import { customElement, property, state, query } from 'lit/decorators.js';
 import { sharedStyles } from '../styles';
 import { STRINGS } from '../strings';
-import { formatNumber } from '../helpers';
-import { formatAgeHint } from '../ui';
+import { entityId, formatNumber, isAsleep, num, rawState, unit } from '../helpers';
+import { ageHint, batteryGauge, formatAgeHint } from '../ui';
+import { accentVar } from './ecosystem-card';
+import { normalizeChargingState } from '../data/dialect';
 import { resolveEntities } from '../data/resolve';
 import { resolveEnergyEntities, type EnergyEntities } from '../data/energy';
 import { sliceChanged } from '../data/slice';
 import { read, referenceNow } from '../data/freshness';
 import { bindFlowModel, POWER_KEY } from '../flow/binding';
-import { BUS_NODE_ID, IDLE_KW, type FlowEdge, type FlowModel } from '../flow/model';
+import { BUS_NODE_ID, IDLE_KW, type Direction, type FlowEdge, type FlowModel } from '../flow/model';
 import { SceneBusRenderer, sceneBusStyles, type RectLike } from '../flow/scene-bus';
 import { edgeVisual, NODE_COLOR } from '../flow/renderer';
 import {
@@ -29,12 +31,14 @@ import {
   sceneAggregates,
   coupledRoles,
   axisForWidth,
+  wcVehicleEdge,
+  VEHICLE_NODE_ID,
   BUS_WIDTH_MAX,
   BUS_TRUNK_PAD,
   type BusAxis,
   type GatewaySegment,
 } from '../flow/my-home';
-import type { EnergyRole } from '../data/registry';
+import type { EnergyRole, Role } from '../data/registry';
 import type { HomeAssistant, LovelaceCard, TeslaCardConfig } from '../types';
 
 // The five Scene-unaware child cards (Stories 6.2 / 6.3). Side-effect imports so
@@ -133,8 +137,11 @@ export class TcMyHome extends LitElement implements LovelaceCard {
   private _anchors?: Record<string, RectLike>;
   /** The bus axis the last reflow resolved (`x` desktop horizontal / `y` phone vertical) — geometry-driven. */
   private _axis: BusAxis = 'x';
-  /** The hovered/keyboard-focused role; drives the dim/light highlight (`undefined` = no focus). */
-  @state() private _focused?: EnergyRole;
+  /** The hovered/keyboard-focused role; drives the dim/light highlight (`undefined` = no
+   *  focus). Story 8.5 widened it to {@link Role} (incl. `'vehicle'`) so the vehicle
+   *  cell can participate in focus WITHOUT becoming a flow node — `coupledRoles`
+   *  stays energy-only; the vehicle coupling is computed in {@link _coupledLit}. */
+  @state() private _focused?: Role;
 
   // ── LovelaceCard contract (AC4) ────────────────────────────────────────────
 
@@ -197,6 +204,20 @@ export class TcMyHome extends LitElement implements LovelaceCard {
     // The Solar card's vignette reads HA CORE entities (not energy function-slugs).
     const w = this._config?.weather;
     ids.push(w?.entity ?? 'weather.home', w?.sun ?? 'sun.sun');
+    // Story 8.5 (the 6.5 full-union lesson): the vehicle cell reads these vehicle
+    // ids — gating on the energy `*_power` union ALONE would FREEZE the cell (and it
+    // would never reflow when the car appears/disappears). Add exactly the ids the
+    // cell surfaces; keep truly-unrelated vehicle entities (climate/doors/media…) OUT
+    // (they don't render in the Scene) so the AC3c anti-thrash invariant still holds.
+    const cfg = this._resolvedConfig ?? this._config;
+    if (cfg) {
+      ids.push(
+        entityId(cfg, 'battery_level'),
+        entityId(cfg, 'charging_status'),
+        entityId(cfg, 'battery_range'),
+        entityId(cfg, 'status')
+      );
+    }
     return ids;
   }
 
@@ -248,10 +269,16 @@ export class TcMyHome extends LitElement implements LovelaceCard {
     // Recompute geometry when the PRESENT-NODE SET changes (a card appeared /
     // vanished — a genuine reflow), NOT on a value-only `hass` tick (AC3a:
     // geometry is reflow-driven, never tick-driven).
-    const key = this._model.nodes
-      .filter((n) => n.present)
-      .map((n) => n.role)
-      .join(',');
+    // Story 8.5: the vehicle appearing/disappearing is a genuine reflow (the load
+    // row gains/loses a 380px card → the WC→Vehicle anchor changes), so fold
+    // `vehiclePresent` into the present-set key (NOT a value-only tick).
+    const cfg = this._resolvedConfig ?? this._config;
+    const vehiclePresent = cfg ? this._vehiclePresent(cfg) : false;
+    const key =
+      this._model.nodes
+        .filter((n) => n.present)
+        .map((n) => n.role)
+        .join(',') + `|veh:${vehiclePresent ? 1 : 0}`;
     if (key !== this._presentKey) {
       this._presentKey = key;
       this._scheduleGeometry();
@@ -324,10 +351,14 @@ export class TcMyHome extends LitElement implements LovelaceCard {
     if (!this._config) return nothing;
     const cfg = this._resolvedConfig ?? this._config;
     const present = new Set(this._model.nodes.filter((n) => n.present).map((n) => n.role));
+    // Story 8.5: the vehicle is a present-gated PRESENTATION cell (not a flow node),
+    // present iff its battery entity exists in states.
+    const vehiclePresent = this._vehiclePresent(cfg);
     // The focus coupling (Task 4): when a card is hovered/focused, light it + every
     // node the shared bus couples it to (a source lights all loads, and converse);
-    // the rest dim. Computed from the present model — never a hard-coded map.
-    const lit = this._focused ? coupledRoles(this._model, this._focused) : undefined;
+    // the rest dim. Computed from the present model — never a hard-coded map. Widened
+    // to {@link Role} so the vehicle participates (energy `coupledRoles` unchanged).
+    const lit = this._coupledLit(present, vehiclePresent);
 
     // Render a card ONLY for present nodes — an absent node is omitted with its
     // bus edge (AC1), never an empty card holding a grid cell + a dead anchor.
@@ -352,6 +383,10 @@ export class TcMyHome extends LitElement implements LovelaceCard {
     // channel). The two packed, centred rows keep sources-over-loads by construction.
     const sourceCells = SOURCE_ROW.filter((role) => present.has(role)).map(cell);
     const loadCells = LOAD_ROW.filter((role) => present.has(role)).map(cell);
+    // Story 8.5: the vehicle is the SIXTH Scene card — a compact inline cell APPENDED
+    // to the packed load row (after Home · Wall Connector). Same packing discipline
+    // as Story 6.7: present-gated, no ghost cell, no template-area change.
+    if (vehiclePresent) loadCells.push(this._vehicleCell(cfg, lit));
 
     // Layering, back-to-front: the summary RIBBON (whole-home aggregates, above the
     // cards) → the cards (each composites its own vignette internally) → ONE
@@ -376,12 +411,136 @@ export class TcMyHome extends LitElement implements LovelaceCard {
   }
 
   // ── focus-highlight (AC3) ───────────────────────────────────────────────────
-  private _focus(role: EnergyRole): void {
+  private _focus(role: Role): void {
     this._focused = role;
   }
   private _blur = (): void => {
     this._focused = undefined;
   };
+
+  // ── the vehicle node (Story 8.5) ────────────────────────────────────────────
+
+  /**
+   * The vehicle cell is present iff its battery entity EXISTS in `hass.states`
+   * (`rawState` is `undefined` ONLY when the entity is genuinely absent — an asleep
+   * car's `battery_level` reads the string `'unavailable'`, which IS present). The
+   * read routes through `rawState` (helpers → resolve → stateObj inside `data/`), so
+   * no bare `hass.states` reaches this `components/` module.
+   */
+  private _vehiclePresent(cfg: TeslaCardConfig): boolean {
+    return rawState(this.hass, cfg, 'battery_level') !== undefined;
+  }
+
+  /**
+   * The car-charging read both the cell badge AND the WC→Vehicle overlay edge
+   * consume (AC2 agree-by-construction) — a single gated call to {@link
+   * wcVehicleEdge}. An ASLEEP car is forced inactive (mirrors the Hero, which
+   * suppresses the charge cue when asleep): an asleep car's telemetry is
+   * unavailable, so the card never asserts a live charge — the WC→Vehicle edge then
+   * degrades to its calm base line (quiescent), never a false "Charging" (AC3).
+   */
+  private _vehicleCharge(cfg: TeslaCardConfig): { active: boolean; kW: number; direction: Direction } {
+    if (isAsleep(this.hass, cfg)) return { active: false, kW: 0, direction: 'none' };
+    return wcVehicleEdge(this._model);
+  }
+
+  /**
+   * The focus-coupling set, widened to {@link Role} (Task 4). `coupledRoles` stays
+   * ENERGY-ONLY (no edit); the vehicle coupling is computed here as a thin wrapper:
+   * focusing the VEHICLE lights `{vehicle, wall_connector}` (its only feed); focusing
+   * the WALL_CONNECTOR also lights the vehicle (the WC edge feeds it). Presentation-
+   * local — the engine never learns about the vehicle node.
+   */
+  private _coupledLit(present: Set<EnergyRole>, vehiclePresent: boolean): Set<Role> | undefined {
+    const focused = this._focused;
+    if (!focused) return undefined;
+    if (focused === 'vehicle') {
+      const lit = new Set<Role>(['vehicle']);
+      if (present.has('wall_connector')) lit.add('wall_connector');
+      return lit;
+    }
+    const lit = new Set<Role>(coupledRoles(this._model, focused));
+    if (vehiclePresent && lit.has('wall_connector')) lit.add('vehicle');
+    return lit;
+  }
+
+  /**
+   * The compact, glanceable vehicle cell (decision (c): a telemetry READ, not the
+   * full hero — name · charge state · battery · range · honest staleness). It reuses
+   * the Hero's EXACT derivations (`isAsleep`/`num`/`ageHint`) so the in-Scene read
+   * can never disagree with the main card (AC3), and degrades calm-not-broken when
+   * asleep (`—` battery, "updated Nm ago" stamp, no false charge). It is a
+   * keyboard-focusable `scene-cell` carrying `data-node="vehicle"` so its live rect
+   * is captured by the existing geometry read — but it is NOT a registered element.
+   */
+  private _vehicleCell(cfg: TeslaCardConfig, lit?: Set<Role>): TemplateResult {
+    const asleep = isAsleep(this.hass, cfg);
+    const ch = this._vehicleCharge(cfg);
+    // SoC/range are suppressed to `—` when asleep (never a fabricated 0/%).
+    const soc = asleep ? undefined : num(this.hass, cfg, 'battery_level');
+    const range = asleep ? undefined : num(this.hass, cfg, 'battery_range');
+    const rangeUnit = unit(this.hass, cfg, 'battery_range') || 'mi';
+    const stamp = ageHint(this.hass, cfg); // the single shared battery-backed stamp
+    const name = cfg.name ?? STRINGS.hero.defaultName;
+    const u = STRINGS.scene.ribbon.unit;
+
+    // Charging is asserted ONLY when the WC edge is active (AC2) — otherwise the
+    // discrete `charging_status` gives the plugged/parked nuance (AC2), and an asleep
+    // car reads the calm asleep word (never a false "Charging").
+    let statusWord: string;
+    let kwSub: string | undefined;
+    if (ch.active) {
+      statusWord = STRINGS.status.charging;
+      kwSub = `${formatNumber(ch.kW, 1)} ${u}`;
+    } else if (asleep) {
+      statusWord = STRINGS.status.asleep;
+    } else {
+      const cs = normalizeChargingState(rawState(this.hass, cfg, 'charging_status'));
+      statusWord =
+        cs === 'disconnected' || cs === 'unknown' ? STRINGS.status.parked : STRINGS.status.pluggedIdle;
+    }
+
+    // State-bearing aria-label (mirrors the Hero's pattern): name · state · SoC.
+    const label = `${name} · ${statusWord}${soc !== undefined ? ` · ${formatNumber(soc)}%` : ''}`;
+
+    return html`
+      <div
+        class="scene-cell veh-cell ${lit?.has('vehicle') ? 'lit' : ''}"
+        data-node=${VEHICLE_NODE_ID}
+        tabindex="0"
+        style="--node-accent:${accentVar('green')}"
+        role="group"
+        aria-label=${label}
+        @mouseenter=${() => this._focus('vehicle')}
+        @mouseleave=${this._blur}
+        @focusin=${() => this._focus('vehicle')}
+        @focusout=${this._blur}
+      >
+        <div class="surface veh-surface">
+          <div class="veh-head">
+            <span class="veh-name">${name}</span>
+            <span class="veh-state">
+              <span class="veh-dot"></span>
+              <span class="veh-word">${statusWord}</span>
+              ${kwSub
+                ? html`<span class="veh-sep">·</span><span class="veh-sub">${kwSub}</span>`
+                : nothing}
+            </span>
+          </div>
+          <div class="veh-body">
+            ${batteryGauge(soc, { charging: ch.active, height: 14 })}
+            <div class="veh-readout">
+              <span class="veh-pct">${soc !== undefined ? `${formatNumber(soc)}%` : '—'}</span>
+              <span class="veh-range">
+                ${range !== undefined ? `${formatNumber(range)} ${rangeUnit}` : '—'}
+              </span>
+            </div>
+          </div>
+          ${stamp ? html`<span class="veh-age tc-stale-copy">${stamp}</span>` : nothing}
+        </div>
+      </div>
+    `;
+  }
 
   // ── the summary ribbon (AC1b) ───────────────────────────────────────────────
   /**
@@ -455,11 +614,60 @@ export class TcMyHome extends LitElement implements LovelaceCard {
    * cleanest FR-33 story). The state-bearing colour-blind-safe text floor stays the
    * renderer's `label()` (the overlay's `aria-label`).
    */
-  private _gatewayView(lit?: Set<EnergyRole>): SVGTemplateResult {
+  private _gatewayView(lit?: Set<Role>): SVGTemplateResult {
     const anchors = this._anchors;
     if (!anchors) return svg``;
     const segs = gatewaySegments(this._model, anchors, { axis: this._axis });
-    return svg`${this._trunk(segs)}${this._legs(anchors, lit)}`;
+    // Story 8.5: the WC→Vehicle leg is drawn alongside the trunk + node legs, from
+    // the SAME `wcVehicleEdge` view the cell badge consumes (AC2 agree-by-construction).
+    const ch = this._vehicleCharge(this._resolvedConfig ?? this._config);
+    return svg`${this._trunk(segs)}${this._legs(anchors, lit)}${this._vehicleEdge(anchors, ch, lit)}`;
+  }
+
+  /**
+   * The WC→Vehicle overlay edge (Story 8.5, AC2/AC3): a horizontal leg from the
+   * Wall-Connector card anchor to the Vehicle card anchor — the WC's power CONTINUING
+   * to the car (coloured `NODE_COLOR.wall_connector` teal so it reads as the SAME
+   * edge continuing — reinforcing "the WC edge IS the car-charging edge"). Present
+   * only when BOTH anchors exist (WC present + vehicle present). A calm base line
+   * always; when `ch.active`, an `sb-flow` dash from the SHARED {@link edgeVisual}
+   * (never a forked formula), clamped by {@link BUS_WIDTH_MAX}, + an arrowhead
+   * pointing WC→Vehicle. Reduced-motion freezes the dash (inherited from
+   * `sceneBusStyles` — no new animation source).
+   */
+  private _vehicleEdge(
+    anchors: Readonly<Record<string, RectLike>>,
+    ch: { active: boolean; kW: number; direction: Direction },
+    lit?: Set<Role>
+  ): SVGTemplateResult {
+    const wc = anchors['wall_connector'];
+    const veh = anchors[VEHICLE_NODE_ID];
+    if (!wc || !veh) return svg``; // both anchors required (WC + vehicle present)
+    // Horizontal leg at the cards' shared cross level (the battery-readout level):
+    // from the WC card's vehicle-facing edge to the vehicle card's WC-facing edge.
+    const y = (wc.top + wc.height / 2 + veh.top + veh.height / 2) / 2;
+    const wcCx = wc.left + wc.width / 2;
+    const vehCx = veh.left + veh.width / 2;
+    const start = { x: wcCx < vehCx ? wc.left + wc.width : wc.left, y };
+    const end = { x: wcCx < vehCx ? veh.left : veh.left + veh.width, y };
+    const color = NODE_COLOR.wall_connector;
+    const flow = ch.active
+      ? svg`
+          <line
+            class="sb-flow"
+            style="stroke:${color};animation-duration:${edgeVisual(ch.kW).durSec}s"
+            stroke-width=${Math.min(BUS_WIDTH_MAX, edgeVisual(ch.kW).width)}
+            x1=${start.x} y1=${start.y} x2=${end.x} y2=${end.y}
+          ></line>
+          ${this._arrow({ x: (start.x + end.x) / 2, y }, end, color)}
+        `
+      : nothing;
+    return svg`
+      <g class="gw-leg ${lit?.has('vehicle') ? 'on' : ''}" data-role=${VEHICLE_NODE_ID}>
+        <line class="gw-leg-base" style="stroke:${color}" x1=${start.x} y1=${start.y} x2=${end.x} y2=${end.y}></line>
+        ${flow}
+      </g>
+    `;
   }
 
   /** The neutral trunk rail + per-segment animated flows + Kirchhoff arrowheads. */
@@ -524,7 +732,7 @@ export class TcMyHome extends LitElement implements LovelaceCard {
    * one side of the trunk and load cards the other, so the near edge (and thus the
    * leg's down/up sense) falls straight out of the anchor's position vs the trunk.
    */
-  private _legs(anchors: Readonly<Record<string, RectLike>>, lit?: Set<EnergyRole>): SVGTemplateResult {
+  private _legs(anchors: Readonly<Record<string, RectLike>>, lit?: Set<Role>): SVGTemplateResult {
     const horiz = this._axis === 'x';
     const bus = anchors[BUS_NODE_ID];
     const cross = bus ? (horiz ? bus.top + bus.height / 2 : bus.left + bus.width / 2) : 0;
@@ -672,6 +880,86 @@ export class TcMyHome extends LitElement implements LovelaceCard {
       }
       .scene-cell {
         min-width: 0;
+      }
+
+      /* ── The compact vehicle cell (Story 8.5) — the sixth Scene card, appended to
+         the packed load row. It is INLINE markup (no registered element), so it
+         provides its own surface chrome (the gate has no closed-set allowlist; this
+         does NOT re-declare the single sanctioned surface gradient — it inherits it
+         from the .surface recipe). Layout is scene-local; every var carries its
+         DESIGN.md fallback. */
+      .veh-cell .veh-surface {
+        padding: var(--tc-space-4, 16px);
+        display: flex;
+        flex-direction: column;
+        gap: var(--tc-space-3, 12px);
+        height: 100%;
+        box-sizing: border-box;
+      }
+      .veh-head {
+        display: flex;
+        flex-direction: column;
+        gap: var(--tc-space-1, 4px);
+        min-width: 0;
+      }
+      .veh-name {
+        font-family: var(--tc-font-display, var(--tc-font, ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif));
+        font-size: var(--tc-fs-name, 21px);
+        font-weight: var(--tc-fw-name, 750);
+        letter-spacing: -0.01em;
+        color: var(--tc-text, #f1f5f9);
+      }
+      .veh-state {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        font-size: var(--tc-fs-body, 14px);
+        color: var(--tc-text-dim, #9aa7b8);
+        flex-wrap: wrap;
+      }
+      /* The charging-cue dot follows the cell accent (charging green by default). */
+      .veh-dot {
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+        flex: 0 0 auto;
+        background: var(--node-accent, var(--tc-green, #34d399));
+        box-shadow: 0 0 8px currentColor;
+      }
+      .veh-word {
+        font-weight: var(--tc-fw-body, 600);
+        color: var(--tc-text, #f1f5f9);
+      }
+      .veh-sep {
+        opacity: 0.5;
+      }
+      .veh-body {
+        display: flex;
+        flex-direction: column;
+        gap: var(--tc-space-2, 8px);
+      }
+      .veh-readout {
+        display: flex;
+        align-items: baseline;
+        justify-content: space-between;
+        gap: 12px;
+      }
+      .veh-pct {
+        font-family: var(--tc-font-display, var(--tc-font, ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif));
+        font-size: var(--tc-fs-battery, 26px);
+        font-weight: var(--tc-fw-battery, 760);
+        letter-spacing: -0.02em;
+        color: var(--tc-text, #f1f5f9);
+        line-height: 1;
+      }
+      .veh-range {
+        font-size: var(--tc-fs-body, 14px);
+        font-weight: var(--tc-fw-body, 600);
+        color: var(--tc-text-dim, #9aa7b8);
+      }
+      /* Honest staleness stamp — colour via the shared .tc-stale-copy recipe. */
+      .veh-age {
+        font-size: var(--tc-fs-label, 11.5px);
       }
       /* Keyboard focus ring — the 2px blue outline (EXPERIENCE.md:175 a11y floor),
          never the hairline border alone. */
