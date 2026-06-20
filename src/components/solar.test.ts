@@ -50,6 +50,25 @@ function advanceNow(s: Record<string, HassEntity>): Record<string, HassEntity> {
   s[DEFAULT_ENTITIES.odometer].last_changed = ADVANCED_NOW;
   return s;
 }
+/**
+ * Inject an HA-core entity (a weather/sun state) into a states map. These are HA
+ * core ids (NOT Tesla function-slugs) read by literal default — using the literal
+ * `weather.home`/`sun.sun` here is correct, not a hard-coded-entity violation.
+ */
+function withState(
+  s: Record<string, HassEntity>,
+  id: string,
+  state: string
+): Record<string, HassEntity> {
+  s[id] = {
+    entity_id: id,
+    state,
+    attributes: {},
+    last_changed: '2026-06-15T14:41:00Z',
+    last_updated: '2026-06-15T14:41:00Z',
+  } as unknown as HassEntity;
+  return s;
+}
 async function mount(
   hass: HomeAssistant | undefined,
   config: TeslaCardConfig = CONFIG,
@@ -131,6 +150,112 @@ describe('AC3 — standalone registered custom element + LovelaceCard contract',
     const entry = (window.customCards ?? []).find((c) => c.type === 'tc-solar');
     expect(entry).toBeTruthy();
     expect(entry!.name).toBe(STRINGS.energy.nodes.solar);
+  });
+});
+
+describe('Story 6.4 — live weather vignette (AC1/AC2/AC4)', () => {
+  test('AC1 — weather + sun + a real reading → the vignette SVG renders ABOVE the production tile', async () => {
+    const s = withState(withState(states(awakeFx), 'weather.home', 'partlycloudy'), 'sun.sun', 'above_horizon');
+    const el = await mount(makeHass(s));
+    const art = sr(el).querySelector('.wx-art');
+    expect(art).not.toBeNull(); // vignette present
+    expect(sr(el).querySelector('.stat')).not.toBeNull(); // production tile present
+    // DOM order: the vignette (.wx) is the FIRST child of the body, above the stat.
+    const body = sr(el).querySelector('.eco-body')!;
+    expect(body.firstElementChild!.classList.contains('wx')).toBe(true);
+    const wx = sr(el).querySelector('.wx')!;
+    const stat = sr(el).querySelector('.stat')!;
+    // compareDocumentPosition: FOLLOWING (4) ⇒ stat comes after the vignette.
+    expect(wx.compareDocumentPosition(stat) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
+  test('AC2 — provenance chip names the real default sources (weather.home · sun.sun)', async () => {
+    const s = withState(withState(states(awakeFx), 'weather.home', 'rainy'), 'sun.sun', 'above_horizon');
+    const el = await mount(makeHass(s));
+    expect(sr(el).querySelector('.wx-pre')!.textContent).toContain('weather.home · sun.sun');
+  });
+
+  test('AC2 — an entity override is reflected honestly (no hard-coded literal)', async () => {
+    const s = withState(withState(states(awakeFx), 'weather.backyard', 'cloudy'), 'sun.sun', 'above_horizon');
+    const el = await mount(makeHass(s), { ...CONFIG, weather: { entity: 'weather.backyard', sun: 'sun.sun' } });
+    const chip = sr(el).querySelector('.wx-pre')!.textContent ?? '';
+    expect(chip).toContain('weather.backyard · sun.sun');
+    expect(chip).not.toContain('weather.home'); // never a lying literal
+  });
+
+  test('AC4 — solar present but NO weather → production tile renders, vignette absent, no throw', async () => {
+    // awakeFx carries no weather.home/sun.sun → condition undefined → omit.
+    const el = await mount(makeHass(states(awakeFx)));
+    expect(sr(el).querySelector('.stat')).not.toBeNull();
+    expect(sr(el).querySelector('.wx-art')).toBeNull(); // no fabricated sky
+    expect(sr(el).textContent ?? '').not.toContain('NaN');
+  });
+
+  test('AC4 — config.weather.hide suppresses the vignette even when weather is present', async () => {
+    const s = withState(withState(states(awakeFx), 'weather.home', 'sunny'), 'sun.sun', 'above_horizon');
+    const el = await mount(makeHass(s), { ...CONFIG, weather: { hide: true } });
+    expect(sr(el).querySelector('.stat')).not.toBeNull();
+    expect(sr(el).querySelector('.wx-art')).toBeNull();
+  });
+
+  test('AC1 — sun.sun below_horizon drives the night treatment (sunny → clear night)', async () => {
+    // The night branch of `isDay = sunState !== "below_horizon"` (solar.ts) was
+    // only ever exercised with above_horizon — pin the night path end-to-end.
+    const s = withState(withState(states(awakeFx), 'weather.home', 'sunny'), 'sun.sun', 'below_horizon');
+    const el = await mount(makeHass(s));
+    const art = sr(el).querySelector('.wx-art');
+    expect(art).not.toBeNull();
+    // `sunny` at night resolves to clear-night → aria-label is the night name.
+    expect(art!.getAttribute('aria-label')).toBe(STRINGS.ecosystem.solar.weather.names['clear-night']);
+  });
+
+  test('AC4 — sun.sun absent → deterministic DAY fallback, vignette renders, no throw', async () => {
+    // Weather present, no sun.sun → ambiguous day/night must default to day
+    // (above_horizon/absent ⇒ day) and render without crashing.
+    const s = withState(states(awakeFx), 'weather.home', 'cloudy');
+    const el = await mount(makeHass(s));
+    expect(sr(el).querySelector('.wx-art')).not.toBeNull();
+    expect(sr(el).querySelector('.stat')).not.toBeNull();
+    expect(sr(el).textContent ?? '').not.toContain('NaN');
+  });
+
+  test('AC4 — clear-night night-inference holds with sun.sun absent (a night-only condition implies night)', async () => {
+    // `clear-night` is intrinsically a night condition: even with no sun.sun (so
+    // isDay defaults true) the moon treatment must win, not a degenerate day sky.
+    const s = withState(states(awakeFx), 'weather.home', 'clear-night');
+    const el = await mount(makeHass(s));
+    const art = sr(el).querySelector('.wx-art');
+    expect(art).not.toBeNull();
+    expect(art!.getAttribute('aria-label')).toBe(STRINGS.ecosystem.solar.weather.names['clear-night']);
+  });
+
+  test.each(['unavailable', 'unknown'])(
+    'AC4 — %s weather → vignette OMITTED (never a fabricated sky), production tile still renders',
+    async (sentinel) => {
+      // readRaw returns the literal sentinel string (it IS a string) — the helper
+      // must omit, not fall through weatherScene to a fabricated cloudy sky.
+      const s = withState(withState(states(awakeFx), 'weather.home', sentinel), 'sun.sun', 'above_horizon');
+      const el = await mount(makeHass(s));
+      expect(sr(el).querySelector('.stat')).not.toBeNull();
+      expect(sr(el).querySelector('.wx-art')).toBeNull();
+      expect(sr(el).textContent ?? '').not.toContain('NaN');
+    }
+  );
+
+  test('AC4 — stale-but-present weather keeps last-known art with NO age stamp on the vignette (media-inverse rule)', async () => {
+    // A stale sky is honest context, not a broken read — the vignette has no
+    // "updated Nm ago" stamp on its art. advanceNow back-dates the reads so the
+    // production tile DOES carry a shell stamp; assert that stamp is NOT inside .wx.
+    const s = withState(withState(advanceNow(states(awakeFx)), 'weather.home', 'rainy'), 'sun.sun', 'above_horizon');
+    const el = await mount(makeHass(s));
+    const wx = sr(el).querySelector('.wx');
+    expect(wx).not.toBeNull(); // last-known condition still shown
+    expect(wx!.querySelector('.wx-art')).not.toBeNull();
+    // The production-tile stamp lives in the shell, NOT in the vignette subtree.
+    expect(sr(el).querySelector('.eco-stamp')).not.toBeNull();
+    expect(wx!.querySelector('.eco-stamp')).toBeNull();
+    expect(wx!.querySelector('.tc-stale-copy')).toBeNull();
+    expect(wx!.textContent ?? '').not.toContain(STRINGS.hero.updatedPrefix);
   });
 });
 

@@ -266,6 +266,25 @@ export const STRINGS = {
       description: 'Standalone solar production card.',
       empty: 'No solar production reported yet.',
       production: 'Production',
+      // Live weather vignette (Story 6.4). All copy centralized here (no inline
+      // literals in the component). `names` is keyed by the day/night-RESOLVED
+      // WeatherScene (mirrors the mockup's NAMES map); the renderer looks up a
+      // human-readable condition label by scene. `provenanceSep` joins the two
+      // honest source ids in the provenance chip (`weather.home · sun.sun`).
+      weather: {
+        provenanceSep: ' · ',
+        names: {
+          'clear-day': 'sunny',
+          'clear-night': 'clear night',
+          'partlycloudy-day': 'partly cloudy',
+          'partlycloudy-night': 'partly cloudy',
+          cloudy: 'cloudy',
+          rainy: 'rainy',
+          pouring: 'pouring',
+          snowy: 'snowy',
+          'lightning-rainy': 'thunderstorm',
+        },
+      },
     },
     powerwall: {
       description: 'Standalone Powerwall charge & flow card.',

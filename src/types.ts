@@ -196,6 +196,15 @@ export interface TeslaCardConfig {
    * `recommended` (max of the four corners) and a unit-aware default `margin`.
    */
   tyres?: TyresConfig;
+  /**
+   * Live-weather vignette tuning for the Solar card (Story 6.4 / UX-DR15).
+   * Additive, forward-compatible — Epic 7 owns the consolidated schema + GUI
+   * editor; this is the data field only (the `tyres?`/`energy?` precedent). The
+   * vignette reads HA CORE `weather.home` (condition) + `sun.sun` (day/night) by
+   * default; `entity`/`sun` override those ids (the provenance chip reflects the
+   * override honestly). `hide: true` suppresses the vignette even when present.
+   */
+  weather?: { entity?: string; sun?: string; hide?: boolean };
 }
 
 /** Detail emitted when the hero / quick actions request a panel switch. */

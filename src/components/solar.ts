@@ -1,12 +1,13 @@
-import { html, type PropertyValues, type TemplateResult } from 'lit';
+import { html, nothing, type PropertyValues, type TemplateResult } from 'lit';
 import { customElement } from 'lit/decorators.js';
 import { mdiSolarPower } from '@mdi/js';
 import { EcosystemCard, ecosystemShellStyles, accentVar } from './ecosystem-card';
+import { weatherVignette, weatherVignetteStyles } from './weather-vignette';
 import { sharedStyles } from '../styles';
 import { STRINGS } from '../strings';
 import { statTile, formatAgeHint } from '../ui';
 import { resolveEnergyEntities, numById, type EnergyEntities } from '../data/energy';
-import { read, referenceNow } from '../data/freshness';
+import { read, readRaw, referenceNow } from '../data/freshness';
 import { formatNumber } from '../helpers';
 import type { LovelaceCard, TeslaCardConfig } from '../types';
 
@@ -66,11 +67,29 @@ export class TcSolar extends EcosystemCard implements LovelaceCard {
     const value = numById(hass, id); // NaN-safe: absent/non-numeric → undefined
     if (value === undefined) {
       // Calm, specific empty state — never blank / crash / a fabricated `0 kW`.
+      // The vignette is deliberately NOT shown here: the existing empty-state path
+      // is unchanged (AC4); the sky is honest context for a REAL production read.
       return this.renderShell(
         { accent, label, ariaLabel: `${label} — ${STRINGS.ecosystem.solar.empty}` },
         html`<p class="eco-empty">${STRINGS.ecosystem.solar.empty}</p>`
       );
     }
+
+    // Live-weather vignette (Story 6.4) — honest visual context for the reading.
+    // Read HA CORE entities (NOT Tesla function-slugs) via the sanctioned
+    // arbitrary-entity reader `readRaw`; the helper takes RESOLVED values (no hass).
+    // Absent weather → readRaw returns undefined; an `unavailable`/`unknown`
+    // sentinel arrives as that literal string → the helper's honesty gate omits
+    // the vignette in both cases (never a fabricated sky). `config.weather.hide`
+    // suppresses it.
+    const wxId = this.config?.weather?.entity ?? 'weather.home';
+    const sunId = this.config?.weather?.sun ?? 'sun.sun';
+    const condition = readRaw(hass, wxId);
+    const sunState = readRaw(hass, sunId); // 'above_horizon' | 'below_horizon' | undefined
+    const isDay = sunState !== 'below_horizon';
+    const vignette = this.config?.weather?.hide
+      ? nothing
+      : weatherVignette({ condition, isDay, sources: { weather: wxId, sun: sunId } });
 
     // Honest staleness: stamp only when the read is NOT fresh, from a real
     // last_updated (formatAgeHint returns undefined when no stamp). Server-now =
@@ -82,16 +101,17 @@ export class TcSolar extends EcosystemCard implements LovelaceCard {
 
     return this.renderShell(
       { accent, label, stamp, ariaLabel: `${label} ${kw}` },
-      statTile({
+      // Vignette is the card's "hero" context; the kW reading sits below it.
+      html`${vignette}${statTile({
         icon: mdiSolarPower,
         label: STRINGS.ecosystem.solar.production,
         value: kw,
         color: accentVar(accent),
-      })
+      })}`
     );
   }
 
-  static override styles = [sharedStyles, ecosystemShellStyles];
+  static override styles = [sharedStyles, ecosystemShellStyles, weatherVignetteStyles];
 }
 
 declare global {
