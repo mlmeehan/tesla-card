@@ -284,6 +284,46 @@ describe('Brand display face is wired (Story 2.2 AC3)', () => {
   });
 });
 
+// ── Story 5.9 gate — the sanctioned map-card gradient exception (AC2 / FR-28) ──
+// The location map-card background is the ONE hard-coded colour exception in the
+// suite (FR-28 / UX-DR17). The "no second 180deg" test above already excludes it
+// (it's 135deg); this names it explicitly — AC2 requires the exception be
+// DOCUMENTED, not merely incidentally tolerated. We pin: (a) the exact sanctioned
+// gradient lives in panel-location.ts, (b) it carries the in-code documentation,
+// and (c) its two raw hexes are CONFINED to that one file (never relocated or a
+// second departure spawned elsewhere).
+describe('Location map gradient — the one sanctioned colour exception (Story 5.9 AC2 / FR-28)', () => {
+  const PANEL = join(SRC_DIR, 'components', 'panel-location.ts');
+  /** The two sanctioned non-accent hexes — the only raw colour the suite allows. */
+  const MAP_HEXES = ['#1b2533', '#0f1620'];
+
+  test('the 135deg map gradient with its sanctioned hexes lives in panel-location.ts', () => {
+    const text = readFileSync(PANEL, 'utf8');
+    expect(text).toMatch(/linear-gradient\(\s*135deg,\s*#1b2533,\s*#0f1620\s*\)/);
+  });
+
+  test('the exception is DOCUMENTED in code — named FR-28, not silently tolerated', () => {
+    // A future contributor tempted to "tokenize that hex" must see, AT the gradient,
+    // why it is allowed when every other colour routes through --tc-*. AC2 = "(documented)".
+    const text = readFileSync(PANEL, 'utf8');
+    expect(text).toContain('FR-28');
+    expect(text.toUpperCase()).toContain('SANCTIONED EXCEPTION');
+  });
+
+  test('the sanctioned hexes are CONFINED to panel-location.ts (the only departure, not relocated)', () => {
+    const offenders: string[] = [];
+    for (const file of srcFiles(SRC_DIR)) {
+      if (file === PANEL) continue;
+      const text = readFileSync(file, 'utf8');
+      for (const hex of MAP_HEXES) if (text.includes(hex)) offenders.push(`${file}: ${hex}`);
+    }
+    expect(
+      offenders,
+      `the map gradient hexes must stay confined to panel-location.ts:\n${offenders.join('\n')}`
+    ).toEqual([]);
+  });
+});
+
 describe('Asset-light brand face — no bundled webfont (Story 2.2 AC3 / NFR-2)', () => {
   test('no @font-face, @import url, or <link rel> webfont anywhere in src/', () => {
     // NFR-2: the display face is name-only — bringing in a webfont via @import,

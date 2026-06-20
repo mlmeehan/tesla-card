@@ -205,6 +205,52 @@ export class TeslaCardPage {
     return this.tyresPanel.locator('.c-warn');
   }
 
+  // ── Location panel (Story 5.9) ─────────────────────────────────────────────
+  /** The location panel root (`tc-panel-location`) — rendered only when the Location tab is open. */
+  get locationPanel(): Locator {
+    return this.card.locator('tc-panel-location');
+  }
+
+  /** The grayscale OSM map iframe — present only when coordinates resolve (AC1). */
+  get mapIframe(): Locator {
+    return this.locationPanel.locator('.map iframe');
+  }
+
+  /** The map-card backdrop (`.map`) — carries the one sanctioned FR-28 gradient exception (AC2). */
+  get mapBackdrop(): Locator {
+    return this.locationPanel.locator('.map');
+  }
+
+  /** The "Location unavailable" empty state (marker icon + text) — shown when no coords (AC3). */
+  get mapEmpty(): Locator {
+    return this.locationPanel.locator('.map-empty');
+  }
+
+  /** The coordinate readout in the map foot ("37.7749, -122.4194" / "—"). */
+  get mapCoord(): Locator {
+    return this.locationPanel.locator('.coord');
+  }
+
+  /** The keyboard-focusable Open-map external link (`<a rel="noopener noreferrer" target="_blank">`). */
+  get openMapLink(): Locator {
+    return this.locationPanel.locator('a.maplink');
+  }
+
+  /** Every stat tile in the panel (the route row + the persistent odo/speed/power row). */
+  get locationStatTiles(): Locator {
+    return this.locationPanel.locator('.stat');
+  }
+
+  /** A single location stat tile by its visible label ("Odometer"/"Speed"/"Power"/"ETA"/…). */
+  locationStat(label: string): Locator {
+    return this.locationPanel.locator('.stat').filter({ hasText: label });
+  }
+
+  /** The "updated Nm ago" last-known coordinate staleness stamp (dim `.tc-stale-copy`) — stale-only. */
+  get mapStaleStamp(): Locator {
+    return this.locationPanel.locator('.map-stale');
+  }
+
   async setEnv(env: 'default' | 'renamed'): Promise<void> {
     // Harness env toggles live in the page's light DOM (stable ids), not the card.
     await this.page.locator(env === 'renamed' ? '#b-renamed' : '#b-default').click();
