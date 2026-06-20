@@ -12,7 +12,7 @@ import { customElement, property, state, query } from 'lit/decorators.js';
 import { sharedStyles } from '../styles';
 import { STRINGS } from '../strings';
 import { entityId, formatNumber, isAsleep, num, rawState, unit } from '../helpers';
-import { ageHint, batteryGauge, formatAgeHint } from '../ui';
+import { ageHint, batteryGauge, formatAgeHint, icon } from '../ui';
 import { accentVar } from './ecosystem-card';
 import { normalizeChargingState } from '../data/dialect';
 import { resolveEntities } from '../data/resolve';
@@ -22,13 +22,15 @@ import { read, referenceNow } from '../data/freshness';
 import { bindFlowModel, POWER_KEY } from '../flow/binding';
 import { BUS_NODE_ID, IDLE_KW, type Direction, type FlowEdge, type FlowModel } from '../flow/model';
 import { SceneBusRenderer, sceneBusStyles, type RectLike } from '../flow/scene-bus';
-import { edgeVisual, NODE_COLOR } from '../flow/renderer';
+import { edgeVisual, NODE_COLOR, NODE_ICON } from '../flow/renderer';
+import { computeBalance } from '../flow/balance';
 import {
   relativeAnchors,
   deriveBusAnchor,
   RafCoalescer,
   gatewaySegments,
-  sceneAggregates,
+  selfPowered,
+  ribbonTiles,
   coupledRoles,
   axisForWidth,
   wcVehicleEdge,
@@ -37,6 +39,7 @@ import {
   BUS_TRUNK_PAD,
   type BusAxis,
   type GatewaySegment,
+  type RibbonTile,
 } from '../flow/my-home';
 import type { EnergyRole, Role } from '../data/registry';
 import type { HomeAssistant, LovelaceCard, TeslaCardConfig } from '../types';
@@ -554,33 +557,71 @@ export class TcMyHome extends LitElement implements LovelaceCard {
     const presentNodes = this._model.nodes.filter((n) => n.present);
     if (!presentNodes.length) return nothing; // empty Scene ⇒ no ribbon (calm)
 
-    const agg = sceneAggregates(this._model);
+    // Story 8.7: compute the balance ONCE per render and thread it into every
+    // consumer — the self-powered lead, the per-node tiles, AND (via the bus's own
+    // per-render balance) the trunk all read the SAME net, so they can never
+    // disagree (the 6.6 agree-by-construction invariant, extended). No second
+    // engine, no re-signed net (FR-33 / AR-6).
+    const balance = computeBalance(this._model);
+    const sp = selfPowered(this._model, balance);
+    const tiles = ribbonTiles(this._model, balance);
     const quiescent =
       this._model.edges.length > 0 && this._model.edges.every((e) => e.provenance === 'quiescent');
     const ageHint = quiescent ? this._sceneAgeHint() : undefined;
     const r = STRINGS.scene.ribbon;
-    const kw = (v: number): string => `${formatNumber(Math.abs(v), 1)} ${r.unit}`;
-
-    const netValue = !agg.gridPresent
-      ? r.selfSupplied
-      : agg.gridNet > IDLE_KW
-        ? `${r.importing} ${kw(agg.gridNet)}`
-        : agg.gridNet < -IDLE_KW
-          ? `${r.exporting} ${kw(agg.gridNet)}`
-          : r.selfSupplied;
 
     return html`
       <div class="ribbon ${quiescent ? 'dim' : ''}">
-        <div class="ribbon-tile">
-          <span class="rk">${r.generation}</span><span class="rv">${kw(agg.generation)}</span>
+        <div class="ribbon-lead">
+          <span class="rib-cap">${r.selfPowered}</span>
+          <span class="rib-big"
+            >${sp.pct === undefined ? '—' : html`${sp.pct}<small>%</small>`}</span
+          >
+          ${sp.pct === undefined
+            ? nothing
+            : html`<span class="rib-sub"
+                >${formatNumber(sp.selfKw, 1)} ${r.coveringOf} ${formatNumber(sp.totalKw, 1)}
+                ${r.unit}</span
+              >`}
         </div>
-        <div class="ribbon-tile">
-          <span class="rk">${r.consumption}</span><span class="rv">${kw(agg.consumption)}</span>
-        </div>
-        <div class="ribbon-tile net">
-          <span class="rk">${r.net}</span><span class="rv">${netValue}</span>
-        </div>
+        <div class="ribbon-tiles">${tiles.map((t) => this._ribbonTile(t))}</div>
         ${ageHint ? html`<span class="ribbon-age">${ageHint}</span>` : nothing}
+      </div>
+    `;
+  }
+
+  /**
+   * One per-node aggregate tile (Story 8.7, AC3): an accent icon chip
+   * (`NODE_ICON[role]` glyph tinted by `NODE_COLOR[role]`, set INLINE — the same
+   * gate-safe `var(--tc-*, #hex)` pattern `_legs` uses), an UPPERCASE key, and the
+   * node's net value. The GRID tile is the only genuinely bidirectional one, so it
+   * carries an honest `in`/`out` direction suffix (from the canonical `signed` net
+   * sign); every other role shows the magnitude. Copy + colour live HERE
+   * (presentation); the pure {@link ribbonTiles} returns only roles + numbers.
+   */
+  private _ribbonTile(t: RibbonTile): TemplateResult {
+    const r = STRINGS.scene.ribbon;
+    const color = NODE_COLOR[t.role];
+    const kw = `${formatNumber(t.kW, 1)} ${r.unit}`;
+    const value =
+      t.role === 'grid'
+        ? t.signed > IDLE_KW
+          ? `${kw} ${r.in}`
+          : t.signed < -IDLE_KW
+            ? `${kw} ${r.out}`
+            : kw
+        : kw;
+    return html`
+      <div class="rib-tile">
+        <span
+          class="rib-ico"
+          style="color:${color};background:color-mix(in srgb, ${color} 18%, transparent)"
+          >${icon(NODE_ICON[t.role], { size: 18 })}</span
+        >
+        <span class="rib-tcol">
+          <span class="rib-tk">${r.tile[t.role]}</span>
+          <span class="rib-tv">${value}</span>
+        </span>
       </div>
     `;
   }
@@ -884,34 +925,89 @@ export class TcMyHome extends LitElement implements LovelaceCard {
       .ribbon {
         display: flex;
         flex-wrap: wrap;
-        align-items: baseline;
+        align-items: center;
         gap: var(--tc-space-4, 16px);
         margin-bottom: var(--tc-space-4, 16px);
       }
-      .ribbon-tile {
+      /* The self-powered lead (Story 8.7): cap · big % · honest sub-line, divided
+         from the per-node tiles by a hairline. All token-only with fallbacks (no
+         raw hex, no gradient). */
+      .ribbon-lead {
+        display: flex;
+        flex-direction: column;
+        gap: var(--tc-space-1, 4px);
+        padding-right: var(--tc-space-4, 16px);
+        border-right: 1px solid var(--tc-border, rgba(255, 255, 255, 0.09));
+      }
+      .rib-cap {
+        font-size: var(--tc-fs-label, 11.5px);
+        font-weight: var(--tc-fw-label, 700);
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+        color: var(--tc-text-dim, #9aa7b8);
+      }
+      .rib-big {
+        font-family: var(--tc-font-display, var(--tc-font, ui-sans-serif, system-ui, sans-serif));
+        font-size: var(--tc-fs-battery, 26px);
+        font-weight: var(--tc-fw-battery, 760);
+        color: var(--tc-text, #f1f5f9);
+        line-height: 1;
+      }
+      .rib-big small {
+        font-size: var(--tc-fs-body, 14px);
+        font-weight: var(--tc-fw-body, 600);
+        color: var(--tc-text-dim, #9aa7b8);
+        margin-left: 2px;
+      }
+      .rib-sub {
+        font-size: var(--tc-fs-label, 11.5px);
+        font-weight: var(--tc-fw-label, 700);
+        color: var(--tc-text-dim, #9aa7b8);
+      }
+      /* The per-node aggregate tile row — one chip+key+value per present node. A
+         reflow-friendly flex-wrap row (collapses cleanly ≤540px, UX-DR22). */
+      .ribbon-tiles {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: var(--tc-space-4, 16px);
+      }
+      .rib-tile {
+        display: flex;
+        align-items: center;
+        gap: var(--tc-space-2, 8px);
+      }
+      /* The accent icon chip — colour + 18% tint set INLINE per tile (NODE_COLOR
+         [role] + its color-mix), so no raw hex/token is hard-coded in CSS. */
+      .rib-ico {
+        width: 32px;
+        height: 32px;
+        border-radius: var(--tc-radius-md, 16px);
+        display: grid;
+        place-items: center;
+        flex: 0 0 auto;
+      }
+      .rib-tcol {
         display: flex;
         flex-direction: column;
         gap: var(--tc-space-1, 4px);
       }
-      .ribbon .rk {
-        font-size: var(--tc-fs-xs, 12px);
-        font-weight: var(--tc-fw-medium, 550);
+      .rib-tk {
+        font-size: var(--tc-fs-stat-key, 11.5px);
+        font-weight: var(--tc-fw-stat-key, 700);
         letter-spacing: 0.04em;
         text-transform: uppercase;
-        color: var(--tc-text-dim, #9aa7b8);
+        color: var(--tc-text-mute, #64748b);
       }
-      .ribbon .rv {
+      .rib-tv {
         font-family: var(--tc-font-display, var(--tc-font, ui-sans-serif, system-ui, sans-serif));
-        font-size: var(--tc-fs-lg, 20px);
-        font-weight: var(--tc-fw-bold, 760);
+        font-size: var(--tc-fs-body, 14px);
+        font-weight: var(--tc-fw-body, 600);
         color: var(--tc-text, #f1f5f9);
       }
-      .ribbon-tile.net .rv {
-        color: var(--tc-blue, #38bdf8);
-      }
       .ribbon-age {
-        font-size: var(--tc-fs-xs, 12px);
-        color: var(--tc-text-mute, #6b7787);
+        font-size: var(--tc-fs-label, 11.5px);
+        color: var(--tc-text-mute, #64748b);
         margin-left: auto;
         align-self: center;
       }

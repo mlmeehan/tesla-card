@@ -6,6 +6,8 @@ import {
   RafCoalescer,
   gatewaySegments,
   sceneAggregates,
+  selfPowered,
+  ribbonTiles,
   coupledRoles,
   busAxis,
   axisForWidth,
@@ -536,5 +538,170 @@ describe('VEHICLE_NODE_ID is excluded from the trunk junction & axis math (Task 
     const withTallVehicle = { ...taps, [VEHICLE_NODE_ID]: r(0, 5000) };
     expect(busAxis(taps)).toBe('x');
     expect(busAxis(withTallVehicle)).toBe('x'); // unchanged — vehicle excluded
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Story 8.7 — the self-powered % + per-node tiles: pure VIEWS of the ONE balance
+// net (the #1 test target). No second engine, no re-signed net (FR-33 / AR-6).
+// ═══════════════════════════════════════════════════════════════════════════
+describe('selfPowered — the self-powered-now % (Story 8.7, AC1/AC2)', () => {
+  // The mockup fixture (canonical NET): solar +3.0, battery discharge +4.6, grid
+  // import +4.0 (all sources), home −4.2, car/WC −7.4 (loads) ⇒ consumption 11.6,
+  // gridImport 4.0, selfKw 7.6, pct round(7.6/11.6×100) = 66%.
+  const mockup = (): FlowModel =>
+    modelOf([
+      measured('solar', 3),
+      measured('powerwall', -4.6), // discharge ⇒ net +4.6 (source)
+      measured('grid', 4), // import ⇒ net +4.0
+      measured('home', 4.2), // ⇒ net −4.2 (load)
+      measured('wall_connector', 7.4), // ⇒ net −7.4 (load)
+    ]);
+
+  test('(a) grid-import: pct = round((consumption − gridImport)/consumption); selfKw + gridImport = totalKw', () => {
+    const sp = selfPowered(mockup());
+    expect(sp.totalKw).toBeCloseTo(11.6, 6);
+    expect(sp.selfKw).toBeCloseTo(7.6, 6);
+    expect(sp.pct).toBe(66);
+    expect(sp.selfKw + 4).toBeCloseTo(sp.totalKw, 6); // gridImport 4.0 closes the books
+  });
+
+  test('(a) it is a VIEW of the SAME net sceneAggregates uses (one computeBalance, threaded)', () => {
+    const model = mockup();
+    const balance = computeBalance(model);
+    const sp = selfPowered(model, balance);
+    const agg = sceneAggregates(model, balance);
+    expect(sp.totalKw).toBe(agg.consumption); // pure view — never a recomputed/second net
+  });
+
+  test('(b) grid EXPORT ⇒ no import covers load ⇒ pct 100 (honest, not fabricated)', () => {
+    const model = modelOf([
+      measured('solar', 8),
+      measured('grid', -3), // exporting ⇒ net −3 (gridImport clamps to 0)
+      measured('home', 5),
+      absent('powerwall'),
+      absent('wall_connector'),
+    ]);
+    expect(selfPowered(model).pct).toBe(100);
+  });
+
+  test('(b) ISLANDING (grid absent) ⇒ pct 100 (all load self-supplied)', () => {
+    const model = modelOf([
+      measured('powerwall', -4), // discharge ⇒ source
+      measured('home', 4),
+      absent('solar'),
+      absent('grid'),
+      absent('wall_connector'),
+    ]);
+    expect(selfPowered(model).pct).toBe(100);
+  });
+
+  test('(c) NO live load (sub-IDLE_KW consumption) ⇒ pct undefined — never a divide-by-zero 0/100', () => {
+    const model = modelOf([
+      measured('solar', 0.02),
+      measured('home', 0.03),
+      absent('powerwall'),
+      absent('grid'),
+      absent('wall_connector'),
+    ]);
+    const sp = selfPowered(model);
+    expect(sp.pct).toBeUndefined();
+    expect(sp.totalKw).toBeLessThanOrEqual(IDLE_KW);
+  });
+
+  test('(c) generation-only tick (a lone source, no load) ⇒ consumption 0 ⇒ pct undefined', () => {
+    const model = modelOf([
+      measured('solar', 5),
+      absent('powerwall'),
+      absent('grid'),
+      absent('home'),
+      absent('wall_connector'),
+    ]);
+    expect(selfPowered(model).pct).toBeUndefined();
+  });
+
+  test('(d) fully grid-supplied (load exists, all from grid import) ⇒ pct 0 — an HONEST 0, never undefined', () => {
+    // The honesty boundary the `—` branch must NOT swallow: there IS a live load to
+    // be a percentage of (so pct is DEFINED), but none of it is self-supplied ⇒ 0%.
+    // Distinct from no-load (undefined) — confusing the two would either fabricate a
+    // figure or hide a real one.
+    const model = modelOf([
+      measured('grid', 4), // import ⇒ net +4 (covers the whole load)
+      measured('home', 4), // ⇒ net −4 (the only consumption)
+      absent('solar'),
+      absent('powerwall'),
+      absent('wall_connector'),
+    ]);
+    const sp = selfPowered(model);
+    expect(sp.pct).toBe(0); // defined 0 — NOT undefined
+    expect(sp.selfKw).toBeCloseTo(0, 6);
+    expect(sp.totalKw).toBeCloseTo(4, 6);
+  });
+});
+
+describe('ribbonTiles — one tile per present node, canonical order, from the one net (Story 8.7, AC3)', () => {
+  test('one entry per present node in SCENE_NODES order; kW = |net|, signed carries the grid sign', () => {
+    const model = modelOf([
+      measured('solar', 3),
+      measured('grid', 4),
+      measured('home', 4.2),
+      measured('wall_connector', 7.4),
+      absent('powerwall'),
+    ]);
+    const net = computeBalance(model).net;
+    const tiles = ribbonTiles(model);
+    // canonical SCENE_NODES order, powerwall absent ⇒ no tile.
+    expect(tiles.map((t) => t.role)).toEqual(['solar', 'grid', 'home', 'wall_connector']);
+    for (const t of tiles) {
+      expect(t.signed).toBeCloseTo(net[t.role], 6);
+      expect(t.kW).toBeCloseTo(Math.abs(net[t.role]), 6);
+    }
+    expect(tiles.find((t) => t.role === 'grid')!.signed).toBeGreaterThan(0); // import ⇒ +
+  });
+
+  test('all five present ⇒ five tiles in canonical source-then-load order (solar·powerwall·grid·home·wall_connector)', () => {
+    const tiles = ribbonTiles(
+      modelOf([
+        // deliberately built out of order — the fn must impose SCENE_NODES order.
+        measured('home', 4.2),
+        measured('grid', 4),
+        measured('wall_connector', 7.4),
+        measured('solar', 3),
+        measured('powerwall', -4.6),
+      ])
+    );
+    expect(tiles.map((t) => t.role)).toEqual([
+      'solar',
+      'powerwall',
+      'grid',
+      'home',
+      'wall_connector',
+    ]);
+  });
+
+  test('present-gating: a minimal Grid+Home model yields exactly two tiles (no fabricated 0)', () => {
+    const tiles = ribbonTiles(
+      modelOf([
+        measured('grid', 2),
+        measured('home', 2),
+        absent('solar'),
+        absent('powerwall'),
+        absent('wall_connector'),
+      ])
+    );
+    expect(tiles.map((t) => t.role)).toEqual(['grid', 'home']);
+  });
+
+  test('uses the SAME balance net as the lead/bus (threaded balance, one computeBalance)', () => {
+    const model = modelOf([
+      measured('solar', 3),
+      measured('grid', 1),
+      measured('home', 4),
+      absent('powerwall'),
+      absent('wall_connector'),
+    ]);
+    const balance = computeBalance(model);
+    const net = balance.net;
+    for (const t of ribbonTiles(model, balance)) expect(t.signed).toBe(net[t.role]);
   });
 });

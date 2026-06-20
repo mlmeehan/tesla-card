@@ -371,17 +371,31 @@ export const STRINGS = {
     // Group label for the composed container (the live overlay carries its own
     // state-bearing label from the renderer).
     label: 'My Home energy scene',
-    // Summary-ribbon aggregate labels (Story 6.6) — whole-home generation /
-    // consumption / net, all derived from the ONE `computeBalance` net the bus
-    // walks (so the ribbon and bus agree by construction). The grid term is the
-    // honest "net" headline: importing / exporting, or self-supplied when islanded.
+    // Summary-ribbon copy (Story 8.7 — enriched from the 6.6 Gen/Cons/Net trio).
+    // The ribbon now LEADS with a whole-home "self-powered now %" (the share of
+    // consumption NOT met by grid import) + an honest sub-line, followed by one
+    // per-node tile per present role. Every figure is derived from the ONE
+    // `computeBalance` net the bus walks — ribbon and bus agree by construction.
+    // The old `generation`/`consumption`/`net`/`importing`/`exporting`/
+    // `selfSupplied` trio copy was REPLACED (the lead % subsumes Net; the per-node
+    // tiles subsume Generation/Consumption).
     ribbon: {
-      generation: 'Generation',
-      consumption: 'Consumption',
-      net: 'Net',
-      importing: 'Importing',
-      exporting: 'Exporting',
-      selfSupplied: 'Self-supplied',
+      /** The lead-block cap. */
+      selfPowered: 'Self-powered now',
+      /** The sub-line join — `"7.6 of 11.6 kW"` (single token, no interpolation). */
+      coveringOf: 'of',
+      /** The grid tile's directional suffix — `"4.0 kW in"` / `"1.2 kW out"`. */
+      in: 'in',
+      out: 'out',
+      /** Per-role tile labels: `powerwall`→"Battery", `wall_connector`→"Car" (the
+       *  WC-edge-is-car-charging authority — no sixth flow node). */
+      tile: {
+        solar: 'Solar',
+        powerwall: 'Battery',
+        grid: 'Grid',
+        home: 'Home',
+        wall_connector: 'Car',
+      },
       unit: 'kW',
     },
   },

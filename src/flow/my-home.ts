@@ -387,6 +387,77 @@ export function sceneAggregates(model: FlowModel, balance?: Balance): SceneAggre
   return { generation, consumption, gridNet: gridPresent ? (net['grid'] ?? 0) : 0, gridPresent };
 }
 
+/** The self-powered-now lead, derived from the ONE balance net (Story 8.7). */
+export interface SelfPowered {
+  /** Self-powered share of consumption, 0–100, rounded; `undefined` when there is no live load to measure. */
+  pct: number | undefined;
+  /** kW of consumption met from own solar+battery (consumption − gridImport), ≥0. */
+  selfKw: number;
+  /** Total present-node consumption, kW (Σ |negative nets|). */
+  totalKw: number;
+}
+
+/**
+ * The whole-home "self-powered now %" lead (Story 8.7, AC1/AC2) — a PURE VIEW of
+ * the SAME `computeBalance(model).net` the bus segments + {@link sceneAggregates}
+ * already walk. NOT a FR-33-frozen engine edit and NOT a second balance: it reuses
+ * `sceneAggregates` (one `computeBalance`) for `consumption` + the grid term, so
+ * the lead, the per-node tiles, and the bus can never disagree (the 6.6
+ * agree-by-construction invariant, extended).
+ *
+ * Formula: `gridImport = max(0, grid net)` (0 when the grid is absent OR exporting);
+ * `selfKw = max(0, consumption − gridImport)`; `pct = round(selfKw / consumption ×
+ * 100)`, clamped 0–100.
+ *
+ * Honesty (AC2): when total consumption is sub-`IDLE_KW` (a fully-quiescent Scene or
+ * a generation-only export tick — there is nothing to be a percentage *of*), `pct`
+ * is `undefined` (the caller renders an honest `—`), NEVER a divide-by-zero rounded
+ * to `0`/`100`. Grid exporting / islanded ⇒ no import covers any load ⇒ the home IS
+ * fully self-powered ⇒ `pct === 100` (honest, not a fabrication). NaN-safe by
+ * construction (the nets are already coerced to `0` for missing reads upstream).
+ */
+export function selfPowered(model: FlowModel, balance?: Balance): SelfPowered {
+  const agg = sceneAggregates(model, balance); // reuses computeBalance(model).net
+  const gridImport = agg.gridPresent ? Math.max(0, agg.gridNet) : 0;
+  const totalKw = agg.consumption;
+  const selfKw = Math.max(0, totalKw - gridImport);
+  const pct =
+    totalKw <= IDLE_KW
+      ? undefined
+      : Math.min(100, Math.max(0, Math.round((selfKw / totalKw) * 100)));
+  return { pct, selfKw, totalKw };
+}
+
+/** One per-node aggregate tile — a present role + its signed/magnitude net (Story 8.7). */
+export interface RibbonTile {
+  /** The energy role this tile labels (`wall_connector` is shown as "Car"). */
+  role: EnergyRole;
+  /** The node's signed net (`+` source/discharge/export, `−` load) — carries the grid `in`/`out` sense. */
+  signed: number;
+  /** The magnitude `|signed|` (the value most tiles display). */
+  kW: number;
+}
+
+/**
+ * The per-node aggregate tiles (Story 8.7, AC3) — ONE entry per present energy role,
+ * in the canonical {@link SCENE_NODES} order (solar · powerwall · grid · home ·
+ * wall_connector = source-then-load reading order). A PURE VIEW of the same balance
+ * `net` the lead + bus consume: each tile carries `signed = net[role]` (for the grid
+ * `+ in`/`− out` sense) and `kW = |signed|`. Present-gated by `n.present` — an absent
+ * node yields NO tile (never a fabricated `0.0 kW`), so a minimal Grid+Home install
+ * renders exactly two tiles. Label + accent + icon mapping stays in the element
+ * (presentation) — this returns roles + numbers only, keeping `flow/` free of
+ * copy/colour. NO sixth flow node: the `wall_connector` tile IS the "Car" tile.
+ */
+export function ribbonTiles(model: FlowModel, balance?: Balance): RibbonTile[] {
+  const net = (balance ?? computeBalance(model)).net;
+  const order = new Map(SCENE_NODES.map((role, i) => [role, i]));
+  return model.nodes
+    .filter((n) => n.present)
+    .map((n) => ({ role: n.role, signed: net[n.role] ?? 0, kW: Math.abs(net[n.role] ?? 0) }))
+    .sort((a, b) => (order.get(a.role) ?? 0) - (order.get(b.role) ?? 0));
+}
+
 /** A node's role THIS tick, by net sign (Powerwall flips source↔load honestly). */
 export type RoleKind = 'source' | 'load' | 'idle';
 

@@ -46,7 +46,9 @@ import type { EnergyRole } from '../data/registry';
 import { STRINGS } from '../strings';
 import awakeFx from '../fixtures/model-y-awake.json';
 import asleepFx from '../fixtures/model-y-asleep.json';
-import { wcVehicleEdge } from '../flow/my-home';
+import { wcVehicleEdge, selfPowered, ribbonTiles } from '../flow/my-home';
+import { computeBalance } from '../flow/balance';
+import { formatNumber } from '../helpers';
 import { NODE_COLOR } from '../flow/renderer';
 import type { HassEntity, HomeAssistant, TeslaCardConfig } from '../types';
 
@@ -302,7 +304,7 @@ const recompute = (el: Scene): void =>
   (el as unknown as { _recomputeGeometry: () => void })._recomputeGeometry();
 
 describe('AC1 — the summary ribbon above the explicit two-row grid', () => {
-  test('a .ribbon renders ABOVE the .scene-grid, carrying the aggregate labels', async () => {
+  test('a .ribbon renders ABOVE the .scene-grid, leading with the self-powered cap + a tile label (Story 8.7)', async () => {
     const el = await mount(makeHass(states(awakeFx)));
     const scene = sr(el).querySelector('.scene')!;
     const ribbon = scene.querySelector('.ribbon');
@@ -311,10 +313,11 @@ describe('AC1 — the summary ribbon above the explicit two-row grid', () => {
     expect(grid).not.toBeNull();
     // ribbon comes before the grid in DOM order (above it).
     expect(ribbon!.compareDocumentPosition(grid!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    // Story 8.7: the lead cap + at least one per-node tile label (the Gen/Cons/Net
+    // trio was REPLACED by the self-powered lead + per-node tiles).
     const txt = ribbon!.textContent ?? '';
-    expect(txt).toContain(STRINGS.scene.ribbon.generation);
-    expect(txt).toContain(STRINGS.scene.ribbon.consumption);
-    expect(txt).toContain(STRINGS.scene.ribbon.net);
+    expect(txt).toContain(STRINGS.scene.ribbon.selfPowered);
+    expect(txt).toContain(STRINGS.scene.ribbon.tile.home);
   });
 
   test('the grid PACKS present cards into two centred rows (380px tracks / 80px gap, not role-fixed)', () => {
@@ -1039,5 +1042,149 @@ describe('Story 8.6 — AC4 (gap): every pill text is a NUMBER (the colour-blind
     expect(pills.length).toBeGreaterThan(0);
     // UX-DR12: with motion off the leg reads from this NUMBER, never hue alone.
     expect(pills.every((t) => /\d/.test(t) && t.endsWith(U))).toBe(true);
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Story 8.7 — the enriched self-powered ribbon: a "self-powered now %" lead +
+// per-node aggregate tiles, both pure VIEWS of the ONE computeBalance net (AC1),
+// honest over no/stale load (AC2/AC4), present-gated tiles (AC3), agree-by-
+// construction with the bus (AC1/AC3). No new element (AC5, covered by the
+// contract suite). All from the already-bound `_model` — zero new state reads.
+// ═══════════════════════════════════════════════════════════════════════════
+describe('Story 8.7 — the self-powered lead + per-node tiles', () => {
+  const measured = (role: EnergyRole, kW: number): FlowInput => ({ role, kW, provenance: 'measured' });
+  const quiescent = (role: EnergyRole, kW: number): FlowInput => ({ role, kW, provenance: 'quiescent' });
+  const absent = (role: EnergyRole): FlowInput => ({ role, kW: undefined, provenance: 'measured' });
+  const modelOf = (el: Scene): FlowModel => (el as unknown as { _model: FlowModel })._model;
+  const ribbonOf = (el: Scene) => sr(el).querySelector('.ribbon');
+  const tiles = (el: Scene): Element[] => [...sr(el).querySelectorAll('.rib-tile')];
+
+  test('AC1 — the lead shows the cap, the % matching selfPowered(), and the "X of Y kW" sub-line', async () => {
+    const el = await mount(makeHass(states(awakeFx)));
+    const sp = selfPowered(modelOf(el));
+    const lead = sr(el).querySelector('.ribbon-lead')!;
+    expect(lead).not.toBeNull();
+    expect(lead.querySelector('.rib-cap')!.textContent).toContain(STRINGS.scene.ribbon.selfPowered);
+    expect(sp.pct).not.toBeUndefined(); // the awake fixture has a live load
+    const big = lead.querySelector('.rib-big')!.textContent ?? '';
+    expect(big).toContain(String(sp.pct)); // the rendered % equals the pure derivation
+    expect(big).toContain('%');
+    const sub = (lead.querySelector('.rib-sub')!.textContent ?? '').replace(/\s+/g, ' ').trim();
+    const r = STRINGS.scene.ribbon;
+    expect(sub).toBe(`${formatNumber(sp.selfKw, 1)} ${r.coveringOf} ${formatNumber(sp.totalKw, 1)} ${r.unit}`);
+  });
+
+  test('AC1/AC2 — a fully grid-supplied Scene renders a DEFINED "0%", never the no-load "—"', async () => {
+    // The render guard is `pct === undefined ? '—' : pct` — a falsy check (`pct || '—'`
+    // or `pct ? … : '—'`) would WRONGLY swallow a real 0% into the no-load dash. There
+    // IS a live load here (home 4 kW) entirely met by grid import ⇒ honest 0%.
+    const el = await mount(makeHass(states(awakeFx)));
+    await injectModel(
+      el,
+      buildFlowModel([
+        measured('grid', 4),
+        measured('home', 4),
+        absent('solar'),
+        absent('powerwall'),
+        absent('wall_connector'),
+      ])
+    );
+    expect(selfPowered(modelOf(el)).pct).toBe(0); // a defined 0, not undefined
+    const big = sr(el).querySelector('.rib-big')!.textContent ?? '';
+    expect(big).toContain('0'); // the real 0% figure
+    expect(big).toContain('%');
+    expect(big).not.toContain('—'); // NOT swallowed into the no-load dash
+    expect(sr(el).querySelector('.rib-sub')).not.toBeNull(); // sub-line shows (pct defined)
+  });
+
+  test('AC3 — one .rib-tile per present node; the "Car" tile labels the wall_connector net', async () => {
+    const el = await mount(makeHass(states(awakeFx)));
+    const model = modelOf(el);
+    const expected = ribbonTiles(model);
+    expect(tiles(el).length).toBe(expected.length);
+    // The wall_connector tile is labelled "Car" and shows |net.wall_connector|.
+    const net = computeBalance(model).net;
+    if (expected.some((t) => t.role === 'wall_connector')) {
+      const car = tiles(el).find((t) => (t.textContent ?? '').includes(STRINGS.scene.ribbon.tile.wall_connector))!;
+      expect(car).not.toBeUndefined();
+      expect(car.textContent).toContain(formatNumber(Math.abs(net['wall_connector']), 1));
+    }
+  });
+
+  test('AC3 — a minimal Grid+Home model renders exactly two present-gated tiles (never a fabricated 0)', async () => {
+    const el = await mount(makeHass(states(awakeFx)));
+    await injectModel(
+      el,
+      buildFlowModel([
+        measured('grid', 2),
+        measured('home', 2),
+        absent('solar'),
+        absent('powerwall'),
+        absent('wall_connector'),
+      ])
+    );
+    expect(tiles(el).length).toBe(2);
+    const txt = ribbonOf(el)!.textContent ?? '';
+    expect(txt).toContain(STRINGS.scene.ribbon.tile.grid);
+    expect(txt).toContain(STRINGS.scene.ribbon.tile.home);
+    expect(txt).not.toContain(STRINGS.scene.ribbon.tile.solar); // absent ⇒ no tile
+  });
+
+  test('AC3 — the GRID tile carries an honest in/out direction suffix; other tiles show magnitude', async () => {
+    const el = await mount(makeHass(states(awakeFx)));
+    // Grid importing (+) ⇒ "… in".
+    await injectModel(el, buildFlowModel([measured('grid', 3), measured('home', 3), absent('solar'), absent('powerwall'), absent('wall_connector')]));
+    const gridTile = tiles(el).find((t) => (t.textContent ?? '').includes(STRINGS.scene.ribbon.tile.grid))!;
+    expect(gridTile.textContent).toContain(STRINGS.scene.ribbon.in);
+    // Grid exporting (−) ⇒ "… out".
+    await injectModel(el, buildFlowModel([measured('grid', -3), measured('solar', 5), measured('home', 2), absent('powerwall'), absent('wall_connector')]));
+    const gridTile2 = tiles(el).find((t) => (t.textContent ?? '').includes(STRINGS.scene.ribbon.tile.grid))!;
+    expect(gridTile2.textContent).toContain(STRINGS.scene.ribbon.out);
+    // Home (a load) shows no in/out — magnitude only.
+    const homeTile = tiles(el).find((t) => (t.textContent ?? '').includes(STRINGS.scene.ribbon.tile.home))!;
+    expect(homeTile.textContent).not.toMatch(new RegExp(`\\b(${STRINGS.scene.ribbon.in}|${STRINGS.scene.ribbon.out})\\b`));
+  });
+
+  test('AC2/AC4 — a fully-quiescent, sub-deadband Scene reads — (no fabricated %), dims, and stamps last-known age', async () => {
+    const el = await mount(makeHass(states(awakeFx)));
+    // Real quiescence = sub-DEADBAND power reads (provenance quiescent ⇒ dim; the
+    // sub-IDLE_KW nets ⇒ no live load to be a percentage of ⇒ selfPowered.pct undefined).
+    await injectModel(
+      el,
+      buildFlowModel([
+        quiescent('solar', 0.02),
+        quiescent('home', 0.03),
+        absent('powerwall'),
+        absent('grid'),
+        absent('wall_connector'),
+      ])
+    );
+    const rib = ribbonOf(el)!;
+    expect(rib.classList.contains('dim')).toBe(true); // honest stale tone
+    const big = sr(el).querySelector('.rib-big')!.textContent ?? '';
+    expect(big).toContain('—'); // the honest no-load read
+    expect(big).not.toMatch(/\d/); // NEVER a fabricated 0%/100%
+    expect(sr(el).querySelector('.rib-sub')).toBeNull(); // no sub-line when pct undefined
+    expect(sr(el).querySelector('.ribbon-age')).not.toBeNull(); // "updated Nm ago" stamp
+  });
+
+  test('AC4 — an EMPTY Scene (no present nodes) renders no ribbon at all', async () => {
+    const el = await mount(makeHass({})); // no energy site
+    expect(ribbonOf(el)).toBeNull();
+  });
+
+  test('AC1/AC3 — the grid tile magnitude AGREES with the bus grid leg pill (one balance net)', async () => {
+    const el = await mount(makeHass(states(awakeFx)));
+    recompute(el); // populate anchors so the bus legs draw (jsdom: zero rects)
+    await el.updateComplete;
+    const model = modelOf(el);
+    const net = computeBalance(model).net;
+    const gridTile = tiles(el).find((t) => (t.textContent ?? '').includes(STRINGS.scene.ribbon.tile.grid));
+    if (!gridTile) return; // grid absent in this fixture variant — nothing to cross-check
+    const tileMag = formatNumber(Math.abs(net['grid']), 1);
+    expect(gridTile.textContent).toContain(tileMag);
+    // The bus grid leg pill reads the SAME |edge.kW| = |net.grid| (agree by construction).
+    expect(pillTxt(legOf(el, 'grid'))).toContain(tileMag);
   });
 });
