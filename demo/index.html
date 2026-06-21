@@ -127,6 +127,12 @@
         const staleStamp = new Date(Date.parse(awakeFixture.states['sensor.garage_model_y_battery_level'].last_updated) - 47 * 60_000).toISOString();
         st['sensor.garage_model_y_battery_level'] = { ...s('unavailable'), last_updated: staleStamp, last_changed: staleStamp };
         st['sensor.garage_model_y_battery_range'] = s('unavailable');
+        // The cached sensors survive sleep (they back the compact in-line embed's
+        // last-known SoC/range — Story 8.11), but they stopped updating when the car
+        // slept too: keep their values, back-date their stamps to match, so the
+        // compact embed reads "Asleep · updated 47m ago", not a fresh "Just now".
+        st['sensor.usable_battery_level'] = { ...st['sensor.usable_battery_level'], last_updated: staleStamp, last_changed: staleStamp };
+        st['sensor.estimate_battery_range'] = { ...st['sensor.estimate_battery_range'], last_updated: staleStamp, last_changed: staleStamp };
         st['climate.garage_model_y_climate'] = s('off', { min_temp: 15, max_temp: 28, target_temp_step: 0.5 });
         st['sensor.garage_model_y_charging'] = s('unavailable');
         st['switch.garage_model_y_charge'] = s('unavailable');

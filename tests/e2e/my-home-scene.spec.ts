@@ -797,4 +797,37 @@ test.describe('tc-my-home Scene — Story 8.5 vehicle: half-alive (asleep) is ca
     // (the scene-level "never a false charge").
     await expect(vehLeg(page).locator('.sb-flow')).toHaveCount(0);
   });
+
+  test('Story 8.11 — the asleep compact embed shows last-known SoC/range (dimmed), not "—"', async ({
+    page,
+  }) => {
+    await mountScene(page);
+    await waitForTrunk(page);
+
+    // The embed is variant:'compact', so an asleep car falls back to the cached
+    // usable_battery_level (71%) / estimate_battery_range (230 mi) — REAL sensors that
+    // survive sleep — instead of blanking the only readout to "—".
+    await expect(vehCell(page).getByText('71%').first()).toBeVisible();
+    await expect(vehCell(page).getByText('230 mi').first()).toBeVisible();
+
+    // The readout is MARKED stale in a REAL browser (the only tier that renders the
+    // CSS cascade): the row carries .last-known + the numbers .tc-stale-copy, and the
+    // headline % resolves to the dim token via --bat-pct-color — the exact property
+    // jsdom cannot verify (it does not resolve var()/cascade).
+    await expect(vehCell(page).locator('.battery.last-known')).toHaveCount(1);
+    await expect(vehCell(page).locator('.bat-top.tc-stale-copy')).toHaveCount(1);
+    const pctColor = await vehCell(page)
+      .locator('.bat-pct')
+      .first()
+      .evaluate((el) => getComputedStyle(el).color);
+    expect(pctColor).toBe('rgb(154, 167, 184)'); // --tc-text-dim (#9aa7b8), NOT the live --tc-text white
+
+    // a11y parity: the battery aria-label says the value is last-known, never live.
+    const aria = await vehCell(page).locator('.battery').getAttribute('aria-label');
+    expect(aria?.toLowerCase()).toContain('last known');
+
+    // The honest stamp still reads "updated 47m ago" — sourced from the SHOWN cached
+    // sensor (back-dated like the car), never a fabricated fresh "Just now".
+    await expect(vehCell(page).getByText(/updated 47m ago/i).first()).toBeVisible();
+  });
 });
