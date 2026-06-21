@@ -9,10 +9,11 @@
 // Mirrors no-network-egress.test.ts / import-allowlist.test.ts.
 import { describe, test, expect } from 'vitest';
 import { execFileSync } from 'node:child_process';
+import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 // @ts-expect-error — dep-light .mjs gate, no .d.ts (matches scripts/lint/* convention)
-import { checkVersionSync, RULE, EXPECTED_FILENAME } from '../scripts/lint/version-sync.mjs';
+import { checkVersionSync, checkReleaseTag, RULE, EXPECTED_FILENAME } from '../scripts/lint/version-sync.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const GATE = join(HERE, '..', 'scripts', 'lint', 'version-sync.mjs');
@@ -152,5 +153,103 @@ describe('version-sync gate — end to end on the committed repo', () => {
     // Throws (non-zero exit) if the gate finds any drift on the committed repo.
     const out = execFileSync('node', [GATE], { cwd: CARD_ROOT, encoding: 'utf8' });
     expect(out).toContain(`ok ${RULE}`);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Story 7.4 AC2 — the git-TAG leg of the version-sync invariant, now locally
+// testable. release.yml invokes `version-sync.mjs --release-tag "$TAG"`; the logic
+// is `checkReleaseTag`, exercised here (pure + via the real gate sub-mode) so the
+// tag↔version equality is no longer enforced only by inline shell at release time.
+// ─────────────────────────────────────────────────────────────────────────────
+describe('version-sync gate — checkReleaseTag (pure)', () => {
+  test('a matched tag (v${version} === v${CARD_VERSION}) passes', () => {
+    expect(checkReleaseTag({ tag: 'v1.2.3', pkgVersion: '1.2.3', cardVersion: '1.2.3' })).toEqual([]);
+  });
+
+  test('FLAGS a tag that does not equal v${version}', () => {
+    const f = checkReleaseTag({ tag: 'v1.2.4', pkgVersion: '1.2.3', cardVersion: '1.2.3' });
+    expect(f).toHaveLength(1);
+    expect(f[0]).toContain(`FAIL ${RULE}`);
+    expect(f[0]).toContain("'v1.2.4' != 'v1.2.3'");
+  });
+
+  test('FLAGS a tag missing the leading v', () => {
+    expect(checkReleaseTag({ tag: '1.2.3', pkgVersion: '1.2.3', cardVersion: '1.2.3' })).toHaveLength(1);
+  });
+
+  test('FLAGS package.json ↔ CARD_VERSION drift (defensive — the lint gate should catch it first)', () => {
+    const f = checkReleaseTag({ tag: 'v1.2.3', pkgVersion: '1.2.3', cardVersion: '1.2.4' });
+    expect(f.some((m: string) => m.includes("!= CARD_VERSION"))).toBe(true);
+  });
+
+  test('FLAGS an unparseable CARD_VERSION', () => {
+    const f = checkReleaseTag({ tag: 'v1.2.3', pkgVersion: '1.2.3', cardVersion: undefined });
+    expect(f.some((m: string) => m.includes('could not parse CARD_VERSION'))).toBe(true);
+  });
+});
+
+describe('version-sync gate — RED/GREEN: the real --release-tag sub-mode on the committed repo', () => {
+  // The committed repo is at one synced version; derive it so the test tracks bumps.
+  const VERSION = JSON.parse(readFileSync(join(CARD_ROOT, 'package.json'), 'utf8')).version as string;
+
+  const runReleaseTag = (tag: string): { status: number; output: string } => {
+    try {
+      const stdout = execFileSync('node', [GATE, '--release-tag', tag], { cwd: CARD_ROOT, encoding: 'utf8' });
+      return { status: 0, output: stdout };
+    } catch (err: any) {
+      return { status: err.status ?? 1, output: `${err.stdout ?? ''}${err.stderr ?? ''}` };
+    }
+  };
+
+  test(`GREEN — the correct tag (v${'${VERSION}'}) exits 0`, () => {
+    const { status, output } = runReleaseTag(`v${VERSION}`);
+    expect(status).toBe(0);
+    expect(output).toContain(`ok ${RULE}`);
+  });
+
+  test('RED — a wrong tag exits non-zero + emits a FAIL line', () => {
+    const { status, output } = runReleaseTag('v999.0.0');
+    expect(status).not.toBe(0);
+    expect(output).toContain(`FAIL ${RULE}`);
+    expect(output).toContain(`!= 'v${VERSION}'`);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Story 7.4 AC3 — distribution-floor declarations are PINNED (no silent drift).
+//
+// The CI "matrix" is, by deliberate decision, in-test viewport + colour-scheme
+// sweeps under a single Chromium project — Chromium is what the HA frontend and the
+// companion-app webviews actually run, so a multi-engine Playwright matrix buys no
+// real coverage for a Lovelace card and is WAIVED. What we CAN pin locally is that
+// the declared runtime floors don't silently drift: Node 20 (the .nvmrc the test/
+// validate/release workflows consume) and the HACS minimum HA version. These were
+// previously config-only declarations with no assertion; now they're invariants.
+// ─────────────────────────────────────────────────────────────────────────────
+describe('Story 7.4 AC3 — distribution floors are pinned', () => {
+  test('the Node floor is 20 and the workflows consume that single source (.nvmrc)', () => {
+    expect(readFileSync(join(CARD_ROOT, '.nvmrc'), 'utf8').trim()).toBe('20');
+    // The test workflow reads .nvmrc; validate/release pin node-version: 20 directly —
+    // assert neither drifted off the declared floor.
+    const testYml = readFileSync(join(CARD_ROOT, '.github', 'workflows', 'test.yml'), 'utf8');
+    expect(testYml).toContain('node-version-file: .nvmrc');
+    for (const wf of ['validate.yml', 'release.yml']) {
+      const txt = readFileSync(join(CARD_ROOT, '.github', 'workflows', wf), 'utf8');
+      expect(txt, `${wf} pins the Node 20 floor`).toMatch(/node-version:\s*20\b/);
+    }
+  });
+
+  test('the HACS minimum Home Assistant version is the declared floor (>= 2024.4)', () => {
+    const hacs = JSON.parse(readFileSync(join(CARD_ROOT, 'hacs.json'), 'utf8'));
+    expect(hacs.homeassistant, 'hacs.json declares the minimum HA version').toBe('2024.4.0');
+    expect(hacs.filename).toBe(EXPECTED_FILENAME);
+  });
+
+  test('release.yml delegates the tag check to the version-sync gate (no inline reimplementation)', () => {
+    // Guards the single-source-of-truth refactor: if someone re-inlines the tag logic
+    // in shell, this fails — the workflow must call the tested gate.
+    const releaseYml = readFileSync(join(CARD_ROOT, '.github', 'workflows', 'release.yml'), 'utf8');
+    expect(releaseYml).toContain('version-sync.mjs --release-tag');
   });
 });

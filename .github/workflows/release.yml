@@ -21,31 +21,19 @@ jobs:
 
       # Release-time leg of the version-sync invariant (Story 7.4 / NFR-5). The
       # per-push `version-sync` lint gate already proves package.json `version` ===
-      # src/const.ts `CARD_VERSION`; the git TAG is only knowable here, so this step
-      # asserts the published tag equals `v${version}` (and therefore `v${CARD_VERSION}`,
-      # which the lint gate guarantees equals `version`). A tag can never ship a bundle
-      # whose banner version disagrees with it.
+      # src/const.ts `CARD_VERSION`; the git TAG is only knowable here, so this asserts
+      # the published tag equals `v${version}` (and therefore `v${CARD_VERSION}`). A tag
+      # can never ship a bundle whose banner version disagrees with it.
       #
-      # Security: the tag is passed through `env:` and never interpolated as `${{ }}`
-      # directly into the shell — prevents tag-name script injection (same guard the
-      # burn-in job in test.yml documents).
+      # SINGLE SOURCE OF TRUTH: this runs the same `version-sync` gate in its
+      # `--release-tag` sub-mode, whose logic is unit-tested in src/version-sync.test.ts
+      # (the tag leg is no longer an untested inline-shell reimplementation that could
+      # silently drift). Security: the tag is passed via `env:`, never interpolated as
+      # `${{ }}` into the shell — prevents tag-name script injection.
       - name: Assert release tag matches the synced version
         env:
           RELEASE_TAG: ${{ github.event.release.tag_name }}
-        run: |
-          PKG_VERSION="$(node -p "require('./package.json').version")"
-          CARD_VERSION="$(node -e "console.log((require('fs').readFileSync('src/const.ts','utf8').match(/export const CARD_VERSION = '([^']+)'/)||[])[1] || '')")"
-          echo "tag=${RELEASE_TAG}  package.json=${PKG_VERSION}  CARD_VERSION=${CARD_VERSION}"
-          if [ -z "$CARD_VERSION" ]; then
-            echo "FAIL release: could not parse CARD_VERSION from src/const.ts"; exit 1
-          fi
-          if [ "$PKG_VERSION" != "$CARD_VERSION" ]; then
-            echo "FAIL release: package.json version ($PKG_VERSION) != CARD_VERSION ($CARD_VERSION) — the lint gate should have caught this"; exit 1
-          fi
-          if [ "$RELEASE_TAG" != "v${PKG_VERSION}" ]; then
-            echo "FAIL release: tag '$RELEASE_TAG' != 'v${PKG_VERSION}' — the published tag must equal v\${version}/v\${CARD_VERSION} (NFR-5)"; exit 1
-          fi
-          echo "ok release: tag, package.json version, and CARD_VERSION all agree on '${PKG_VERSION}'"
+        run: node scripts/lint/version-sync.mjs --release-tag "$RELEASE_TAG"
 
       - run: npm run build
 

@@ -17,12 +17,16 @@
 // project deliberately runs no ESLint (custom gates are scripts/lint/*.mjs).
 // ESM / Node 20.
 
+// Importing this module is side-effect-free: the scan runs only when executed as a
+// CLI (main guard at the bottom), so the co-located test can import
+// `findViolations`/`RULE` without triggering a repo scan (parity with
+// no-network-egress.mjs / import-allowlist.mjs).
 import ts from 'typescript';
 import { readFileSync, readdirSync, existsSync } from 'node:fs';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import { dirname, join, relative } from 'node:path';
 
-const RULE = 'no-bare-hass.states';
+export const RULE = 'no-bare-hass.states';
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(__dirname, '..', '..'); // tesla-card/
 const SRC = join(ROOT, 'src');
@@ -76,8 +80,12 @@ function isHassRef(expr) {
   return false;
 }
 
-/** Find bare state reads in one file via AST walk. Returns [{ line, col, member }]. */
-function findViolations(filePath, text) {
+/**
+ * Pure, side-effect-free matcher (imported by the co-located test). Finds bare
+ * state reads in one file via AST walk. Returns [{ line, col, member }]. The CLI
+ * `main()` feeds it each scanned file; the test feeds it planted snippets.
+ */
+export function findViolations(filePath, text) {
   const sf = ts.createSourceFile(filePath, text, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS);
   const hits = [];
   const visit = (node) => {
@@ -105,45 +113,52 @@ function findViolations(filePath, text) {
   return hits;
 }
 
-// Scan every non-test .ts under src/, excluding the allowed `data/` home and the
-// test-only `fixtures/` (mock hass objects are constructed there legitimately).
-const files = collectTs(SRC, [DATA, join(SRC, 'fixtures')]);
-const failures = [];
-const baselineHadRead = new Set();
-let scanned = 0;
+function main() {
+  // Scan every non-test .ts under src/, excluding the allowed `data/` home and the
+  // test-only `fixtures/` (mock hass objects are constructed there legitimately).
+  const files = collectTs(SRC, [DATA, join(SRC, 'fixtures')]);
+  const failures = [];
+  const baselineHadRead = new Set();
+  let scanned = 0;
 
-for (const file of files) {
-  scanned += 1;
-  const r = rel(file);
-  const violations = findViolations(file, readFileSync(file, 'utf8'));
-  if (BASELINE_SET.has(r)) {
-    if (violations.length > 0) baselineHadRead.add(r); // baselined — suppressed
-    continue;
+  for (const file of files) {
+    scanned += 1;
+    const r = rel(file);
+    const violations = findViolations(file, readFileSync(file, 'utf8'));
+    if (BASELINE_SET.has(r)) {
+      if (violations.length > 0) baselineHadRead.add(r); // baselined — suppressed
+      continue;
+    }
+    for (const v of violations) {
+      failures.push(`FAIL ${RULE} ${r}:${v.line}:${v.col} hass.${v.member}`);
+    }
   }
-  for (const v of violations) {
-    failures.push(`FAIL ${RULE} ${r}:${v.line}:${v.col} hass.${v.member}`);
+
+  // Self-invalidation: every baseline entry MUST exist and still contain a bare
+  // read. A dev who removes the last breach is forced to delete the stale entry.
+  for (const entry of BASELINE) {
+    const full = join(ROOT, entry);
+    if (!existsSync(full)) {
+      failures.push(`FAIL ${RULE} baseline entry stale: ${entry} no longer exists — remove it from BASELINE`);
+    } else if (!baselineHadRead.has(entry)) {
+      failures.push(
+        `FAIL ${RULE} baseline entry stale: ${entry} has no bare state read — the boundary ratcheted shut; remove it from BASELINE`,
+      );
+    }
   }
+
+  if (failures.length > 0) {
+    for (const f of failures) console.error(f);
+    console.error(`\n${RULE}: ${failures.length} violation(s).`);
+    process.exit(1);
+  }
+
+  console.log(
+    `ok ${RULE} — ${scanned} files scanned, 0 bare state reads outside src/data/ (baseline: ${BASELINE.join(', ')})`,
+  );
 }
 
-// Self-invalidation: every baseline entry MUST exist and still contain a bare
-// read. A dev who removes the last breach is forced to delete the stale entry.
-for (const entry of BASELINE) {
-  const full = join(ROOT, entry);
-  if (!existsSync(full)) {
-    failures.push(`FAIL ${RULE} baseline entry stale: ${entry} no longer exists — remove it from BASELINE`);
-  } else if (!baselineHadRead.has(entry)) {
-    failures.push(
-      `FAIL ${RULE} baseline entry stale: ${entry} has no bare state read — the boundary ratcheted shut; remove it from BASELINE`,
-    );
-  }
+// CLI-only: importing this module (for the test) must not run the scan.
+if (import.meta.url === pathToFileURL(process.argv[1] || '').href) {
+  main();
 }
-
-if (failures.length > 0) {
-  for (const f of failures) console.error(f);
-  console.error(`\n${RULE}: ${failures.length} violation(s).`);
-  process.exit(1);
-}
-
-console.log(
-  `ok ${RULE} — ${scanned} files scanned, 0 bare state reads outside src/data/ (baseline: ${BASELINE.join(', ')})`,
-);

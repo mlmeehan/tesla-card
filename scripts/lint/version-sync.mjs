@@ -137,6 +137,59 @@ export function checkVersionSync({ pkgText, constText, hacsText, rollupText }) {
   return failures;
 }
 
+/**
+ * Pure check for the RELEASE-TIME leg of the version-sync invariant (Story 7.4 /
+ * NFR-5): the published git tag MUST equal `v${version}`, and (defensively)
+ * package.json `version` MUST equal CARD_VERSION. Returns FAIL lines (empty = ok).
+ *
+ * The per-push lint gate already proves package.json === CARD_VERSION; the git TAG
+ * is only knowable at release time. `release.yml` invokes this via
+ * `node scripts/lint/version-sync.mjs --release-tag "$TAG"`, so the SHIPPED logic
+ * IS the logic this module's co-located test exercises (single source of truth) —
+ * closing the prior gap where the tag leg lived only as inline shell, untested
+ * locally and silently breakable if the workflow regressed.
+ *
+ * @param {{ tag: string, pkgVersion: string|undefined, cardVersion: string|undefined }} inputs
+ * @returns {string[]} FAIL messages (empty = the tag is in sync).
+ */
+export function checkReleaseTag({ tag, pkgVersion, cardVersion }) {
+  const failures = [];
+  const fail = (msg) => failures.push(`FAIL ${RULE} ${msg}`);
+  if (!cardVersion) fail('could not parse CARD_VERSION from src/const.ts');
+  if (!pkgVersion) fail('could not read package.json `version`');
+  if (pkgVersion && cardVersion && pkgVersion !== cardVersion) {
+    fail(`package.json version ('${pkgVersion}') != CARD_VERSION ('${cardVersion}') — the lint gate should have caught this`);
+  }
+  if (pkgVersion && tag !== `v${pkgVersion}`) {
+    fail(`published tag '${tag}' != 'v${pkgVersion}' — the tag must equal v\${version}/v\${CARD_VERSION} (NFR-5)`);
+  }
+  return failures;
+}
+
+/** Parse the single CARD_VERSION literal from src/const.ts text (undefined-safe). */
+function parseCardVersion(constText) {
+  const m = [...constText.matchAll(CARD_VERSION_RE)];
+  return m.length === 1 ? m[0][1] : undefined;
+}
+
+/** CLI sub-mode: assert the release tag matches the synced version (reads real files). */
+function releaseTagMain(tag) {
+  let pkgVersion;
+  try {
+    pkgVersion = JSON.parse(readFileSync(join(ROOT, 'package.json'), 'utf8')).version;
+  } catch {
+    pkgVersion = undefined;
+  }
+  const cardVersion = parseCardVersion(readFileSync(join(ROOT, 'src', 'const.ts'), 'utf8'));
+  const failures = checkReleaseTag({ tag, pkgVersion, cardVersion });
+  if (failures.length > 0) {
+    for (const f of failures) console.error(f);
+    console.error(`\n${RULE}: release tag '${tag}' does not match the synced version.`);
+    process.exit(1);
+  }
+  console.log(`ok ${RULE} — release tag '${tag}', package.json version, and CARD_VERSION all agree on '${pkgVersion}'`);
+}
+
 function main() {
   const failures = checkVersionSync({
     pkgText: readFileSync(join(ROOT, 'package.json'), 'utf8'),
@@ -158,6 +211,11 @@ function main() {
 }
 
 // CLI-only: importing this module (for the test) must not run the checks.
+// `--release-tag <tag>` runs the release-time tag check; otherwise the per-push
+// distribution-invariant scan. Both share one implementation with the co-located test.
 if (import.meta.url === pathToFileURL(process.argv[1] || '').href) {
-  main();
+  const argv = process.argv.slice(2);
+  const i = argv.indexOf('--release-tag');
+  if (i !== -1) releaseTagMain(argv[i + 1] ?? '');
+  else main();
 }

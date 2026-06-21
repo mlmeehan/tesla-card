@@ -12,12 +12,16 @@
 // (`./x`, `../x`) become edges; bare specifiers (`lit`, `@mdi/js`, `node:*`),
 // JSON, and `*.test.ts` are ignored. ESM / Node 20.
 
+// Importing this module is side-effect-free: the scan runs only when executed as a
+// CLI (main guard at the bottom), so the co-located test can import
+// `findCycles`/`importSpecifiers`/`RULE` without triggering a repo scan (parity
+// with no-network-egress.mjs / import-allowlist.mjs).
 import ts from 'typescript';
 import { readFileSync, readdirSync, existsSync, statSync } from 'node:fs';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import { dirname, join, relative, resolve as resolvePath } from 'node:path';
 
-const RULE = 'no-cycle';
+export const RULE = 'no-cycle';
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(__dirname, '..', '..'); // tesla-card/
 const SRC = join(ROOT, 'src');
@@ -63,7 +67,7 @@ function isRuntimeImport(node) {
 }
 
 /** Extract relative RUNTIME module specifiers (static + export-from + dynamic import). */
-function importSpecifiers(filePath, text) {
+export function importSpecifiers(filePath, text) {
   const sf = ts.createSourceFile(filePath, text, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS);
   const specs = [];
   const visit = (node) => {
@@ -101,58 +105,75 @@ function resolveSpec(fromFile, spec) {
   return null;
 }
 
-// Build the directed module graph.
-const files = collectTs(SRC);
-const nodes = new Set(files);
-const graph = new Map(); // file → [file]
-let edgeCount = 0;
-for (const file of files) {
-  const deps = [];
-  for (const spec of importSpecifiers(file, readFileSync(file, 'utf8'))) {
-    const target = resolveSpec(file, spec);
-    if (target && nodes.has(target)) {
-      deps.push(target);
-      edgeCount += 1;
-    }
-  }
-  graph.set(file, deps);
-}
+/**
+ * Pure, side-effect-free cycle detector (imported by the co-located test). Takes a
+ * directed graph `Map<node, node[]>` and returns every distinct cycle as a chain of
+ * node keys (closing node repeated, e.g. `[a, b, a]`). DFS with a gray (on-stack) /
+ * black (done) colouring: a back edge to a gray node is a cycle. Node keys are
+ * opaque to the detector — `main()` passes absolute paths; the test passes strings.
+ */
+export function findCycles(graph) {
+  const GRAY = new Set();
+  const BLACK = new Set();
+  const stack = [];
+  const cycles = [];
+  const seenCycle = new Set();
 
-// Cycle detection: DFS with a gray (on-stack) / black (done) colouring. A back
-// edge to a gray node is a cycle; report the offending path chain.
-const GRAY = new Set();
-const BLACK = new Set();
-const stack = [];
-const cycles = [];
-const seenCycle = new Set();
-
-function dfs(node) {
-  GRAY.add(node);
-  stack.push(node);
-  for (const dep of graph.get(node) ?? []) {
-    if (BLACK.has(dep)) continue;
-    if (GRAY.has(dep)) {
-      const chain = stack.slice(stack.indexOf(dep)).concat(dep).map(rel);
-      const key = chain.join(' → ');
-      if (!seenCycle.has(key)) {
-        seenCycle.add(key);
-        cycles.push(chain);
+  const dfs = (node) => {
+    GRAY.add(node);
+    stack.push(node);
+    for (const dep of graph.get(node) ?? []) {
+      if (BLACK.has(dep)) continue;
+      if (GRAY.has(dep)) {
+        const chain = stack.slice(stack.indexOf(dep)).concat(dep);
+        const key = chain.join(' → ');
+        if (!seenCycle.has(key)) {
+          seenCycle.add(key);
+          cycles.push(chain);
+        }
+        continue;
       }
-      continue;
+      dfs(dep);
     }
-    dfs(dep);
+    stack.pop();
+    GRAY.delete(node);
+    BLACK.add(node);
+  };
+
+  for (const node of graph.keys()) if (!BLACK.has(node)) dfs(node);
+  return cycles;
+}
+
+function main() {
+  // Build the directed module graph.
+  const files = collectTs(SRC);
+  const nodes = new Set(files);
+  const graph = new Map(); // file → [file]
+  let edgeCount = 0;
+  for (const file of files) {
+    const deps = [];
+    for (const spec of importSpecifiers(file, readFileSync(file, 'utf8'))) {
+      const target = resolveSpec(file, spec);
+      if (target && nodes.has(target)) {
+        deps.push(target);
+        edgeCount += 1;
+      }
+    }
+    graph.set(file, deps);
   }
-  stack.pop();
-  GRAY.delete(node);
-  BLACK.add(node);
+
+  const cycles = findCycles(graph);
+
+  if (cycles.length > 0) {
+    for (const chain of cycles) console.error(`FAIL ${RULE} ${chain.map(rel).join(' → ')}`);
+    console.error(`\n${RULE}: ${cycles.length} import cycle(s).`);
+    process.exit(1);
+  }
+
+  console.log(`ok ${RULE} — ${nodes.size} modules, ${edgeCount} edges, no import cycles`);
 }
 
-for (const file of files) if (!BLACK.has(file)) dfs(file);
-
-if (cycles.length > 0) {
-  for (const chain of cycles) console.error(`FAIL ${RULE} ${chain.join(' → ')}`);
-  console.error(`\n${RULE}: ${cycles.length} import cycle(s).`);
-  process.exit(1);
+// CLI-only: importing this module (for the test) must not run the scan.
+if (import.meta.url === pathToFileURL(process.argv[1] || '').href) {
+  main();
 }
-
-console.log(`ok ${RULE} — ${nodes.size} modules, ${edgeCount} edges, no import cycles`);

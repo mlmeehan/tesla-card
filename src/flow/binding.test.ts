@@ -11,6 +11,13 @@ import { bindFlowModel, flowInputsFrom, POWER_KEY, ENERGY_ROLES, DEADBAND } from
 import awake from '../fixtures/model-y-awake.json';
 import asleep from '../fixtures/model-y-asleep.json';
 import unresolved from '../fixtures/all-unresolved.json';
+import flowGridImport from '../fixtures/flow-grid-import.json';
+import flowGridExport from '../fixtures/flow-grid-export.json';
+import flowSolarSurplus from '../fixtures/flow-solar-surplus.json';
+import flowCharging from '../fixtures/flow-charging.json';
+import flowPluggedIdle from '../fixtures/flow-plugged-idle.json';
+import flowIslanding from '../fixtures/flow-islanding.json';
+import flowVampire from '../fixtures/flow-vampire.json';
 
 function makeHass(states: Record<string, unknown>): HomeAssistant {
   return { states } as unknown as HomeAssistant;
@@ -214,4 +221,37 @@ describe('binding — dialect passthrough stays measured with sign intact (AC3)'
     expect(grid?.kW).toBeCloseTo(2.5, 6); // sign preserved (grid is passthrough)
     expect(grid?.provenance).toBe('measured');
   });
+});
+
+// AC3 — measured-vs-inferred: `inferred` is a RESERVED Provenance value (model.ts)
+// for genuinely back-computed kW (e.g. a future Solar→Vehicle split). The present
+// node→bus binding produces NO inferred edge — only `measured` (fresh) or
+// `quiescent` (not-fresh / sub-deadband). The awake case above pins this for one
+// fixture; this sweep pins it as a CORPUS-WIDE invariant across every committed
+// flow-state, so the reserved-but-unused status is enforced, not just asserted once.
+// If anyone later wires real inference, this test goes RED at the binding layer and
+// forces them to add the matching coverage (closes the 4.2-AC3 traceability note).
+describe('binding — `inferred` is reserved-but-unused: no committed fixture yields it (AC3)', () => {
+  const CORPUS: ReadonlyArray<{ name: string; states: Record<string, unknown> }> = [
+    { name: 'awake', states: awake.states as Record<string, unknown> },
+    { name: 'asleep', states: asleep.states as Record<string, unknown> },
+    { name: 'flow-grid-import', states: flowGridImport.states as Record<string, unknown> },
+    { name: 'flow-grid-export', states: flowGridExport.states as Record<string, unknown> },
+    { name: 'flow-solar-surplus', states: flowSolarSurplus.states as Record<string, unknown> },
+    { name: 'flow-charging', states: flowCharging.states as Record<string, unknown> },
+    { name: 'flow-plugged-idle', states: flowPluggedIdle.states as Record<string, unknown> },
+    { name: 'flow-islanding', states: flowIslanding.states as Record<string, unknown> },
+    { name: 'flow-vampire', states: flowVampire.states as Record<string, unknown> },
+  ];
+
+  for (const { name, states } of CORPUS) {
+    test(`${name} → every edge provenance ∈ {measured, quiescent}, never inferred`, () => {
+      const model = bindFlowModel(makeHass(states), cfg());
+      expect(model.edges.length, 'the fixture yields at least one edge to check').toBeGreaterThan(0);
+      for (const e of model.edges) {
+        expect(['measured', 'quiescent'], `${name}: ${e.from}→${e.to} provenance`).toContain(e.provenance);
+        expect(e.provenance).not.toBe('inferred');
+      }
+    });
+  }
 });

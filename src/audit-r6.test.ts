@@ -27,6 +27,9 @@
 import { describe, expect, test, beforeAll } from 'vitest';
 import './tesla-card';
 import { STRINGS } from './strings';
+import { sharedStyles } from './styles';
+import { carStyles } from './components/car';
+import { flowOverlayStyles } from './flow/hero-svg';
 import {
   detectDialect,
   adapterFor,
@@ -325,5 +328,71 @@ describe('AC4 (gap) — remediated reads resolve correctly under tesla_custom (p
     // normalizeCoverState('open') open-state cue, not an inline === 'open'.
     expect(style).toContain('--tc-amber');
     el.remove();
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+// AC2 — reduced-motion sweep: every vehicle-card animation source freezes.
+//
+// The runtime "they freeze together in a real browser" proof for the live-flow
+// overlay is tests/e2e/audit-r6.spec.ts AC2. This is its stylesheet-level
+// COMPANION: it enumerates the FULL set of vehicle-card animation sources (not just
+// the flow overlay) and pins, in one place, that EACH one (a) carries its
+// animation/transition token AND (b) neutralizes it to `none` inside a
+// `prefers-reduced-motion: reduce` block — "kill the motion, keep the data".
+//
+// This mirrors the ecosystem-suite enumeration (audit-r6-suite.test.ts
+// NEW_ANIM_SOURCES) so the two R6 audits are symmetric. WHY it matters: without a
+// suite-wide enumeration, a future panel could add a keyframed DATA animation (an
+// animated charging-fill, an optimistic crossfade) that no test would catch
+// regressing the motion-accessibility floor while CI stays green. The hero composes
+// exactly sharedStyles + carStyles + flowOverlayStyles, so those three stylesheets
+// are the complete motion surface of the vehicle card.
+// ═══════════════════════════════════════════════════════════════════════════
+
+/** Flatten a Lit static-styles group (CSSResult | CSSResult[] | nested) to one cssText. */
+function cssTextOf(group: unknown): string {
+  if (Array.isArray(group)) return group.map(cssTextOf).join('\n');
+  const g = group as { cssText?: string };
+  return typeof g?.cssText === 'string' ? g.cssText : '';
+}
+/** The substring of a stylesheet from its reduced-motion guard onward (`''` if none). */
+function reducedMotionBlock(cssText: string): string {
+  const i = cssText.indexOf('prefers-reduced-motion');
+  return i === -1 ? '' : cssText.slice(i);
+}
+
+describe('Story 5.11 AC2 — every vehicle-card animation source freezes under reduced-motion', () => {
+  // The complete motion inventory of the composed vehicle hero (sharedStyles +
+  // carStyles + flowOverlayStyles). Interaction-feedback transitions on .stat/.ctrl
+  // (hover/press) are deliberately EXCLUDED — they are not data motion (UX-DR21),
+  // so the shared guard intentionally leaves them be.
+  const ANIM_SOURCES: ReadonlyArray<{ name: string; css: string; token: string; kill: 'animation' | 'transition' }> = [
+    { name: 'sharedStyles tc-shimmer (battery charging shimmer + loading skeleton)', css: cssTextOf(sharedStyles), token: 'tc-shimmer', kill: 'animation' },
+    { name: 'sharedStyles tc-pulse (charging ring pulse)', css: cssTextOf(sharedStyles), token: 'tc-pulse', kill: 'animation' },
+    { name: 'sharedStyles .tc-bat-fill gauge sweep (data-bearing width transition)', css: cssTextOf(sharedStyles), token: '.tc-bat-fill', kill: 'transition' },
+    { name: 'carStyles tc-car-charge (charging glow loop)', css: cssTextOf(carStyles), token: 'tc-car-charge', kill: 'animation' },
+    { name: 'carStyles aperture crossfade (opacity transition)', css: cssTextOf(carStyles), token: 'transition: opacity', kill: 'transition' },
+    { name: 'flowOverlayStyles fo-flow-dash (live-energy flow overlay dash)', css: cssTextOf(flowOverlayStyles), token: 'fo-flow-dash', kill: 'animation' },
+  ];
+
+  for (const src of ANIM_SOURCES) {
+    test(`${src.name} — present AND killed under prefers-reduced-motion`, () => {
+      expect(src.css, 'the animation/transition source token is present').toContain(src.token);
+      const rm = reducedMotionBlock(src.css);
+      expect(rm, 'a prefers-reduced-motion block must exist in this stylesheet').not.toBe('');
+      // The block neutralizes the motion to `none` — the data cue itself is unaffected.
+      expect(rm).toMatch(new RegExp(`${src.kill}\\s*:\\s*none`));
+    });
+  }
+
+  test('the hero composes EXACTLY these three motion-bearing stylesheets (inventory completeness)', () => {
+    // Guards the enumeration against silent drift: if a future stylesheet with motion
+    // is added to the hero, this list (and the sweep above) must grow with it. Mirrors
+    // the import set the hero actually concatenates in its `static styles`.
+    const distinct = new Set(ANIM_SOURCES.map((s) => s.css));
+    expect(distinct.has(cssTextOf(sharedStyles))).toBe(true);
+    expect(distinct.has(cssTextOf(carStyles))).toBe(true);
+    expect(distinct.has(cssTextOf(flowOverlayStyles))).toBe(true);
   });
 });
