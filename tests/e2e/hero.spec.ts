@@ -74,7 +74,10 @@ test.describe('hero — paint resolution (FR-1: forms + degradation)', () => {
     await demo.open({ scenario: 'awake', image: true, paint: '#23519e' });
     await expect(demo.heroImage).toBeVisible();
     await expect(demo.heroImage).not.toHaveAttribute('style', /--tc-paint/);
-    await expect(demo.heroStage.locator('svg')).toHaveCount(0);
+    // No CAR-RENDER (contract) SVG in image mode — the car IS the flat <img>. The
+    // Epic-4 flow overlay (`svg.tc-flow-overlay`) legitimately composites over EVERY
+    // render mode (Story 4.6 AC1), so exclude it — we assert the car render, not the overlay.
+    await expect(demo.heroStage.locator('svg:not(.tc-flow-overlay)')).toHaveCount(0);
   });
 });
 
@@ -134,7 +137,10 @@ test.describe('hero — 1024×687 coordinate contract (AC3) + surface stage (AC1
   }) => {
     await demo.open({ scenario: 'awake', image: true });
     await expect(demo.heroImage).toBeVisible();
-    await expect(demo.heroStage.locator('svg')).toHaveCount(0);
+    // No CAR-RENDER (contract) SVG — image mode is a flat <img>. Exclude the Epic-4
+    // flow overlay (`svg.tc-flow-overlay`), which composites over all render modes
+    // (Story 4.6 AC1); it is a separate overlay, not the car render this asserts.
+    await expect(demo.heroStage.locator('svg:not(.tc-flow-overlay)')).toHaveCount(0);
   });
 });
 
