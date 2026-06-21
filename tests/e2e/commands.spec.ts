@@ -14,9 +14,13 @@
 // surface renders cleanly (auto consoleGuard) — including the genuinely-missing
 // `boombox` (absent from the committed fixtures) degrading without a single error.
 //
-// Deliberate contrast with quick-actions: commands are fire-and-forget — a tap fires
-// button.press and is DONE. No optimistic flip, no reconcile, no pressed/.on class,
-// no aria-pressed. This spec asserts that absence in the rendered DOM after a tap.
+// Deliberate contrast with quick-actions: the five non-wake commands are fire-and-forget
+// — a tap fires button.press and is DONE. No optimistic flip, no reconcile, no pressed/.on
+// class, no aria-pressed. This spec asserts that absence in the rendered DOM after a tap.
+// Wake is the one exception (Story 5.4 "Wake citizenship"): an observed-state safety gate
+// renders it DISABLED (aria-label "Awake") while online/waking, and a successful wake arms a
+// cooldown. Because the online gate disables it, the fire-and-forget dispatch assertions
+// below are exercised on the five, not on Wake.
 import { test, expect } from '../support/fixtures';
 import type { Page } from '@playwright/test';
 
@@ -62,7 +66,10 @@ test.describe('AC1 — six fire-and-forget command buttons', () => {
     await demo.open({ scenario: 'awake' });
     await captureServiceCalls(page);
 
-    await demo.command('Wake').click();
+    // Honk is a fire-and-forget command (enabled in every state) — Wake is gated
+    // DISABLED while online/waking under Story 5.4, so the generic "enabled command
+    // dispatches a resolved button.press" claim is asserted on one of the five.
+    await demo.command('Honk').click();
 
     await expect
       .poll(async () => (await serviceCalls(page)).length, { message: 'one service call per tap' })
@@ -71,7 +78,7 @@ test.describe('AC1 — six fire-and-forget command buttons', () => {
     expect(call.domain).toBe('button');
     expect(call.service).toBe('press');
     // Resolved by the parent from config.entities — id is install-prefixed; assert by function-slug.
-    expect(call.data.entity_id).toContain('wake');
+    expect(call.data.entity_id).toContain('honk');
   });
 
   test('a tap is fire-and-forget — no optimistic flip, no pressed/.on class, no aria-pressed', async ({ demo }) => {
@@ -153,9 +160,11 @@ test.describe('AC2 — asleep wake-affordance reading', () => {
     await expect(demo.wakeHint).toHaveText('Tap a command to wake');
   });
 
-  test('awake → the hint is ABSENT', async ({ demo }) => {
+  test('awake → the resting reason reads "Awake", not the asleep "tap to wake" invitation', async ({ demo }) => {
+    // The affordance row still renders — but online resolves the resting reason to
+    // "Awake" (Story 5.4), never the asleep "Tap a command to wake" invitation.
     await demo.open({ scenario: 'awake' });
-    await expect(demo.wakeHint).toHaveCount(0);
+    await expect(demo.wakeHint).toHaveText('Awake');
   });
 
   test('asleep → wake stays ENABLED and tappable so the car can be woken', async ({ demo, page }) => {
@@ -166,6 +175,17 @@ test.describe('AC2 — asleep wake-affordance reading', () => {
     await wake.click();
     await expect.poll(async () => (await serviceCalls(page)).length).toBe(1);
     expect((await serviceCalls(page))[0]).toMatchObject({ domain: 'button', service: 'press' });
+  });
+
+  test('awake → wake is DISABLED and its accessible name reads "Awake" (never a false "Wake")', async ({ demo }) => {
+    // The symmetric 5.4 safety gate: an online/waking car never exposes an actionable
+    // wake (AC1/AC5). Locks the contract proven in commands.test.ts at the E2E layer.
+    await demo.open({ scenario: 'awake' });
+    const wake = demo.command('Wake');
+    await expect(wake).toBeDisabled();
+    // The 5.4 split: the ACCESSIBLE name flips to "Awake" while the VISIBLE label stays "Wake".
+    await expect(wake).toHaveAttribute('aria-label', 'Awake');
+    await expect(wake.locator('span')).toHaveText('Wake');
   });
 
   test('the asleep hint is an instant presence change — no keyframe (reduced-motion-safe by construction)', async ({
@@ -237,15 +257,19 @@ test.describe('AC3 — missing / unavailable commands degrade cleanly (never-thr
     await demo.open({ scenario: 'awake' });
     await degradeHonkAndFlash(page);
     // Honk missing + Flash unavailable, but the rest remain actionable — never over-degrade.
-    for (const label of ['Wake', 'HomeLink', 'Keyless', 'Boombox']) {
+    // Wake is excluded: it is legitimately gated DISABLED while online (Story 5.4), so
+    // the per-entity availability-degrade claim is asserted on the fire-and-forget set.
+    for (const label of ['HomeLink', 'Keyless', 'Boombox']) {
       await expect(demo.command(label), `${label} actionable`).toBeEnabled();
     }
   });
 
   test('never-pressed commands stay ENABLED — the button domain reads a stamp, not unavailable', async ({ demo }) => {
     await demo.open({ scenario: 'awake' });
-    // All six fixture-backed commands read a last-pressed timestamp (available) → all enabled.
-    for (const label of ['Wake', 'Honk', 'Flash', 'HomeLink', 'Keyless', 'Boombox']) {
+    // The fire-and-forget commands read a last-pressed timestamp (available) → all enabled.
+    // Wake is excluded: online gates it DISABLED (Story 5.4), independent of the button
+    // domain's 'unknown'→available predicate under test here.
+    for (const label of ['Honk', 'Flash', 'HomeLink', 'Keyless', 'Boombox']) {
       await expect(demo.command(label), `${label} actionable`).toBeEnabled();
     }
   });

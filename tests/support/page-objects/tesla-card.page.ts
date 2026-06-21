@@ -128,9 +128,13 @@ export class TeslaCardPage {
     return this.commands.locator('button.cmd', { hasText: label });
   }
 
-  /** The asleep wake-affordance hint ("Tap a command to wake") — present only when asleep (AC2). */
+  /**
+   * The wake-affordance resting reason (`.wake-reason` inside `.wake-affordance`,
+   * Story 5.4): "Tap a command to wake" when asleep, "Awake" when online. Renamed
+   * from the 5.3 `.wake-hint` when 5.4 bundled the sparse-data triad.
+   */
   get wakeHint(): Locator {
-    return this.commands.locator('.wake-hint');
+    return this.commands.locator('.wake-reason');
   }
 
   // ── Charging panel (Story 5.5) — the default open panel ────────────────────
