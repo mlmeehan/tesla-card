@@ -22,7 +22,8 @@
     "test:e2e:report": "playwright show-report",
     "test:e2e:visual": "VISUAL=1 playwright test --grep @visual",
     "test:e2e:burn-in": "bash scripts/burn-in.sh",
-    "ci:local": "bash scripts/ci-local.sh"
+    "ci:local": "bash scripts/ci-local.sh",
+    "profile:nfr1": "bash scripts/profiler/fps-probe.sh"
   },
   "keywords": [
     "home-assistant",

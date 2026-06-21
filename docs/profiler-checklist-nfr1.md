@@ -14,6 +14,15 @@ is the last human-in-the-loop item.
 > hardware's frame rate. Hand the user steps 4–5, collect the number they report, and
 > do the recording in steps 6–7.
 
+> **Instrumented shortcut (workstation, not the kiosk).** An automated counterpart to
+> steps 1–4 lives at [`scripts/profiler/`](../scripts/profiler/README.md): `npm run
+> profile:nfr1` builds, serves, opens the `?card=my-home` Scene in headed Chromium,
+> validates the CPU throttle, and measures ~10s of steady-state rAF cadence per rate
+> (writing `fps-results.json` + a scene screenshot). It is what produced the recorded
+> §AC3 sign-off — strong *supporting* evidence (CPU-throttle low-end emulation on a dev
+> display), **not** a substitute for a physical-kiosk read. Use it for fast re-runs and
+> regression checks; use the manual steps below for the gold-standard device capture.
+
 ---
 
 ## 0. Prerequisites
