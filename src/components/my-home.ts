@@ -1112,7 +1112,7 @@ export class TcMyHome extends LitElement implements LovelaceCard {
       .scene-cell:focus-visible {
         outline: 2px solid var(--tc-blue, #38bdf8);
         outline-offset: 2px;
-        border-radius: var(--tc-radius, 14px);
+        border-radius: var(--tc-radius-md, 16px);
       }
 
       /* ── Focus-highlight (AC3): hover/keyboard focus dims the rest and lights the
