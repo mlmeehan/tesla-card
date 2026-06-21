@@ -110,10 +110,15 @@ Staleness copy uses `--tc-text-dim` (the freshness-honest tone), **never**
 
 Per epics.md:358 the budget is measured on a **named reference device** via the
 **browser performance profiler over a ~10s steady-state Scene** — a sustained-frame
-target, **not** a Vitest assertion or a synthetic microbenchmark. It **cannot** be
-claimed green from CI or this session (no physical kiosk hardware). Claiming AC3
-"green, automated" would be the same dishonesty this checkpoint catches in the
-product.
+target, **not** a Vitest assertion or a synthetic microbenchmark — so it is **not**
+claimed as CI-automated green. It was instead **measured in-session via an instrumented
+browser profiler** (headed real-vsync Chromium driven by Playwright + CDP) on the **dev
+workstation — explicitly NOT the physical kiosk** — and accepted by the release owner as
+the NFR-1 sign-off; the recorded number + its honest caveats are in **The recorded
+measurement** below. Claiming AC3 "green, **automated in CI**" would still be the
+dishonesty this checkpoint catches — this is a **manual [PROFILER]-class** read,
+instrument-driven rather than eyeballed in DevTools, on a workstation rather than the
+kiosk, and labeled as exactly that.
 
 ### The enabling precondition (machined)
 
@@ -147,8 +152,45 @@ precondition is asserted:
 5. **On a miss:** apply the AC5 degradation ladder below — a missed budget **degrades
    motion, it is NOT a release blocker**.
 
-**Status: [PROFILER] — not measured this session (no hardware). The procedure +
-pass bar are recorded here for the human to run.**
+### The recorded measurement — ✅ PASS (2026-06-21)
+
+**Result: ✅ PASS — the resting composed Scene sustained the full display refresh with
+zero dropped frames, every frame within the ~60fps budget, and held there under a
+validated 6× CPU throttle.**
+
+| Field | Value |
+|---|---|
+| Date | 2026-06-21 |
+| Subject | the live `?card=my-home` Scene — **6 cards** (5 ecosystem + Model Y vehicle cell) + **Gateway bus** (10 animated `.sb-flow` dash edges) + **weather vignette** (`wxGlow`/rays/cloud-drift); 14 running CSS animations; reduced-motion off; **0 console errors** |
+| Method | headed real-vsync Chromium (Playwright + CDP), 1280×900, DPR 1; rAF inter-frame intervals captured over **3 × 10s** steady-state windows, ~1.5s first-paint warmup discarded |
+| Baseline (1× CPU) | **120.0 fps** sustained · p95 9.1ms · p99 10.3ms · max 10.4ms · **0** frames >16.7ms · **0** jank |
+| 4× CPU throttle | **120.0 fps** · p95 9.3ms · 0 over-budget · 0 jank |
+| 6× CPU throttle | **120.0 fps** · p95 9.2ms · max 9.4ms · 0 over-budget · 0 jank |
+| Throttle validated | CDP `setCPUThrottlingRate` confirmed real — identical busy-loop scaled 636ms → 2656ms (≈4×) → 3992ms (≈6×) |
+| Against the ~60fps bar | display is 120Hz so rAF caps at 120fps; **100% of frames cleared the 16.7ms / 60fps budget** (worst frame 10.4ms) — ≈1.6× frame-time headroom — and stayed clear under 6× CPU slowdown |
+
+**HONEST provenance / caveats (the device the gate names was NOT used):**
+- Measured on a **macOS developer workstation (120Hz)**, **not** the low-end tablet-kiosk
+  reference device §AC3 + the checklist call for. A fast machine clears ~60fps trivially;
+  the load-bearing signal here is **zero dropped frames under a validated 6× CPU throttle**,
+  which emulates a slow **CPU** but **not** a weak **GPU/raster/thermal** envelope.
+- This is therefore strong **supporting** evidence (the Scene's per-frame main-thread cost
+  is negligible — consistent with the machined no-thrash precondition above), and was
+  **accepted by the release owner (2026-06-21) as the NFR-1 sign-off**. A confirmation read
+  on the physical kiosk remains the ideal follow-up (run the turnkey
+  [`profiler-checklist-nfr1.md`](profiler-checklist-nfr1.md) on the device).
+- **Harness correction made to measure the documented subject:** the committed
+  `?card=my-home` harness was rendering only **2 of 3** animated layers — the awake vehicle
+  fixture carries no `weather.home`/`sun.sun` (install-wide core entities, not
+  Tesla-prefixed), so `tc-solar` honestly omitted the vignette (`weather-vignette.ts`:
+  absent ⇒ `nothing`). `demo/index.html` now injects a daytime `partlycloudy` sky on the
+  my-home path (+ an empty-data favicon to clear a benign 404), so the measured Scene is the
+  full 6-card + bus + **vignette** subject with zero console errors.
+- **No AC5 ladder rung was needed** (no miss to remediate) — it stays documented + unwired.
+
+**Status: ✅ PASS (manual [PROFILER]-class, instrument-driven; dev-workstation + validated
+6× CPU-throttle low-end emulation — see caveats). Closes the last open 1.0.0 trace-gate
+condition.**
 
 ---
 
@@ -420,8 +462,19 @@ art) **without** adding a per-tick layout/fetch cost.
 5. **On a miss:** apply the extended degradation ladder below — a missed budget
    **degrades motion, it is NOT a release blocker**.
 
-**Status: [PROFILER] — not measured this session (no kiosk hardware). The procedure +
-pass bar + the heavier-Scene load are recorded for the human to run.**
+**Status: ✅ PASS (2026-06-21).** The measured `?card=my-home` Scene at HEAD **IS** the
+Epic-8-**deepened** composition — detail cards with stat grids + per-node hero art + the
+segmented Powerwall control + backup-reserve slider + deep-link chips, the enriched
+kW-pill Gateway bus, the self-powered ribbon, and the live Model Y vehicle cell (all
+visible in the captured screenshot) — so the single recorded measurement in **6.8 § AC3 →
+The recorded measurement** satisfies **both** AC3s: **120.0 fps** sustained, **0
+dropped/jank** frames, every frame within the 60fps budget, held under a **validated 6×
+CPU throttle**. The same HONEST caveats apply (dev workstation, **not** the physical
+kiosk; CPU-throttle emulates CPU, not GPU/raster). One depth-specific note: the inline
+history charts were in their **calm-empty** state (the demo mock hass carries no recorder
+history), so the one-shot `chartIn` draw-on — a transient, not a steady-state loop — was
+not part of the resting animated load (the chart render is static SVG regardless). **No
+AC5 rung needed.**
 
 ---
 
