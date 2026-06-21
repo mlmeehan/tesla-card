@@ -1,12 +1,13 @@
 # tesla-card — Source Tree Analysis
 
-**Part:** `[card]` · **Path:** `tesla-card/` · **Date:** 2026-06-20
+**Part:** `[card]` · **Path:** `tesla-card/` · **Date:** 2026-06-20 · **Version:** `0.2.0`
 
 Annotated structure of the tesla-card sub-project. For what each piece does at runtime, see
 [`architecture.md`](./architecture.md) and [`component-inventory.md`](./component-inventory.md).
 
-> Regenerated after Epic 6. Supersedes the 2026-06-14 tree (which predated the `data/`+`flow/`
-> layers, the panel/control surface, the ecosystem cards, and the Scene).
+> Regenerated after **Epic 8**. Supersedes the post-Epic-6 tree by adding the `data/history.ts`
+> recorder module and the `components/chart.ts` / `components/node-hero.ts` render helpers
+> (**49 source modules, 59 co-located test files**, 1171 tests).
 
 ---
 
@@ -14,21 +15,21 @@ Annotated structure of the tesla-card sub-project. For what each piece does at r
 
 ```
 tesla-card/                       # separate nested git repo (gitignored by the parent HA repo)
-├── package.json                  # npm pkg: scripts (build/watch/typecheck/test/lint/e2e), deps lit + @mdi/js, ESM
+├── package.json                  # npm pkg v0.2.0: scripts (build/watch/typecheck/test/lint/e2e), deps lit + @mdi/js, ESM
 ├── package-lock.json             # npm lockfile (committed)
 ├── tsconfig.json                 # strict TS; useDefineForClassFields:false (load-bearing for Lit)
-├── rollup.config.mjs             # bundles src/tesla-card.ts → dist/tesla-card.js (ES, inlined, terser)
+├── rollup.config.mjs             # bundles src/tesla-card.ts → dist/tesla-card.js (ES, inlineDynamicImports, terser)
 ├── vitest.config.* / playwright.config.*   # unit (jsdom) + e2e/visual config
 ├── hacs.json                     # HACS plugin manifest: filename tesla-card.js, min HA 2024.4.0
 ├── README.md · PUBLISHING.md · LICENSE     # user docs · release/version-sync checklist · MIT
-├── .github/workflows/            # validate.yml (CI gates) · release.yml (asset attach, Node 20)
+├── .github/workflows/            # validate.yml (CI gates) · release.yml (asset attach + tag assertion, Node 20)
 ├── scripts/
 │   ├── lint/                     # the 6-gate lint chain (dep-light node scripts, NOT ESLint):
 │   │   ├── no-bare-hass-states.mjs   #   only data/ may read hass.states
 │   │   ├── no-cycle.mjs              #   enforce data/ ← flow/ ← components/
 │   │   ├── trade-dress-denylist.mjs  #   no Tesla trade dress / brand hex (CONTENT_SKIP allowlist)
-│   │   ├── import-allowlist.mjs      #   restrict external imports to lit + @mdi/js
-│   │   ├── no-network-egress.mjs     #   no fetch/XHR/network from the bundle
+│   │   ├── import-allowlist.mjs      #   restrict runtime imports to lit + @mdi/js (named paths)
+│   │   ├── no-network-egress.mjs     #   no fetch/XHR/WebSocket/beacon from the bundle
 │   │   └── version-sync.mjs          #   package.json version ↔ CARD_VERSION ↔ hacs.json filename
 │   ├── burn-in.sh · ci-local.sh  # e2e burn-in / local CI mirror
 ├── assets/                       # recolor SVG sources (tesla-front.svg, tesla-topdown.svg) + recolor-demo.html
@@ -40,9 +41,9 @@ tesla-card/                       # separate nested git repo (gitignored by the 
     │                             #   vehicle + energy resolution memo, Lovelace contract, child registration
     ├── base.ts                   # TcBase extends LitElement → supplies @property hass + resolved config
     ├── editor.ts                 # @customElement('tesla-card-editor'): GUI config editor (lazy-loaded)
-    ├── const.ts                  # CARD_VERSION, HERO_VIEWBOX (1024×687), DEFAULT_ENTITIES (84 keys), EntityKey
-    ├── types.ts                  # HomeAssistant, HassEntity, LovelaceCard(Editor), PanelId, TeslaCardConfig, BodyLayers
-    ├── helpers.ts                # pure state/format/service helpers (entityId, rawState, num, toggleEntity, clamp, …)
+    ├── const.ts                  # CARD_VERSION (0.2.0), HERO_VIEWBOX (1024×687), DEFAULT_ENTITIES (84 keys), EntityKey
+    ├── types.ts                  # HomeAssistant (incl. callWS?), HassEntity, LovelaceCard(Editor), PanelId, TeslaCardConfig, BodyLayers
+    ├── helpers.ts                # pure state/format/service helpers (entityId, rawState, num, toggleEntity, selectOption, clamp, …)
     ├── ui.ts                     # render primitives (icon, statTile, batteryGauge, ring) + honest-age helpers
     ├── styles.ts                 # --tc-* tokens + sharedStyles + contract maps (ACCENT_SEMANTICS, FRESHNESS_STATES, …)
     ├── strings.ts                # STRINGS — all user-facing copy (leaf, imports nothing)
@@ -52,19 +53,21 @@ tesla-card/                       # separate nested git repo (gitignored by the 
     ├── data/                     # DATA LAYER — only subtree allowed to read hass.states
     │   ├── freshness.ts          #   sole hass.states reader; read/readKey/readRaw, referenceNow, staleness
     │   ├── dialect.ts            #   per-integration normalizers (charging/cover/lock) + DIALECTS table (D2)
-    │   ├── registry.ts           #   canonical function-key vocabulary (ROLES, FUNCTION_KEYS, BUS_ORIENTATION)
+    │   ├── registry.ts           #   canonical function-key vocabulary (84 vehicle + 21 energy keys, BUS_ORIENTATION)
     │   ├── resolve.ts            #   vehicle entity resolution by stable function-name (TESLA_PLATFORMS)
-    │   ├── energy.ts             #   energy-site/WC resolution by function-slug + NaN-safe reads (hasEnergySite)
-    │   ├── slice.ts             #   sliceChanged() tick-coalescing slice-gate (watch the full child union)
+    │   ├── energy.ts             #   energy-site/WC resolution by function-slug + NaN-safe reads (numById/stateById/unitById/attrById)
+    │   ├── history.ts            #   ★Epic 8 — recorder history via hass.callWS (no-poll, id-gated, drop-not-zero)
+    │   ├── slice.ts              #   sliceChanged() tick-coalescing slice-gate (watch the full child union)
     │   └── wake.ts               #   observed-state wake gate (CI invariant) + cooldown math
     ├── flow/                     # FLOW LAYER — pure energy-flow math; imports data/, never components/
-    │   ├── balance.ts            #   computeBalance — SOLE sign/unit-convention owner + conservation
-    │   ├── model.ts              #   FlowNode/FlowEdge/FlowModel + buildFlowModel, IDLE_KW, BUS_NODE_ID
-    │   ├── binding.ts            #   bindFlowModel(hass, config) auto-detect; ENERGY_ROLES, POWER_KEY
-    │   ├── renderer.ts           #   FlowRenderer seam + the ONE shared edgeVisual/NODE_COLOR/NODE_ICON
-    │   ├── hero-svg.ts           #   HeroSvgRenderer (fixed 1024×687 coords)
-    │   ├── scene-bus.ts          #   SceneBusRenderer (live getBoundingClientRect anchors)
-    │   └── my-home.ts            #   "My Home" Scene geometry (gatewaySegments = VIEW of computeBalance().net), BUS_WIDTH_MAX
+    │   ├── balance.ts            #   computeBalance — SOLE sign/unit-convention owner + conservation  ┐
+    │   ├── model.ts              #   FlowNode/FlowEdge/FlowModel + buildFlowModel, IDLE_KW, BUS_NODE_ID │ FR-33
+    │   ├── binding.ts            #   bindFlowModel(hass, config) auto-detect; ENERGY_ROLES, POWER_KEY   │ frozen
+    │   ├── renderer.ts           #   FlowRenderer seam + the ONE shared edgeVisual/NODE_COLOR/NODE_ICON │ (zero
+    │   ├── hero-svg.ts           #   HeroSvgRenderer (fixed 1024×687 coords)                            │ Epic-8
+    │   ├── scene-bus.ts          #   SceneBusRenderer (live getBoundingClientRect anchors)              ┘ diff)
+    │   └── my-home.ts            #   "My Home" geometry + ALL Epic-8 views: gatewaySegments, wcVehicleEdge,
+    │                             #     selfPowered/ribbonTiles, coupledRoles, RafCoalescer, BUS_WIDTH_MAX (a VIEW of computeBalance().net)
     ├── components/               # COMPONENTS LAYER — Lit elements (tc-*) + render helpers
     │   ├── hero.ts               #   tc-hero: living car + battery + flow overlay
     │   ├── car.ts                #   carView()/carStyles render helper (NO element) — 3-mode recolorable hero
@@ -79,17 +82,19 @@ tesla-card/                       # separate nested git repo (gitignored by the 
     │   ├── panel-location.ts     #   tc-panel-location (sanctioned map gradient)
     │   ├── panel-media.ts        #   tc-panel-media (optimistic; no age stamp)
     │   ├── ecosystem-card.ts     #   EcosystemCard base shell (NO element): renderShell, ecosystemShellStyles, accentVar
-    │   ├── solar.ts              #   tc-solar (extends EcosystemCard) — composes weatherVignette
-    │   ├── powerwall.ts          #   tc-powerwall (extends EcosystemCard)
-    │   ├── grid.ts               #   tc-grid (extends EcosystemCard; 'neutral' accent)
-    │   ├── home.ts               #   tc-home (extends EcosystemCard)
-    │   ├── wall-connector.ts     #   tc-wall-connector (extends EcosystemCard)
+    │   ├── solar.ts              #   tc-solar (extends EcosystemCard) — composes weatherVignette + chart
+    │   ├── powerwall.ts          #   tc-powerwall (extends EcosystemCard) — ★Epic 8 control surface (mode select + reserve slider)
+    │   ├── grid.ts               #   tc-grid (extends EcosystemCard; 'neutral' accent) + chart + nodeHero
+    │   ├── home.ts               #   tc-home (extends EcosystemCard) + chart + nodeHero
+    │   ├── wall-connector.ts     #   tc-wall-connector (extends EcosystemCard) + chart + nodeHero (handle temp °F)
     │   ├── weather-vignette.ts   #   weatherVignette() render helper (NO element) — HA-core weather+sun via readRaw
-    │   └── my-home.ts            #   tc-my-home: live Scene element (SceneBusRenderer + reflow lifecycle)
+    │   ├── chart.ts              #   ★Epic 8 — sparkline()/dayBars()/barLabels() render helper (NO element)
+    │   ├── node-hero.ts          #   ★Epic 8 — nodeHero(kind) inline-SVG node art render helper (NO element)
+    │   └── my-home.ts            #   tc-my-home: live Scene element (SceneBusRenderer + reflow + self-powered ribbon + Vehicle cell)
     └── fixtures/                 # committed test fixtures: flow-*.json (7 flow states), model-y-*.json, scene-stub-rects.json
 ```
 
-Co-located `*.test.ts` files (Vitest, 50 of them) sit beside their modules and are omitted above.
+Co-located `*.test.ts` files (Vitest, **59** of them) sit beside their modules and are omitted above.
 `dist/` is **not** shown — it is gitignored and produced by `npm run build` / CI.
 
 ---
@@ -98,7 +103,8 @@ Co-located `*.test.ts` files (Vitest, 50 of them) sit beside their modules and a
 
 - **Bundle entry:** `src/tesla-card.ts` → Rollup → `dist/tesla-card.js`. This file defines the
   `tesla-card` element, side-effect-imports every child (hero, quick-actions, commands, the 7 panels,
-  the 5 ecosystem cards, and `my-home`), and registers the card with `window.customCards`.
+  the 5 ecosystem cards, and `my-home`), and registers the card with `window.customCards`. Loading the
+  bundle registers **19** custom elements (7 of them Lovelace picker cards); the editor is lazy.
 
 ## File Organization Patterns
 
@@ -107,8 +113,9 @@ Co-located `*.test.ts` files (Vitest, 50 of them) sit beside their modules and a
 | Element shell / orchestration | `src/tesla-card.ts` | one top-level `@customElement` |
 | Shared base | `src/base.ts`, `src/components/ecosystem-card.ts` | `TcBase` (vehicle children) / `EcosystemCard` (ecosystem cards) |
 | Components | `src/components/*.ts` | one `tc-*` element per file (or a render helper); side-effect registered |
+| Render helpers | `src/components/{car,weather-vignette,chart,node-hero}.ts` | pure function + `CSSResult`; register **no** element |
 | Flow logic | `src/flow/*.ts` | pure energy-flow math; imports `data/`, never `components/` |
-| Data access | `src/data/*.ts` | the only subtree that reads `hass.states` (via `freshness.ts`) |
+| Data access | `src/data/*.ts` | the only subtree that reads `hass.states` (via `freshness.ts`) / recorder (`history.ts` via `callWS`) |
 | Presentation | `src/{styles,ui}.ts` | tokens, shared classes, `TemplateResult` primitives |
 | Leaf modules | `src/{strings,log,layer-contract,const,types}.ts` | import nothing upward (keeps the cycle gate green) |
 | Editor | `src/editor.ts` | lazy-loaded GUI config |
@@ -120,14 +127,16 @@ Co-located `*.test.ts` files (Vitest, 50 of them) sit beside their modules and a
 | `src/tesla-card.ts` | The card; orchestrates everything and owns the Lovelace contract |
 | `src/data/resolve.ts` + `src/data/registry.ts` + `src/const.ts` | Vehicle entity resolution — the card's core robustness mechanism |
 | `src/data/freshness.ts` | The sole `hass.states` reader; the data boundary |
+| `src/data/history.ts` | The only recorder-history path (`callWS`, no-poll); the second data boundary |
 | `src/flow/balance.ts` | The single sign/unit-convention authority + conservation (top verification target) |
+| `src/flow/my-home.ts` | All composed-Scene views (FR-33 keeps the six engine files frozen; views live here) |
 | `src/data/wake.ts` | The CI-blocking wake-safety invariant |
 | `src/base.ts` | Defines the `hass`/`config` contract every vehicle child relies on |
 | `src/styles.ts` | Single source of `--tc-*` tokens + machine-checkable contract maps |
 | `tsconfig.json` | `useDefineForClassFields: false` is load-bearing for Lit reactivity |
 | `rollup.config.mjs` | Single-file bundle config; inlines the lazy editor |
-| `scripts/lint/*.mjs` | The 5 merge-blocking lint gates (boundary, cycle, trade-dress, imports, egress) |
+| `scripts/lint/*.mjs` | The **6** merge-blocking lint gates (boundary, cycle, trade-dress, imports, egress, version-sync) |
 
 ---
 
-_Generated by the BMAD `document-project` workflow (deep scan, 2026-06-20)._
+_Generated by the BMAD `document-project` workflow (deep scan, 2026-06-20 — Epic 8 regeneration)._
