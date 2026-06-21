@@ -54,6 +54,9 @@ export const STRINGS = {
     // glue: `${battery} ${pct}%, ${opensCharging}`.
     battery: 'Battery',
     opensCharging: 'opens charging',
+    // Compact + asleep last-known qualifier (UX-DR18/21 honesty): the aria-label
+    // marks a cached SoC as stale — "Battery 71% (last known), opens charging".
+    lastKnown: '(last known)',
     // Honest last-updated hint (UX-DR18): "updated 47m ago" / "Just now". Never
     // "Offline"/"No connection" — an asleep car is fine, just idle.
     updatedPrefix: 'updated', // composed: `updated ${age} ago`

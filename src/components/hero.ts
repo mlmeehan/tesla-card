@@ -4,7 +4,7 @@ import { mdiLock, mdiLockOpenVariant, mdiFlash } from '@mdi/js';
 import { TcBase } from '../base';
 import { sharedStyles } from '../styles';
 import { STRINGS } from '../strings';
-import { icon, batteryGauge, ageHint } from '../ui';
+import { icon, batteryGauge, ageHint, keyAgeHint } from '../ui';
 import { carView, carStyles, CLOSED_APERTURES } from './car';
 import type { ApertureState, ChargeVisual } from './car';
 import { bindFlowModel } from '../flow/binding';
@@ -214,10 +214,34 @@ export class TcHero extends TcBase {
     const asleep = isAsleep(this.hass, cfg);
     const name = cfg.name ?? STRINGS.hero.defaultName;
     const image = cfg.image;
-    const hint = this._ageHint();
-    const status = this._status(asleep, hint);
+    // Compact + asleep "last-known" (follow-on to Story 8.10's compact variant):
+    // the in-line My-Home embed is asleep most of the time, and the compact card
+    // has no panels — so rather than blank its only readout to "—", fall back to
+    // the dedicated CACHED sensors (`usable_battery_level` / `estimate_battery_range`)
+    // that the Fleet retains across sleep. This is a DELIBERATE, compact-only
+    // exception to the full card's strict "asleep shows —" rule — honest because the
+    // value is a REAL cached sensor (never the stale primary, never fabricated),
+    // rendered DIMMED (`.tc-stale-copy` numbers + a desaturated gauge) under the
+    // existing "updated Nm ago" stamp, and degrading back to "—" when the cache is
+    // absent. The FULL card is untouched — its panels carry the detail, so it keeps "—".
+    const lastKnown = compact && asleep;
 
-    const battery = asleep ? undefined : num(this.hass, cfg, 'battery_level');
+    const battery = asleep
+      ? lastKnown
+        ? num(this.hass, cfg, 'usable_battery_level')
+        : undefined
+      : num(this.hass, cfg, 'battery_level');
+
+    // The "updated Nm ago" stamp must describe the value ACTUALLY shown, never a
+    // fresher entity (UX-DR18 — the stamp can't overstate the number's age). When we
+    // render the cached SoC, source the stamp from that SAME cached sensor; the
+    // primary `battery_level` stamp (its last-heard time) backs every other case
+    // (awake, full-card asleep, or compact-asleep with no cache → "—").
+    const hint =
+      lastKnown && battery !== undefined
+        ? keyAgeHint(this.hass, cfg, 'usable_battery_level')
+        : this._ageHint();
+    const status = this._status(asleep, hint);
     const limit = num(this.hass, cfg, 'charge_limit');
     // Classify once: asleep suppresses the charge cue (Story 3.3's isAsleep gate
     // still wins — an asleep car shows no live charge state).
@@ -236,16 +260,27 @@ export class TcHero extends TcBase {
     // whole stage (overlay included).
     this._flow.update(bindFlowModel(this.hass, cfg));
 
-    const rangeNum = num(this.hass, cfg, 'battery_range');
-    const rangeUnit = unit(this.hass, cfg, 'battery_range') || 'mi';
+    // Range mirrors the battery's last-known fallback: the live `battery_range`
+    // when awake (or on the full card), the cached `estimate_battery_range` ONLY
+    // under compact + asleep. `estimate_*` tracks the live rated `battery_range`
+    // closely (never the optimistic `ideal_*`, which reads high and would visibly
+    // deflate on wake — overstating freshness). The literal union is an EntityKey.
+    const rangeKey = lastKnown ? 'estimate_battery_range' : 'battery_range';
+    const rangeNum = num(this.hass, cfg, rangeKey);
+    const rangeUnit = unit(this.hass, cfg, rangeKey) || 'mi';
 
     // AC3 — a STATE-BEARING aria-label (EXPERIENCE.md:176 "Battery 64%, opens
     // charging"): SR users hear the charge + the action. Built from the SETTLED
     // battery value (never an optimistic guess); falls back to the action-only
     // label when the percent is unknown/asleep (no number to overstate).
+    // Under compact + asleep the percent is a last-known cache read, so the label
+    // says so ("Battery 71% (last known), opens charging") — a11y honesty parity
+    // (UX-DR21): a SR user is never told a stale value is live.
     const batteryLabel =
       battery !== undefined
-        ? `${STRINGS.hero.battery} ${formatNumber(battery)}%, ${STRINGS.hero.opensCharging}`
+        ? `${STRINGS.hero.battery} ${formatNumber(battery)}%${
+            lastKnown ? ` ${STRINGS.hero.lastKnown}` : ''
+          }, ${STRINGS.hero.opensCharging}`
         : STRINGS.hero.openCharging;
 
     return html`
@@ -287,11 +322,11 @@ export class TcHero extends TcBase {
         </div>
 
         <button
-          class="battery"
+          class="battery ${lastKnown ? 'last-known' : ''}"
           @click=${() => this._open('charging')}
           aria-label=${batteryLabel}
         >
-          <div class="bat-top">
+          <div class="bat-top ${lastKnown ? 'tc-stale-copy' : ''}">
             <span class="bat-pct">
               ${charging ? icon(mdiFlash, { size: 22, color: 'var(--tc-green, #34d399)' }) : nothing}
               ${battery !== undefined ? `${formatNumber(battery)}%` : '—'}
@@ -422,6 +457,20 @@ export class TcHero extends TcBase {
         max-height: 168px;
       }
 
+      /* Compact + asleep "last-known": the cached SoC/range are REAL but not live, so
+         the readout reads stale. The headline .bat-pct dims via the --bat-pct-color
+         override (a plain .tc-stale-copy on .bat-top can't reach it — .bat-pct self-sets
+         its colour; .bat-range is already --tc-text-dim). The gauge desaturates + dims
+         to match the .tc-asleep car beside it — informative, yet clearly not a live read
+         (the asleep stamp + dimmed car complete the staleness signal). */
+      .battery.last-known {
+        --bat-pct-color: var(--tc-text-dim, #9aa7b8);
+      }
+      .battery.last-known .tc-bat {
+        opacity: 0.7;
+        filter: grayscale(var(--tc-dim-grayscale, 1));
+      }
+
       /* ── battery row ─────────────────────────────────────────────── */
       .battery {
         appearance: none;
@@ -456,7 +505,9 @@ export class TcHero extends TcBase {
         font-size: var(--tc-fs-battery, 26px);
         font-weight: var(--tc-fw-battery, 760);
         letter-spacing: -0.02em;
-        color: var(--tc-text, #f1f5f9);
+        /* Overridable so the .last-known stale dim can recolour WITHOUT a second
+           .bat-pct selector (which would shadow the display-face per-element gate). */
+        color: var(--bat-pct-color, var(--tc-text, #f1f5f9));
         line-height: 1;
       }
       .bat-pct .tc-ico {

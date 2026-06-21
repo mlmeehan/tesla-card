@@ -215,7 +215,10 @@ export interface TeslaCardConfig {
    * it implies `hide_quick_actions` + `hide_panels` + `hide_commands` (regardless of
    * those flags' own values) AND suppresses the hero's flow-overlay kW labels, so the
    * card fits a ~380px column. The single switch the "My Home" in-line embed sets;
-   * a standalone card stays `'full'`.
+   * a standalone card stays `'full'`. When the vehicle is asleep the compact gauge
+   * additionally falls back to the cached last-known SoC/range (dimmed via
+   * `.tc-stale-copy`) instead of blanking to "—" — a deliberate, compact-only
+   * exception to the full card's strict asleep behavior (see `hero.ts`).
    */
   variant?: 'full' | 'compact';
 

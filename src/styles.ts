@@ -80,7 +80,7 @@ export const FRESHNESS_STATES = {
   asleep: {
     treatment: 'dim + desaturate the render (opacity ↓ + filter: grayscale) from --tc-dim-*',
     recipe: '.tc-asleep',
-    copy: 'battery shows — (never a fabricated number); status "Asleep · updated Nm ago"',
+    copy: 'full card: battery shows — (never a fabricated number); compact variant: last-known SoC/range via .tc-stale-copy → --tc-text-dim (a REAL cached sensor, dimmed + stamped, never the stale primary), or — when the cache is absent; status "Asleep · updated Nm ago"',
     control: 'manual wake affordance offered; the card never auto-wakes (no-auto-wake ban)',
     staleness: 'asleep',
     gated: true,

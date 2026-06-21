@@ -356,7 +356,7 @@ shared outline recipe — its keyboard a11y is pinned in `powerwall-controls.spe
 | Self-powered % lead | **structural `—`** | no/sub-deadband live load ⇒ `selfPowered.pct === undefined` ⇒ the lead reads `—`, **never a divide-by-zero `0%`/`100%`** | `flow/my-home.test.ts` (math) + **`audit-r6-suite.test.ts` (composed render `.rib-big` = `—`, NEW)** |
 | Ribbon (quiescent) | **`.dim` + stamped** | fully-quiescent Scene ⇒ `.dim` + a last-known "updated Nm ago" stamp (`referenceNow`/`formatAgeHint`, never `Date.now()`) | `my-home.test.ts` + `audit-r6-suite.test.ts` (composed, NEW) |
 | Stat-grid tiles | **hide-when-missing + stamped** | absent ⇒ hidden (no fabricated `0`); stale ⇒ last-known + `.tc-stale-copy` stamp | per-card suites |
-| Vehicle cell (asleep) | **last-known + `—` battery** | asleep ⇒ calm asleep word + `—` SoC/range + stamp; **never a false "Charging"** | `my-home.test.ts` (8.5 AC3) |
+| Vehicle cell (asleep) | **last-known (compact) + stamp** | asleep ⇒ calm asleep word + stamp; the **compact** embed shows last-known SoC/range via the stale dim (real cached sensor: `usable_battery_level` / `estimate_battery_range`), `—` when absent; full card stays `—`; **never a false "Charging"** | `my-home.test.ts` (8.5 AC3) + `hero.test.ts` (compact last-known, Story 8.11) |
 
 Staleness copy uses `--tc-text-dim` (the freshness-honest 4.5:1 tone), **never**
 `--tc-text-mute`. A new composed pin (`audit-r6-suite.test.ts`) enforces this on the

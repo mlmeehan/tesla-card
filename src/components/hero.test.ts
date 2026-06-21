@@ -13,7 +13,7 @@
 // Entity ids are sourced from const.ts DEFAULT_ENTITIES (never inlined — the
 // components/ hard-coded-id guard), the same registry the Hero resolves through.
 import { describe, expect, test } from 'vitest';
-import './hero';
+import { TcHero } from './hero';
 import { formatAge } from '../helpers';
 import { STRINGS } from '../strings';
 import { DEFAULT_ENTITIES } from '../const';
@@ -67,6 +67,8 @@ function makeStates(opts: {
   ttf?: string; // raw time_to_full_charge (hours) — charging-sub fallback
   limit?: string;
   locked?: boolean;
+  usableBattery?: string; // cached SoC sensor — survives sleep (compact last-known fallback)
+  estimateRange?: string; // cached range sensor — survives sleep (compact last-known fallback)
 } = {}): Record<string, HassEntity> {
   const {
     asleep = false,
@@ -80,6 +82,8 @@ function makeStates(opts: {
     ttf,
     limit,
     locked = true,
+    usableBattery,
+    estimateRange,
   } = opts;
   const states: Record<string, HassEntity> = {
     // Anchor: always fresh at REF → referenceNow() === REF.
@@ -101,6 +105,21 @@ function makeStates(opts: {
   if (power !== undefined) states[ID.power] = ent(ID.power, power, at(0));
   if (cable !== undefined) states[ID.cable] = ent(ID.cable, cable, at(0));
   if (ttf !== undefined) states[ID.ttf] = ent(ID.ttf, ttf, at(0));
+  // Cached last-known sensors (compact + asleep fallback): they survive sleep, so
+  // they carry a real value even while battery_level/battery_range read unavailable.
+  if (usableBattery !== undefined)
+    states[DEFAULT_ENTITIES.usable_battery_level] = ent(
+      DEFAULT_ENTITIES.usable_battery_level,
+      usableBattery,
+      at(0)
+    );
+  if (estimateRange !== undefined)
+    states[DEFAULT_ENTITIES.estimate_battery_range] = ent(
+      DEFAULT_ENTITIES.estimate_battery_range,
+      estimateRange,
+      at(0),
+      { unit_of_measurement: 'mi' }
+    );
   return states;
 }
 
@@ -684,6 +703,111 @@ describe('Story 8.10 — variant:compact suppresses the flow overlay (hero + sta
     const full = await mountHero(withEnergy(), { ...ENERGY_OVER, variant: 'full' });
     expect(overlay(full)).toBeTruthy();
     expect(full.shadowRoot!.querySelector('.hero.compact')).toBeNull();
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Compact + asleep "last-known" (follow-on to Story 8.10): the in-line embed is
+// asleep most of the time and has no panels, so the compact card falls back to the
+// cached usable_battery_level / estimate_battery_range — REAL sensors, dimmed via
+// .tc-stale-copy + a desaturated gauge under the "updated Nm ago" stamp — instead of
+// blanking to "—". A DELIBERATE, COMPACT-ONLY exception to the strict asleep "—"
+// rule: the FULL card is untouched (its AC4 "—" tests above stay green), and an
+// absent cache → "—". `estimate_*` (not the optimistic `ideal_*`) tracks the live
+// rated `battery_range`, and the stamp is sourced from the cached sensor shown so it
+// never overstates that value's freshness (UX-DR18).
+// ═══════════════════════════════════════════════════════════════════════════
+describe('compact + asleep — last-known SoC/range fallback (dimmed), full card unchanged', () => {
+  const batRange = (el: HeroEl): string =>
+    el.shadowRoot!.querySelector('.bat-range')!.textContent!.replace(/\s+/g, ' ').trim();
+  const hasClass = (el: HeroEl, sel: string, cls: string): boolean =>
+    el.shadowRoot!.querySelector(sel)!.classList.contains(cls);
+
+  test('compact + asleep + cached sensors present → shows last-known %, range (not "—")', async () => {
+    const el = await mountHero(
+      makeStates({ asleep: true, usableBattery: '71', estimateRange: '230', limit: '80' }),
+      { variant: 'compact' }
+    );
+    expect(batReadout(el)).toBe('71%');
+    expect(batRange(el)).toBe('230 mi');
+    // The gauge carries a KNOWN fill (not the .unknown neutral bar): 71% → high band.
+    const gauge = el.shadowRoot!.querySelector('.tc-bat')!;
+    expect(gauge.classList.contains('unknown')).toBe(false);
+    expect(gauge.classList.contains('high')).toBe(true);
+  });
+
+  test('the last-known readout is MARKED stale, never presented as live', async () => {
+    const el = await mountHero(
+      makeStates({ asleep: true, usableBattery: '71', estimateRange: '230' }),
+      { variant: 'compact' }
+    );
+    // Numbers adopt the sanctioned .tc-stale-copy dim; the row carries .last-known.
+    expect(hasClass(el, '.bat-top', 'tc-stale-copy')).toBe(true);
+    expect(hasClass(el, '.battery', 'last-known')).toBe(true);
+    // a11y parity (UX-DR21): the aria-label states it is last-known, not a live read.
+    const aria = el.shadowRoot!.querySelector('.battery')!.getAttribute('aria-label')!;
+    expect(aria).toContain('71%');
+    expect(aria.toLowerCase()).toContain('last known');
+    // The car is still dimmed and the honest stamp still shows — freshness never overstated.
+    expect(hasClass(el, '.car-stage', 'tc-asleep')).toBe(true);
+  });
+
+  test('the dim actually reaches the headline .bat-pct leaf (--bat-pct-color override)', () => {
+    // .tc-stale-copy on .bat-top is inherited, but .bat-pct self-sets its colour, so the
+    // headline % only dims because .last-known overrides the --bat-pct-color the base
+    // .bat-pct rule reads. jsdom resolves no var()/cascade, so guard the rule TEXT
+    // directly (mirrors ecosystem-card.test.ts:317). Both halves must hold.
+    const heroCss = (TcHero as unknown as { styles: Array<{ cssText?: string }> }).styles
+      .map((s) => s?.cssText ?? '')
+      .join('\n');
+    const override = heroCss.match(/\.battery\.last-known\s*\{[^}]*\}/);
+    expect(override, 'missing .battery.last-known --bat-pct-color override').not.toBeNull();
+    expect(override![0]).toMatch(/--bat-pct-color:\s*var\(\s*--tc-text-dim/);
+    const base = heroCss.match(/\.bat-pct\s*\{[^}]*\}/);
+    expect(base![0], '.bat-pct must read var(--bat-pct-color, …)').toMatch(/color:\s*var\(\s*--bat-pct-color/);
+  });
+
+  test('the "updated Nm ago" stamp tracks the CACHED sensor shown, not battery_level', async () => {
+    // battery_level re-stamps fresh at the sleep transition, but the cached SoC is an
+    // hour old — the stamp must describe the SHOWN number, never the fresher primary.
+    const states = makeStates({ asleep: true, usableBattery: '71', estimateRange: '230' });
+    const cached = states[DEFAULT_ENTITIES.usable_battery_level];
+    states[DEFAULT_ENTITIES.usable_battery_level] = {
+      ...cached,
+      last_updated: at(45 * 60_000),
+      last_changed: at(45 * 60_000),
+    };
+    const el = await mountHero(states, { variant: 'compact' });
+    const text = el.shadowRoot!.querySelector('.status')!.textContent!.replace(/\s+/g, ' ');
+    expect(text).toContain('45m'); // the cached value's true age
+    expect(text).not.toContain(STRINGS.hero.justNow); // NOT battery_level's fresh transition stamp
+  });
+
+  test('FULL card asleep is UNCHANGED — strict "—", never the cache (Story 3.3 intact)', async () => {
+    // Same cached sensors present, but variant unset (full) → strict em-dash.
+    const el = await mountHero(
+      makeStates({ asleep: true, usableBattery: '71', estimateRange: '230' })
+    );
+    expect(batReadout(el)).toBe('—');
+    expect(batRange(el)).toBe('—');
+    expect(hasClass(el, '.bat-top', 'tc-stale-copy')).toBe(false);
+    expect(hasClass(el, '.battery', 'last-known')).toBe(false);
+  });
+
+  test('compact + asleep but cache ALSO absent → graceful "—", no fabrication', async () => {
+    const el = await mountHero(makeStates({ asleep: true }), { variant: 'compact' });
+    expect(batReadout(el)).toBe('—');
+    expect(batRange(el)).toBe('—');
+  });
+
+  test('compact + AWAKE reads the LIVE primary, never the cache', async () => {
+    // Live battery_level = 64 (default); cache present (71) but MUST be ignored.
+    const el = await mountHero(
+      makeStates({ battery: '64', usableBattery: '71', estimateRange: '230' }),
+      { variant: 'compact' }
+    );
+    expect(batReadout(el)).toBe('64%');
+    expect(hasClass(el, '.battery', 'last-known')).toBe(false);
   });
 });
 
