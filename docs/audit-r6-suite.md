@@ -132,11 +132,14 @@ precondition is asserted:
 
 1. **Device:** the NFR-1 reference device — the **low-end tablet-kiosk class** (the
    target the suite must hold ~60fps on, not a developer workstation).
-2. **Build + serve the composed Scene:** `npm run build`, then serve `demo/` and open
-   the full six-card + Gateway bus + weather-vignette Scene composed with the live
-   vehicle card (`demo/index.html` — the awake/charging scenario with an energy site,
-   weather injected so the vignette animates). Confirm all six live cards + the bus +
-   the vignette are simultaneously visible and animating.
+2. **Build + serve the composed Scene:** `npm run build`, then `npm run serve:demo`
+   and open **`http://127.0.0.1:4173/demo/?card=my-home`** — the `?card=my-home` demo
+   mode mounts the full `tc-my-home` Scene (six live cards + Gateway bus + weather
+   vignette) fed the demo's mock hass (energy site + `weather.home` present so the
+   vignette animates), hides the standalone vehicle card, and widens to the desktop
+   horizontal-bus layout. Confirm all six live cards + the bus + the vignette are
+   simultaneously visible and animating. **A full turnkey step-by-step lives in
+   [`profiler-checklist-nfr1.md`](profiler-checklist-nfr1.md).**
 3. **Capture:** open the browser performance profiler, record a **~10s steady-state**
    (no interaction — the resting animated Scene), stop, read the sustained frame rate.
 4. **Pass bar:** **~60fps sustained** over the 10s window (transient dips on first

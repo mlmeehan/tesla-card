@@ -363,8 +363,26 @@
       card.setConfig(cardConfig);
       document.getElementById('stage').appendChild(card);
 
+      // Composed-Scene profiler harness (NFR-1 / Story 6.8 AC3). `?card=my-home`
+      // mounts the full `tc-my-home` Scene — six live cards + Gateway bus + weather
+      // vignette — fed the SAME mock hass (which already carries the energy site +
+      // weather), so the resting Scene animates at steady state for a ~10s profiler
+      // capture. The standalone vehicle card is hidden so the Scene is the sole
+      // subject, and the stage widens to the desktop horizontal-bus layout (not the
+      // ≤540px vertical reflow). See docs/profiler-checklist-nfr1.md.
+      const wantMyHome = params.get('card') === 'my-home';
+      let scene = null;
+      if (wantMyHome) {
+        card.style.display = 'none';
+        const stage = document.getElementById('stage');
+        stage.style.maxWidth = '1120px';
+        scene = document.createElement('tc-my-home');
+        scene.setConfig({ type: 'tc-my-home' });
+        stage.appendChild(scene);
+      }
+
       function push() {
-        card.hass = {
+        const hass = {
           states,
           entities: registry.entities,
           devices: registry.devices,
@@ -372,6 +390,8 @@
           config: { unit_system: { temperature: '°C' } },
           callService,
         };
+        card.hass = hass;
+        if (scene) scene.hass = hass;
       }
 
       // optimistic service handler so the demo is interactive
