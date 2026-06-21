@@ -23,12 +23,13 @@ tesla-card/                       # separate nested git repo (gitignored by the 
 ├── README.md · PUBLISHING.md · LICENSE     # user docs · release/version-sync checklist · MIT
 ├── .github/workflows/            # validate.yml (CI gates) · release.yml (asset attach, Node 20)
 ├── scripts/
-│   ├── lint/                     # the 5-gate lint chain (dep-light node scripts, NOT ESLint):
+│   ├── lint/                     # the 6-gate lint chain (dep-light node scripts, NOT ESLint):
 │   │   ├── no-bare-hass-states.mjs   #   only data/ may read hass.states
 │   │   ├── no-cycle.mjs              #   enforce data/ ← flow/ ← components/
 │   │   ├── trade-dress-denylist.mjs  #   no Tesla trade dress / brand hex (CONTENT_SKIP allowlist)
 │   │   ├── import-allowlist.mjs      #   restrict external imports to lit + @mdi/js
-│   │   └── no-network-egress.mjs     #   no fetch/XHR/network from the bundle
+│   │   ├── no-network-egress.mjs     #   no fetch/XHR/network from the bundle
+│   │   └── version-sync.mjs          #   package.json version ↔ CARD_VERSION ↔ hacs.json filename
 │   ├── burn-in.sh · ci-local.sh  # e2e burn-in / local CI mirror
 ├── assets/                       # recolor SVG sources (tesla-front.svg, tesla-topdown.svg) + recolor-demo.html
 ├── demo/                         # mock-hass harness (no HA needed); ?panel=/scenario=/env=/recolor=

@@ -352,8 +352,8 @@ are YAML-only.
 - `dist/` is **git-ignored** and built in CI — never committed.
 
 **Verification gates** (all merge-blocking): `npm run typecheck` (strict, no-emit), `npm run test`
-(Vitest), `npm run lint` (the **5-gate** chain `no-bare-hass-states → no-cycle → trade-dress-denylist →
-import-allowlist → no-network-egress`), and `npm run build`. CI additionally runs `hacs/action`
+(Vitest), `npm run lint` (the **6-gate** chain `no-bare-hass-states → no-cycle → trade-dress-denylist →
+import-allowlist → no-network-egress → version-sync`), and `npm run build`. CI additionally runs `hacs/action`
 validation + a bundle-exists check and the Playwright e2e/visual suite. See [`ci.md`](./ci.md) and
 [`development-guide.md`](./development-guide.md).
 
