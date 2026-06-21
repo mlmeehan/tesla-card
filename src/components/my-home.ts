@@ -394,9 +394,12 @@ export class TcMyHome extends LitElement implements LovelaceCard {
     // channel). The two packed, centred rows keep sources-over-loads by construction.
     const sourceCells = SOURCE_ROW.filter((role) => present.has(role)).map(cell);
     const loadCells = LOAD_ROW.filter((role) => present.has(role)).map(cell);
-    // Story 8.9: the vehicle is the full embedded `tesla-card` in its OWN full-width
-    // band BELOW the load row (not a 380px load-row cell). Present-gated + packed: an
-    // absent car leaves no band (and no WC->Vehicle edge). See `.vehicle-row` below.
+    // Story 8.10: the vehicle is the TRAILING load-row cell again (reverses 8.9's
+    // own-row band) — a peer of Home + Wall Connector. It embeds the real `tesla-card`
+    // in `variant: 'compact'` (hero + status only, kW overlay suppressed) so it fits
+    // the 380px track without re-cramming. Present-gated + packed: an absent car leaves
+    // no cell (and no WC→Vehicle edge); a present car appends after the energy loads.
+    if (vehiclePresent) loadCells.push(this._vehicleCell(lit));
 
     // Layering, back-to-front: the summary RIBBON (whole-home aggregates, above the
     // cards) → the cards (each composites its own vignette internally) → ONE
@@ -410,7 +413,6 @@ export class TcMyHome extends LitElement implements LovelaceCard {
         <div class="scene-grid">
           ${sourceCells.length ? html`<div class="source-row">${sourceCells}</div>` : nothing}
           ${loadCells.length ? html`<div class="load-row">${loadCells}</div>` : nothing}
-          ${vehiclePresent ? html`<div class="vehicle-row">${this._vehicleCell(lit)}</div>` : nothing}
         </div>
         ${this._bus.empty
           ? nothing
@@ -525,8 +527,12 @@ export class TcMyHome extends LitElement implements LovelaceCard {
     // the cell degrades to an empty element instead of throwing. `setConfig` runs only
     // on a raw `_config` change — NOT the per-tick resolved cfg, which HA replaces on
     // every state change (re-`setConfig` each tick would reset the card's open panel).
+    // Story 8.10: the embed renders `variant: 'compact'` (hero + status only) so it
+    // fits the 380px load-row track; a standalone `tesla-card` stays full. The guard
+    // KEY stays the raw `_config` identity — the spread object is NOT stored as the key
+    // (storing it would mismatch every tick and re-`setConfig`, resetting the embed).
     if (typeof el.setConfig === 'function' && this._vehDetailCfg !== this._config) {
-      el.setConfig(this._config);
+      el.setConfig({ ...this._config, variant: 'compact' });
       this._vehDetailCfg = this._config;
     }
     // `hass` refreshes every render so the card stays live (a plain property set —
@@ -656,25 +662,30 @@ export class TcMyHome extends LitElement implements LovelaceCard {
   }
 
   /**
-   * The WC→Vehicle overlay edge (Story 8.5/8.9, AC2/AC3): an orthogonal DROP from the
-   * Wall-Connector card down to the Vehicle band below it — the WC's power CONTINUING
-   * to the car (coloured `NODE_COLOR.wall_connector` teal so it reads as the SAME
-   * edge continuing — reinforcing "the WC edge IS the car-charging edge"). Since 8.9
-   * the vehicle sits in its OWN full-width row below the load row (not beside the WC),
-   * so the edge drops DOWN, not across. The load row holds only Home + WC centred as
-   * a pair, so the WC is off-centre while the band is centred — `wc.cx ≠ veh.cx`
-   * essentially always — and the route is an L: a vertical drop from the WC card's
-   * bottom-centre to the band's top level, then a short horizontal run to the band's
-   * top-centre (so the landing reads as joining the card, not floating off its edge).
-   * Vertical-first orthogonal segments only (never a diagonal); the `sb-flow` dash
-   * rides the vertical drop. Present only when BOTH anchors exist (WC + vehicle). A
-   * calm base line always; when `ch.active`, an `sb-flow` dash from the SHARED
-   * {@link edgeVisual} (never a forked formula), clamped by {@link BUS_WIDTH_MAX}, +
-   * an arrowhead pointing DOWN into the vehicle. Reduced-motion freezes the dash
-   * (inherited from `sceneBusStyles` — no new animation source). At phone width
-   * (`_axis === 'y'`, the ≤540px reflow where the row-gap collapses to 16px) the
-   * pill + terminals + arrow cannot fit the gap without spilling into the cards, so
-   * the decorations are suppressed and only the base + flow drop is drawn.
+   * The WC→Vehicle overlay edge (Story 8.5/8.10, AC7): a short leg joining the
+   * Wall-Connector card to the Vehicle card — the WC's power CONTINUING to the car
+   * (coloured `NODE_COLOR.wall_connector` teal so it reads as the SAME edge continuing:
+   * "the WC edge IS the car-charging edge"). AXIS-AWARE like {@link _legs}/{@link
+   * _trunk}: in the desktop load row the cards sit side-by-side so the leg runs
+   * HORIZONTALLY across the inter-card gap (the WC's vehicle-facing edge → the vehicle's
+   * WC-facing edge); at the ≤540px phone reflow the load row collapses to one column so
+   * the cards STACK and the leg drops VERTICALLY down the collapsed gap. Either
+   * orientation joins the cards at their OVERLAP centre on the cross axis, so the leg
+   * lands ON both card edges and never floats off a stretched-cell midpoint (the load
+   * row is `align-items:start`, so neither card is ballooned to the other's height — the
+   * WC node card and the compact card have different natural heights). Present only when
+   * BOTH anchors exist (WC + vehicle). A calm base
+   * `<line>` always; when `ch.active`, an `sb-flow` dash from the SHARED {@link
+   * edgeVisual} (never a forked formula, clamped by {@link BUS_WIDTH_MAX}) that CARRIES
+   * the WC→vehicle direction in its `stroke-dashoffset` animation — NO separate arrowhead
+   * (the gap is too small to hold a 64px pill AND an arrow; `_legs` is likewise
+   * dash-only). Reduced-motion freezes the dash (inherited from `sceneBusStyles` — no new
+   * animation source). The leg touches NO trunk, so it gets TWO terminals (one per card
+   * end) + one pill at mid, NO tap — all on a `.gw-veh-dec` wrapper inside the `gw-leg`
+   * group, so the focus coupling still dims/lights them AND the ≤540px @media can HIDE
+   * them (the collapsed gap can't hold a pill + two terminals without spilling into the
+   * stacked cards — a CSS hide, NOT an axis branch, because jsdom's zero-width recompute
+   * reports the phone axis even for the desktop unit assertions).
    */
   private _vehicleEdge(
     anchors: Readonly<Record<string, RectLike>>,
@@ -684,51 +695,61 @@ export class TcMyHome extends LitElement implements LovelaceCard {
     const wc = anchors['wall_connector'];
     const veh = anchors[VEHICLE_NODE_ID];
     if (!wc || !veh) return svg``; // both anchors required (WC + vehicle present)
-    // The L drop: from the WC card's bottom-centre, straight DOWN to the vehicle
-    // band's top level, then ACROSS to the band's top-centre (the WC is off-centre,
-    // the band centred, so the horizontal run rejoins the centred card). All segments
-    // are axis-aligned — no diagonal — matching the Gateway bus language.
-    const start = { x: wc.left + wc.width / 2, y: wc.top + wc.height }; // WC bottom-centre
-    const corner = { x: start.x, y: veh.top }; // bend at the band's top level
-    const end = { x: veh.left + veh.width / 2, y: veh.top }; // band top-centre
+    // Axis-aware leg (see the doc comment): HORIZONTAL across the inter-card gap when the
+    // cards sit side-by-side (desktop), VERTICAL down the collapsed gap when they stack
+    // (≤540px phone). Either way it meets the cards at their OVERLAP centre on the cross
+    // axis, so it lands ON both card edges even though the compact vehicle card is much
+    // taller than the WC card. The vehicle is the trailing load cell, so along the main
+    // axis it sits after the WC (to its right when in-line / below it when stacked).
+    const horiz = this._axis === 'x';
     const color = NODE_COLOR.wall_connector;
-    // The flow dash rides the vertical DROP + the short cross run (one polyline along
-    // the whole L); orientation-independent (it animates `stroke-dashoffset`), so it
-    // flows correctly DOWN the drop. The arrow sits on the drop pointing DOWN, parked
-    // at its midpoint so it clears BOTH terminals (the WC-bottom start above and the
-    // band-top landing across the bend) — it rides with the decorations (hidden at
-    // phone width, where the 16px gap can't hold a 9px head).
-    const dropMid = { x: start.x, y: (start.y + corner.y) / 2 };
+    const wcCx = wc.left + wc.width / 2;
+    const vehCx = veh.left + veh.width / 2;
+    const wcCy = wc.top + wc.height / 2;
+    const vehCy = veh.top + veh.height / 2;
+    let start: { x: number; y: number };
+    let end: { x: number; y: number };
+    if (horiz) {
+      // Cross axis = vertical: meet at the cards' vertical OVERLAP centre (= the SHORTER
+      // card's centre when their tops align under `align-items:start`), so the leg lands
+      // within BOTH cards regardless of which one is taller.
+      const y = (Math.max(wc.top, veh.top) + Math.min(wc.top + wc.height, veh.top + veh.height)) / 2;
+      start = { x: wcCx < vehCx ? wc.left + wc.width : wc.left, y };
+      end = { x: wcCx < vehCx ? veh.left : veh.left + veh.width, y };
+    } else {
+      // Cross axis = horizontal: meet at the cards' horizontal OVERLAP centre (= the
+      // shared column centre when both fill the 1fr phone track).
+      const x = (Math.max(wc.left, veh.left) + Math.min(wc.left + wc.width, veh.left + veh.width)) / 2;
+      start = { x, y: wcCy < vehCy ? wc.top + wc.height : wc.top };
+      end = { x, y: wcCy < vehCy ? veh.top : veh.top + veh.height };
+    }
+    // When charging: the sb-flow dash rides the base line and CARRIES the WC→vehicle
+    // direction in its stroke-dashoffset animation (no separate arrowhead). Both flow and
+    // base consume the SHARED edgeVisual — never a forked formula.
     const flow = ch.active
-      ? svg`<polyline
+      ? svg`<line
             class="sb-flow"
             style="stroke:${color};animation-duration:${edgeVisual(ch.kW).durSec}s"
             stroke-width=${Math.min(BUS_WIDTH_MAX, edgeVisual(ch.kW).width)}
-            fill="none"
-            points="${start.x},${start.y} ${corner.x},${corner.y} ${end.x},${end.y}"
-          ></polyline>`
+            x1=${start.x} y1=${start.y} x2=${end.x} y2=${end.y}
+          ></line>`
       : nothing;
-    const arrow = ch.active ? this._arrow(dropMid, corner, color) : nothing;
-    // Story 8.6/8.9: the WC→Vehicle leg touches NO trunk — so it gets TWO terminals
-    // (WC bottom + band top) + one pill, and NO tap. The pill shows
-    // `wcVehicleEdge(model).kW` (= `ch.kW`), agreeing by construction with the cell's
-    // "Charging · N.N kW" (both read the one `wcVehicleEdge`). The decorations carry a
-    // `gw-veh-dec` class so the phone @media can HIDE them: at ≤540px the row-gap
-    // collapses to 16px (vs 150px desktop) — far too tight for a 26px pill + two
-    // terminals + the arrow without spilling into the cards above/below — so they are
-    // hidden there (CSS, not an axis branch: jsdom's zero-width recompute reports the
-    // phone axis even on the desktop assertions). All inside the leg group so the
-    // widened (Role) focus coupling dims/lights them.
-    const pillAt = { x: (corner.x + end.x) / 2, y: corner.y }; // along the short cross run
+    // Story 8.6/8.10: the WC→Vehicle leg touches NO trunk — so it gets TWO terminals (one
+    // per card end) + one pill at mid, and NO tap. The pill shows `wcVehicleEdge(model).kW`
+    // (= `ch.kW`), agreeing by construction with the cell's "Charging · N.N kW" (both read
+    // the one `wcVehicleEdge`). Terminals + pill ride a `.gw-veh-dec` wrapper INSIDE the leg
+    // group (so the widened (Role) focus coupling still dims/lights them) that the ≤540px
+    // @media hides — the collapsed 16px gap can't hold a 26px pill + two terminals without
+    // spilling into the stacked cards.
+    const mid = { x: (start.x + end.x) / 2, y: (start.y + end.y) / 2 };
     return svg`
       <g class="gw-leg ${lit?.has('vehicle') ? 'on' : ''}" data-role=${VEHICLE_NODE_ID}>
-        <polyline class="gw-leg-base" style="stroke:${color}" fill="none" points="${start.x},${start.y} ${corner.x},${corner.y} ${end.x},${end.y}"></polyline>
+        <line class="gw-leg-base" style="stroke:${color}" x1=${start.x} y1=${start.y} x2=${end.x} y2=${end.y}></line>
         ${flow}
         <g class="gw-veh-dec">
-          ${arrow}
           ${this._terminal(start, color)}
           ${this._terminal(end, color)}
-          ${this._pill(pillAt, color, `${formatNumber(Math.abs(ch.kW), 1)} ${STRINGS.scene.ribbon.unit}`)}
+          ${this._pill(mid, color, `${formatNumber(Math.abs(ch.kW), 1)} ${STRINGS.scene.ribbon.unit}`)}
         </g>
       </g>
     `;
@@ -1062,23 +1083,29 @@ export class TcMyHome extends LitElement implements LovelaceCard {
         column-gap: 80px;
         justify-content: center;
       }
+      /* Story 8.10: top-align the LOAD-row cells (NOT the source row — its stretch is
+         tuned for the inter-row bus-trunk placement). The load row now mixes the Home/WC
+         node cards with the compact vehicle card, which have different natural heights, so
+         the default align-items:stretch would balloon the shorter cells to the tallest
+         cell's height (dead space + an over-tall focus ring), and the WC->Vehicle leg would
+         anchor to the stretched cell midpoint, off the shorter card's content.
+         align-items:start keeps each card its natural height with tops aligned, so the leg
+         lands at the cards' true overlap centre. */
+      .load-row {
+        align-items: start;
+      }
       .scene-cell {
         min-width: 0;
       }
 
-      /* Story 8.9: the vehicle is the full embedded tesla-card in its OWN full-width
-         band below the load row. The band fills the column; the card fills up to its
-         own design width (the tesla-card host caps at 1080px) and is centred via
-         margin-inline, never crushed to a 380px track nor smeared edge-to-edge. The
-         card brings its own surface chrome + styles (shadow DOM). */
-      .vehicle-row {
-        width: 100%;
-      }
+      /* Story 8.10: the vehicle is the trailing load-row cell again — the embedded
+         compact tesla-card fills the 380px grid track. width:100% makes the host fill
+         its cell; the host's own .root max-width:1080px never widens the cell past the
+         380px track (the compact hero is sized to the column in hero.ts). The card
+         brings its own surface chrome + styles (shadow DOM). */
       .veh-cell > tesla-card {
         display: block;
         width: 100%;
-        max-width: 1080px;
-        margin-inline: auto;
       }
       /* Keyboard focus ring — the 2px blue outline (EXPERIENCE.md:175 a11y floor),
          never the hairline border alone. */
@@ -1184,10 +1211,12 @@ export class TcMyHome extends LitElement implements LovelaceCard {
           row-gap: var(--tc-space-4, 16px);
           width: 100%;
         }
-        /* Story 8.9: the WC->Vehicle drop's decorations (the two terminals, the kW
-           pill, the down-arrow) cannot fit the 16px phone gap without spilling into
-           the cards above/below — exactly the overlap this story removes. Hide them
-           at phone width; the base drop + flow dash stay as the calm connector. */
+        /* Story 8.10: at phone width the load row stacks to one column, so the WC->Vehicle
+           leg drops VERTICALLY down the collapsed 16px gap. That gap cannot hold the 26px
+           kW pill + two terminals without spilling into the stacked cards, so hide the
+           decorations here; the base line + flow dash stay as the calm vertical connector.
+           A CSS hide (jsdom ignores @media, so the desktop unit assertions still see the
+           two terminals). */
         .gw-veh-dec {
           display: none;
         }

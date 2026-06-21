@@ -646,6 +646,48 @@ describe('Story 4.3 — energy-flow overlay composites into .car-stage', () => {
 });
 
 // ═══════════════════════════════════════════════════════════════════════════
+// Story 8.10 AC3 — the compact variant suppresses the flow-overlay kW labels
+// (the net-new piece) while the status line + battery gauge + car silhouette all
+// survive. Additive to the Story-4.3/4.6 tests above — those run with `variant`
+// unset (full) and MUST stay green unchanged (compact === false ⇒ overlay gated
+// only on _flow.empty). The OR-gate is pinned BOTH ways so a typo defaulting
+// compact-on is caught: full + energy ⇒ overlay present.
+// ═══════════════════════════════════════════════════════════════════════════
+describe('Story 8.10 — variant:compact suppresses the flow overlay (hero + status only)', () => {
+  test('compact + energy present → NO overlay, but status line · battery gauge · silhouette stay', async () => {
+    // Energy IS present (full would draw the overlay) — compact suppresses it at the
+    // DOM level without touching the surviving hero surfaces.
+    const el = await mountHero(withEnergy(), { ...ENERGY_OVER, variant: 'compact' });
+    const sr = el.shadowRoot!;
+    expect(overlay(el)).toBeNull(); // the .tc-flow-overlay SVG is not emitted
+    expect(sr.querySelector('.fo-chip')).toBeNull(); // no Solar/Grid/… kW chips
+    // The status line survives (the honesty surface).
+    expect(sr.querySelector('.st-label')).not.toBeNull();
+    expect(sr.querySelector('.st-sub')).not.toBeNull();
+    // The battery button + gauge survive — the accessible read (the state-bearing
+    // aria-label is the surviving a11y floor in compact).
+    const battery = sr.querySelector<HTMLButtonElement>('.battery');
+    expect(battery).not.toBeNull();
+    expect(battery!.getAttribute('aria-label')).toBeTruthy();
+    expect(sr.querySelector('.bat-pct')).not.toBeNull();
+    // The car silhouette survives (bundled generic-EV in the default render mode).
+    expect(sr.querySelector('.car-stage svg.tc-ev')).not.toBeNull();
+    // The hero root carries the `compact` class (the width hook).
+    expect(sr.querySelector('.hero.compact')).not.toBeNull();
+  });
+
+  test('variant unset / "full" (+ energy present) → the overlay renders exactly as today', async () => {
+    // OR-gate pinned the OTHER way: a typo defaulting compact-on would null these.
+    const unset = await mountHero(withEnergy(), { ...ENERGY_OVER });
+    expect(overlay(unset)).toBeTruthy();
+    expect(unset.shadowRoot!.querySelector('.hero.compact')).toBeNull();
+    const full = await mountHero(withEnergy(), { ...ENERGY_OVER, variant: 'full' });
+    expect(overlay(full)).toBeTruthy();
+    expect(full.shadowRoot!.querySelector('.hero.compact')).toBeNull();
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
 // Story 4.6 AC1 — the SAME flow overlay composites over ALL THREE Epic-3 Hero
 // render modes (bundled-EV / image / body-layers) with NO per-Hero rework. The
 // overlay is Hero-agnostic BY CONSTRUCTION: it lives in the fixed 1024×687 viewBox

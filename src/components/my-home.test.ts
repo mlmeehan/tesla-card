@@ -84,10 +84,10 @@ async function mount(
   return el;
 }
 const sr = (el: Scene) => el.shadowRoot!;
-// The registered ECOSYSTEM child cards only — excludes the Story-8.5/8.9 vehicle cell
-// (a `.scene-cell[data-node="vehicle"]` in its OWN `.vehicle-row` band, embedding the
-// full `tesla-card`, not a `tc-*` ecosystem element). The vehicle cell is asserted
-// directly by its `data-node` in the Story-8.5/8.9 suite below.
+// The registered ECOSYSTEM child cards only — excludes the Story-8.5/8.10 vehicle cell
+// (a `.scene-cell[data-node="vehicle"]`, the trailing load-row cell embedding the
+// compact `tesla-card`, not a `tc-*` ecosystem element). The vehicle cell is asserted
+// directly by its `data-node` in the Story-8.5/8.10 suite below.
 const cellTags = (el: Scene): string[] =>
   [...sr(el).querySelectorAll<HTMLElement>('.scene-cell:not([data-node="vehicle"])')].map(
     (c) => (c.firstElementChild?.tagName ?? '').toLowerCase()
@@ -487,9 +487,10 @@ function recomputeAtWidth(el: Scene, width: number): void {
   (el as unknown as { _recomputeGeometry(): void })._recomputeGeometry();
 }
 const sourceRowCells = (el: Scene): Element[] => [...sr(el).querySelectorAll('.source-row .scene-cell')];
-// Energy LOAD cards only. Since Story 8.9 the vehicle is NOT a load-row cell (it lives
-// in its own `.vehicle-row` band), so the `:not([data-node="vehicle"])` is now defensive
-// — the `.load-row` genuinely holds only Home · Wall Connector.
+// Energy LOAD cards only. Since Story 8.10 the vehicle is the TRAILING load-row cell
+// again, so the `:not([data-node="vehicle"])` scoping is load-bearing here — it keeps
+// these energy-topology assertions about Home · Wall Connector only (the vehicle is
+// asserted directly in the Story-8.5/8.10 suite below).
 const loadRowCells = (el: Scene): Element[] =>
   [...sr(el).querySelectorAll('.load-row .scene-cell:not([data-node="vehicle"])')];
 
@@ -511,8 +512,8 @@ describe('Story 6.7 — the exhaustive minimal→full topology sweep (AC1, AC2)'
       const el = await mount(subsetHass(roles));
       // The present cells, in canonical (sources-then-loads) order — and ONLY them.
       expect(cellTags(el)).toEqual(present.map((r) => TAG[r]));
-      // Count the ECOSYSTEM cells only (the awake fixture's vehicle cell renders in its
-      // own `.vehicle-row` band in every subset — it is asserted separately in Story 8.9).
+      // Count the ECOSYSTEM cells only (since Story 8.10 the awake fixture's vehicle cell
+      // is the trailing load-row cell — it is asserted separately in the Story 8.10 suite).
       expect(sr(el).querySelectorAll('.scene-cell:not([data-node="vehicle"])')).toHaveLength(
         present.length
       );
@@ -648,9 +649,9 @@ describe('Story 6.7 — half-alive Scene is the normal calm state (AC3)', () => 
 });
 
 // ═══════════════════════════════════════════════════════════════════════════
-// Story 8.5/8.9 — the vehicle node: a present-gated cell in its OWN full-width
-// `.vehicle-row` band (Story 8.9) that REUSES the detailed `tesla-card` (the
-// information-rich vehicle surface) + the WC→Vehicle overlay edge (an orthogonal drop)
+// Story 8.5/8.10 — the vehicle node: a present-gated TRAILING load-row cell (Story
+// 8.10 reverts 8.9's own-row band) that REUSES the detailed `tesla-card` in compact
+// variant (hero + status only) + the WC→Vehicle overlay edge (a horizontal in-line line)
 // fed by the ONE wcVehicleEdge view (AC2 agree-by-construction); the embedded card owns
 // its own calm-not-broken asleep read (AC3); omitted with its edge when the car is absent
 // (AC4); and NO NEW registered element — it reuses the existing `tesla-card` (AC5).
@@ -664,23 +665,53 @@ function batteryId(s: Record<string, HassEntity>): string {
   return resolveEntities(makeHass(s), CONFIG).battery_level;
 }
 
-describe('Story 8.9 — AC1: the vehicle is the full embedded card in its OWN full-width row', () => {
-  test('a present car renders the detailed tesla-card in .vehicle-row below the load row (no ghost cell)', async () => {
+// A minimal stub `tesla-card` so the imperatively-created embed UPGRADES and its
+// `setConfig` fires in jsdom (the real card is intentionally NOT imported here — that
+// would pull the whole bundle into this element-level suite). The stub records the
+// config it receives so we can assert the My-Home embed injects `variant: 'compact'`
+// (Story 8.10 AC5) without coupling to the real card's internal render. It renders
+// nothing, so the `.veh-cell` DOM is identical to the un-upgraded baseline.
+let lastEmbedConfig: (TeslaCardConfig & { variant?: string }) | undefined;
+class TeslaCardEmbedStub extends HTMLElement {
+  hass?: unknown;
+  setConfig(config: TeslaCardConfig & { variant?: string }): void {
+    lastEmbedConfig = { ...config };
+  }
+}
+if (!customElements.get('tesla-card')) {
+  customElements.define('tesla-card', TeslaCardEmbedStub);
+}
+
+describe('Story 8.10 — AC1/AC5: the vehicle is the trailing load-row cell embedding the compact card', () => {
+  // Reset the module-global stub recorder BEFORE each test so the AC5 `variant` assertion
+  // reads THIS mount's embed config — never a stale value left by a prior mount (the global
+  // `afterEach` clears the DOM but not this `let`, so a vehicle-absent test could otherwise
+  // leave `'compact'` behind and false-green a test where setConfig never fired).
+  beforeEach(() => {
+    lastEmbedConfig = undefined;
+  });
+
+  test('a present car renders the tesla-card as the LAST load-row cell (no .vehicle-row band, no ghost)', async () => {
+    // `mount` renders a fresh my-home → `_vehicleDetailCard()` fires `setConfig` once,
+    // so `lastEmbedConfig` reflects THIS mount's embed config.
     const el = await mount(makeHass(states(awakeFx)));
     const veh = vehCell(el);
     expect(veh).not.toBeNull();
-    // It is NOT a load-row cell — it lives in its own full-width band (.vehicle-row).
-    expect(sr(el).querySelector('.load-row .scene-cell[data-node="vehicle"]')).toBeNull();
-    const band = sr(el).querySelector('.vehicle-row .scene-cell[data-node="vehicle"]');
-    expect(band).not.toBeNull();
-    expect(band).toBe(veh);
-    // The band follows the load row in document order (sources → loads → vehicle).
-    const rows = [...sr(el).querySelectorAll('.scene-grid > div')].map((d) => d.className);
-    expect(rows.indexOf('vehicle-row')).toBeGreaterThan(rows.indexOf('load-row'));
-    // It REUSES the detailed card — the registered `tesla-card` element (the full
-    // information-rich vehicle surface), exactly as the energy cells reuse `tc-*`.
+    // It IS a load-row cell again (Story 8.10 reverts 8.9's own-row band).
+    const inLoad = sr(el).querySelector('.load-row .scene-cell[data-node="vehicle"]');
+    expect(inLoad).not.toBeNull();
+    expect(inLoad).toBe(veh);
+    // …and it is the LAST load-row cell (after Home · Wall Connector).
+    const loadCells = [...sr(el).querySelectorAll('.load-row > .scene-cell')];
+    expect(loadCells[loadCells.length - 1]).toBe(veh);
+    // There is NO `.vehicle-row` band element anymore.
+    expect(sr(el).querySelector('.vehicle-row')).toBeNull();
+    // It REUSES the registered `tesla-card` element (no new tc-vehicle), exactly as the
+    // energy cells reuse `tc-*`.
     expect(veh!.querySelector('tesla-card')).not.toBeNull();
-    // Keyboard-focusable, same as the ecosystem cells.
+    // The embed is fed `variant: 'compact'` (AC5) — a standalone card stays full.
+    expect(lastEmbedConfig?.variant).toBe('compact');
+    // Keyboard-focusable, same as the ecosystem cells (the a11y floor).
     expect(veh!.getAttribute('tabindex')).toBe('0');
   });
 
@@ -871,6 +902,71 @@ describe('Story 8.6 — AC1: terminals at the card end + taps at the trunk end',
     expect(edge).not.toBeNull();
     expect(edge.querySelectorAll('.gw-term').length).toBe(2); // one per card end
     expect(edge.querySelector('.gw-tap')).toBeNull(); // never touches the trunk
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Story 8.10 — AC7: the WC→Vehicle leg GEOMETRY is axis-aware and overlap-centred.
+// jsdom returns zero-size rects (so the live e2e covers the desktop HORIZONTAL path at
+// real geometry), but injecting KNOWN anchors + forcing `_axis` pins BOTH branches
+// deterministically here: the leg meets the two cards at their cross-axis OVERLAP centre,
+// on the facing edges — never the stretched-cell midpoint the pre-fix code floated to. The
+// vertical (phone-stacked) branch is otherwise unexercised, since jsdom always reports the
+// phone axis on zero-width rects (start==end==origin), so this is its only real coverage.
+// ═══════════════════════════════════════════════════════════════════════════
+describe('Story 8.10 — AC7: the WC→Vehicle leg geometry (axis-aware, overlap-centred)', () => {
+  const baseSeg = (el: Scene) => {
+    const base = vehEdge(el)!.querySelector('.gw-leg-base')!;
+    return {
+      x1: Number(base.getAttribute('x1')),
+      y1: Number(base.getAttribute('y1')),
+      x2: Number(base.getAttribute('x2')),
+      y2: Number(base.getAttribute('y2')),
+    };
+  };
+
+  test('desktop (_axis=x): a HORIZONTAL leg across the gap at the cards’ vertical overlap centre', async () => {
+    const el = await mount(makeHass(states(awakeFx)));
+    recompute(el); // populate the bus so the .scene-bus overlay renders
+    await el.updateComplete;
+    const inst = el as unknown as { _anchors: Record<string, unknown>; _axis: string };
+    // WC left of the vehicle; cards of DIFFERENT heights with tops aligned (align-items:start).
+    inst._anchors = {
+      wall_connector: { left: 0, top: 0, width: 100, height: 200 }, // taller
+      vehicle: { left: 300, top: 0, width: 100, height: 100 }, // shorter, tops aligned
+      bus: { left: 200, top: 0, width: 0, height: 0 },
+    };
+    inst._axis = 'x';
+    (el as unknown as { requestUpdate(): void }).requestUpdate();
+    await el.updateComplete;
+    const s = baseSeg(el);
+    expect(s.y1).toBe(s.y2); // horizontal: constant y
+    expect(s.x1).toBe(100); // WC's vehicle-FACING (right) edge
+    expect(s.x2).toBe(300); // vehicle's WC-FACING (left) edge
+    // The cross-axis y is the OVERLAP centre (50) = the shorter card's centre, INSIDE both
+    // cards' vertical extents ([0,200] ∩ [0,100]) — not the stretched-cell midpoint.
+    expect(s.y1).toBe(50);
+  });
+
+  test('phone (_axis=y): a VERTICAL leg down the gap at the cards’ horizontal overlap centre', async () => {
+    const el = await mount(makeHass(states(awakeFx)));
+    recompute(el);
+    await el.updateComplete;
+    const inst = el as unknown as { _anchors: Record<string, unknown>; _axis: string };
+    // Stacked in one 1fr column: WC above the vehicle, same left + width.
+    inst._anchors = {
+      wall_connector: { left: 0, top: 0, width: 100, height: 100 }, // above
+      vehicle: { left: 0, top: 300, width: 100, height: 100 }, // below, same column
+      bus: { left: 50, top: 200, width: 0, height: 0 },
+    };
+    inst._axis = 'y';
+    (el as unknown as { requestUpdate(): void }).requestUpdate();
+    await el.updateComplete;
+    const s = baseSeg(el);
+    expect(s.x1).toBe(s.x2); // vertical: constant x
+    expect(s.y1).toBe(100); // WC's vehicle-FACING (bottom) edge
+    expect(s.y2).toBe(300); // vehicle's WC-FACING (top) edge
+    expect(s.x1).toBe(50); // overlap centre of the shared column
   });
 });
 

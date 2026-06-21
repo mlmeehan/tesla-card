@@ -206,6 +206,11 @@ export class TcHero extends TcBase {
 
   protected override render(): TemplateResult {
     const cfg = this.config;
+    // Compact variant (Story 8.10): suppress the flow-overlay kW labels and tighten
+    // the silhouette so the hero fits a ~380px column. Strict `=== 'compact'` — unset
+    // or garbage reads as full (forward-compat). DOM-level suppression only; the
+    // status line, battery gauge, and car silhouette all stay.
+    const compact = cfg.variant === 'compact';
     const asleep = isAsleep(this.hass, cfg);
     const name = cfg.name ?? STRINGS.hero.defaultName;
     const image = cfg.image;
@@ -244,7 +249,7 @@ export class TcHero extends TcBase {
         : STRINGS.hero.openCharging;
 
     return html`
-      <div class="hero surface">
+      <div class="hero surface ${compact ? 'compact' : ''}">
         <div class="head">
           <div class="title">
             <span class="name">${name}</span>
@@ -269,7 +274,7 @@ export class TcHero extends TcBase {
             charge,
             apertures,
           })}
-          ${this._flow.empty
+          ${compact || this._flow.empty
             ? nothing
             : html`<svg
                 class="tc-flow-overlay"
@@ -397,6 +402,24 @@ export class TcHero extends TcBase {
         object-fit: contain;
         filter: drop-shadow(0 22px 30px rgba(0, 0, 0, 0.45));
         transition: opacity 0.4s var(--tc-ease, cubic-bezier(0.22, 1, 0.36, 1)), filter 0.4s var(--tc-ease, cubic-bezier(0.22, 1, 0.36, 1));
+      }
+
+      /* ── compact variant (Story 8.10) ────────────────────────────────
+         The "My Home" in-line embed renders the hero in a ~380px load-row
+         column (flow-overlay suppressed in render()). Tighten the silhouette
+         + stage/hero padding so the surviving silhouette · status · battery
+         fit the column with no horizontal overflow. Sizing only — the asleep
+         fade, paint, and shadow recipes are inherited unchanged. */
+      .hero.compact {
+        padding: 14px 14px 16px;
+      }
+      .hero.compact .car-stage {
+        min-height: 120px;
+        padding: 6px 0 10px;
+      }
+      .hero.compact .car-img {
+        max-width: min(100%, 300px);
+        max-height: 168px;
       }
 
       /* ── battery row ─────────────────────────────────────────────── */

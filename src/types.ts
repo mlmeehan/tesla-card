@@ -208,6 +208,16 @@ export interface TeslaCardConfig {
   hide_quick_actions?: boolean;
   /** Hide the command buttons (wake/honk/flash/…) under the panels. */
   hide_commands?: boolean;
+  /**
+   * Render density. `'full'` (default, also the value used when omitted or set to
+   * any unknown/garbage string — forward-compat, no eager validation) renders the
+   * complete card. `'compact'` renders the hero + status line + battery gauge ONLY:
+   * it implies `hide_quick_actions` + `hide_panels` + `hide_commands` (regardless of
+   * those flags' own values) AND suppresses the hero's flow-overlay kW labels, so the
+   * card fits a ~380px column. The single switch the "My Home" in-line embed sets;
+   * a standalone card stays `'full'`.
+   */
+  variant?: 'full' | 'compact';
 
   // ── Per-feature tuning ────────────────────────────────────────────────────
   /**
