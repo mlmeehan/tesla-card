@@ -3,6 +3,7 @@ import {
   SCENE_NODES,
   relativeAnchors,
   deriveBusAnchor,
+  busAnchorBetweenRows,
   RafCoalescer,
   gatewaySegments,
   sceneAggregates,
@@ -84,6 +85,117 @@ describe('deriveBusAnchor — the star junction', () => {
     const anchors = { solar: r(0, 0), grid: r(200, 0), [BUS_NODE_ID]: r(9999, 9999) };
     const bus = deriveBusAnchor(anchors);
     expect(bus).toEqual({ left: 150, top: 25, width: 0, height: 0 });
+  });
+});
+
+describe('busAnchorBetweenRows — the trunk lives in the inter-row GAP, not the centroid', () => {
+  const SRC = ['solar', 'powerwall', 'grid'] as const;
+  const LOAD = ['home', 'wall_connector'] as const;
+  // Unequal-height two-row fixture: a TALL Powerwall (h=400) flanked by short
+  // Solar/Grid (h=80) over a short load row at top=500. Source span 0..400, load
+  // span 500..580 — a clean 400→500 gap. This is the geometry that breaks the
+  // centroid: its cy is dragged DOWN by the tall Powerwall INTO the source span.
+  const twoRow: Record<string, RectLike> = {
+    solar: r(0, 0, 100, 80),
+    powerwall: r(140, 0, 100, 400),
+    grid: r(280, 0, 100, 80),
+    home: r(70, 500, 100, 80),
+    wall_connector: r(210, 500, 100, 80),
+  };
+  const MAX_BOTTOM = 400; // max(source top+height) = Powerwall bottom
+  const MIN_TOP = 500; //    min(load top)        = load row top
+
+  test('two-row unequal heights — DISCRIMINATING: old centroid sits over a source card, new top in the gap', () => {
+    const centroid = deriveBusAnchor(twoRow)!;
+    const bus = busAnchorBetweenRows(twoRow, SRC, LOAD)!;
+    // The BUG: the old centroid cy falls INSIDE the source row's vertical span —
+    // specifically within the tall Powerwall card (top 0 .. bottom 400) — so the
+    // 6.6 trunk drew over it.
+    expect(centroid.top).toBeGreaterThanOrEqual(twoRow.powerwall.top);
+    expect(centroid.top).toBeLessThanOrEqual(twoRow.powerwall.top + twoRow.powerwall.height);
+    // The FIX: the new top lands strictly in the inter-row gap (maxBottom..minTop).
+    expect(bus.top).toBeGreaterThan(MAX_BOTTOM);
+    expect(bus.top).toBeLessThan(MIN_TOP);
+    expect(bus.top).toBe((MAX_BOTTOM + MIN_TOP) / 2); // 450 — the channel centre
+    // left preserved from the centroid (the only field axis:'y' reads); zero-size.
+    expect(bus.left).toBe(centroid.left);
+    expect(bus.width).toBe(0);
+    expect(bus.height).toBe(0);
+  });
+
+  test('single-row (only sources anchored) → honest centroid', () => {
+    const anchors = { solar: r(0, 0, 100, 80), powerwall: r(140, 0, 100, 400) };
+    expect(busAnchorBetweenRows(anchors, SRC, LOAD)).toEqual(deriveBusAnchor(anchors));
+  });
+
+  test('single-row (only loads anchored) → honest centroid', () => {
+    const anchors = { home: r(70, 500, 100, 80), wall_connector: r(210, 500, 100, 80) };
+    expect(busAnchorBetweenRows(anchors, SRC, LOAD)).toEqual(deriveBusAnchor(anchors));
+  });
+
+  test('rows overlap (maxBottom >= minTop, mid-layout) → honest centroid, never a line inside a card', () => {
+    const anchors: Record<string, RectLike> = {
+      ...twoRow,
+      home: r(70, 100, 100, 80), // load top 100 is ABOVE the Powerwall bottom 400
+      wall_connector: r(210, 100, 100, 80),
+    };
+    expect(busAnchorBetweenRows(anchors, SRC, LOAD)).toEqual(deriveBusAnchor(anchors));
+  });
+
+  test('non-finite rect is DROPPED (empty ≠ zero) — gap computed from the remaining finite rects', () => {
+    const anchors: Record<string, RectLike> = {
+      ...twoRow,
+      powerwall: r(140, 0, 100, NaN), // unmeasured height → dropped, not read as 0
+    };
+    const bus = busAnchorBetweenRows(anchors, SRC, LOAD)!;
+    // Powerwall dropped ⇒ maxBottom = max(solar 80, grid 80) = 80; minTop = 500.
+    expect(bus.top).toBe((80 + 500) / 2); // 290 — finite gap despite a NaN-cornered centroid
+    expect(Number.isFinite(bus.top)).toBe(true);
+  });
+
+  test('finite all-zeros / unlaid-out rect slips past the finite-filter but the OVERLAP guard catches it (distinct from NaN)', () => {
+    // An in-DOM-but-not-yet-laid-out child returns {0,0,0,0} — FINITE, so the
+    // Number.isFinite filter keeps it. minTop then collapses to 0 ≤ maxBottom →
+    // overlap guard → honest centroid. Proves the guard is the safety net the
+    // finite-filter alone is NOT, and that the result is a clean centroid (no NaN).
+    const anchors: Record<string, RectLike> = {
+      ...twoRow,
+      home: { left: 0, top: 0, width: 0, height: 0 },
+    };
+    const bus = busAnchorBetweenRows(anchors, SRC, LOAD)!;
+    expect(bus).toEqual(deriveBusAnchor(anchors));
+    expect(Number.isFinite(bus.top)).toBe(true);
+  });
+
+  test('no anchors → undefined (same as deriveBusAnchor — no bus drawn)', () => {
+    expect(busAnchorBetweenRows({}, SRC, LOAD)).toBeUndefined();
+  });
+
+  test('a present vehicle cell does NOT move the gap line (in neither row, excluded from the centroid)', () => {
+    const withVeh: Record<string, RectLike> = { ...twoRow, [VEHICLE_NODE_ID]: r(350, 500, 100, 80) };
+    expect(busAnchorBetweenRows(withVeh, SRC, LOAD)).toEqual(busAnchorBetweenRows(twoRow, SRC, LOAD));
+  });
+
+  test('integration (axis:x): gatewaySegments cross lands strictly between source max-bottom and load min-top', () => {
+    const model = topology({ solar: 3, powerwall: -1, grid: 2, home: 3, wall_connector: 1 });
+    const anchors: Record<string, RectLike> = { ...twoRow };
+    anchors[BUS_NODE_ID] = busAnchorBetweenRows(anchors, SRC, LOAD)!;
+    const segs = gatewaySegments(model, anchors, { axis: 'x' });
+    expect(segs.length).toBeGreaterThan(0);
+    for (const s of segs) {
+      expect(s.cross).toBeGreaterThan(MAX_BOTTOM);
+      expect(s.cross).toBeLessThan(MIN_TOP);
+    }
+  });
+
+  test('integration (axis:y, phone): cross is unchanged from the centroid x — the corrected top is inert', () => {
+    const model = topology({ solar: 3, powerwall: -1, grid: 2, home: 3, wall_connector: 1 });
+    const centroid = deriveBusAnchor(twoRow)!;
+    const anchors: Record<string, RectLike> = { ...twoRow };
+    anchors[BUS_NODE_ID] = busAnchorBetweenRows(anchors, SRC, LOAD)!;
+    const segs = gatewaySegments(model, anchors, { axis: 'y' });
+    expect(segs.length).toBeGreaterThan(0);
+    for (const s of segs) expect(s.cross).toBeCloseTo(centroid.left, 6);
   });
 });
 

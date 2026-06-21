@@ -123,6 +123,56 @@ export function deriveBusAnchor(
 }
 
 /**
+ * The CORRECTED Gateway-trunk cross anchor: place the horizontal bus in the
+ * inter-row GAP, not at the centroid of card centres (the 6.6 bug). The centroid
+ * (`deriveBusAnchor`) only equals the inter-row gap when card heights and per-row
+ * counts are symmetric; in the real Scene they are NOT (Powerwall ≫ Solar; 3
+ * sources vs 2 counted loads, the vehicle cell excluded from the centroid yet
+ * sitting in the load row) — so the centroid is pulled UP into the source row and
+ * the trunk draws over a source card. Instead, target the channel centre: midway
+ * between the source row's lowest BOTTOM edge (`max(top+height)`, furthest down)
+ * and the load row's highest TOP edge (`min(top)`, furthest up).
+ *
+ * ONE anchor serves BOTH orientations with no per-axis branch at the call site,
+ * because `gatewaySegments` reads only ONE field per axis (`my-home.ts` cross
+ * derivation): `axis:'x'` reads `top` (the gap line — CORRECTED here); `axis:'y'`
+ * reads `left` (the centroid x — PRESERVED from `deriveBusAnchor`, already correct
+ * for full-width stacked phone cards). The field that is "garbage" on a given axis
+ * (`top` on `y`, `left`/`width` on `x`) is never read on that axis, so a zero-size
+ * rect carrying two independent coordinates is safe. The trunk's along-axis SPAN
+ * comes from the node taps + `trunkEnd`, never from this anchor.
+ *
+ * Every guard degrades to the HONEST centroid — "never NaN, never worse than
+ * today": no anchors → `undefined`; a single row (one list empties) → centroid;
+ * rows overlapping / not yet two clean rows (`maxBottom >= minTop`) → centroid
+ * (never emit a gap line inside a card or above the source bottom). Honors the
+ * "empty ≠ zero / drop-not-zero" discipline: a non-finite rect is DROPPED via
+ * `Number.isFinite` (never read as `0`). NB the finite-filter catches only
+ * non-finite coords — a finite all-zeros rect from an in-DOM-but-unlaid-out child
+ * (`getBoundingClientRect()` → `{0,0,0,0}`) slips PAST it, but the overlap guard
+ * is the safety net: an unlaid-out load at `top≈0` collapses `minTop→0 ≤ maxBottom`
+ * → centroid; an unlaid-out source at `bottom≈0` is simply ignored by `max(...)`.
+ */
+export function busAnchorBetweenRows(
+  anchors: Readonly<Record<string, RectLike>>,
+  sourceIds: readonly string[],
+  loadIds: readonly string[]
+): RectLike | undefined {
+  const centroid = deriveBusAnchor(anchors); // excludes bus + vehicle already
+  if (!centroid) return undefined;
+  // "empty ≠ zero": drop a non-finite / unlaid-out rect — never read it as 0.
+  const finite = (r: RectLike | undefined): r is RectLike =>
+    !!r && Number.isFinite(r.top) && Number.isFinite(r.height);
+  const bottoms = sourceIds.map((id) => anchors[id]).filter(finite).map((r) => r.top + r.height);
+  const tops = loadIds.map((id) => anchors[id]).filter(finite).map((r) => r.top);
+  if (!bottoms.length || !tops.length) return centroid; // single-row / no-DOM → centroid
+  const maxBottom = Math.max(...bottoms);
+  const minTop = Math.min(...tops);
+  if (maxBottom >= minTop) return centroid; // rows overlap / mid-layout → honest centroid
+  return { left: centroid.left, top: (maxBottom + minTop) / 2, width: 0, height: 0 };
+}
+
+/**
  * A tiny, dependency-free COALESCING scheduler: collapse a burst of reflow
  * callbacks into ONE rAF-aligned fire. A single pending `requestAnimationFrame`
  * handle — `schedule` is idempotent within a frame (extra calls while one is

@@ -26,7 +26,7 @@ import { edgeVisual, NODE_COLOR, NODE_ICON } from '../flow/renderer';
 import { computeBalance } from '../flow/balance';
 import {
   relativeAnchors,
-  deriveBusAnchor,
+  busAnchorBetweenRows,
   RafCoalescer,
   gatewaySegments,
   selfPowered,
@@ -332,7 +332,10 @@ export class TcMyHome extends LitElement implements LovelaceCard {
       if (role) abs[role] = cell.getBoundingClientRect();
     });
     const rel = relativeAnchors(container, abs);
-    const bus = deriveBusAnchor(rel);
+    // Story-fix (gateway-bus-placement): place the trunk in the inter-row GAP, not
+    // at the centroid of card centres (which the tall Powerwall pulls up into the
+    // source row). Degrades to the centroid for every degenerate geometry.
+    const bus = busAnchorBetweenRows(rel, SOURCE_ROW, LOAD_ROW);
     if (bus) rel[BUS_NODE_ID] = bus;
     this._bus.setAnchors(rel);
     // Story 6.6: cache the relativized anchors for the Gateway overlay.
