@@ -72,11 +72,11 @@ async function mountScene(page: Page, opts: SceneOpts = {}): Promise<void> {
 
 const scene = (page: Page) => page.locator('tc-my-home');
 // The ENERGY ecosystem cells/legs only — the shared 6.6/6.7 assertions are about the
-// five flow nodes, so they exclude the Story-8.5 vehicle cell (an inline
-// `.scene-cell[data-node="vehicle"]` appended to the load row) + its WC→Vehicle
-// overlay leg (`.gw-leg[data-role="vehicle"]`). The vehicle is asserted directly by
-// those attributes in the Story-8.5 block below (mirrors the jsdom suite's
-// `:not([data-node="vehicle"])` scoping).
+// five flow nodes, so they exclude the Story-8.5/8.9 vehicle cell (a
+// `.scene-cell[data-node="vehicle"]` in its own `.vehicle-row` band since Story 8.9) +
+// its WC→Vehicle overlay leg (`.gw-leg[data-role="vehicle"]`, now an orthogonal drop).
+// The vehicle is asserted directly by those attributes in the Story-8.5/8.9 block below
+// (mirrors the jsdom suite's `:not([data-node="vehicle"])` scoping).
 const cells = (page: Page) => scene(page).locator('.scene-cell:not([data-node="vehicle"])');
 const legs = (page: Page) => scene(page).locator('.gw-leg:not([data-role="vehicle"])');
 const trunk = (page: Page) => scene(page).locator('.gw-trunk-base');
@@ -543,9 +543,10 @@ test.describe('tc-my-home Scene — Gateway bus, ribbon, focus & reflow (6.6)', 
 // WC→Vehicle overlay edge consume; the anchor exclusion; the slice-gate). But
 // jsdom returns ZERO-sized rects and applies NO stylesheet, so it cannot prove the
 // things ONLY a real layout engine + a real interaction produce: the vehicle cell
-// laid out as the SIXTH card LAST in the packed load row with a real box, the
-// WC→Vehicle leg drawn at LIVE `getBoundingClientRect()` anchors (WC card →
-// vehicle card, left→right), and the focus coupling as REAL computed opacity
+// laid out as the full embedded card in its OWN full-width row BELOW the load row
+// (Story 8.9) with a real box, the WC→Vehicle leg drawn at LIVE
+// `getBoundingClientRect()` anchors as an orthogonal DROP (WC card bottom → down →
+// the band's top-centre), and the focus coupling as REAL computed opacity
 // (vehicle ⇄ wall_connector light; the rest dim). This spec is that proof, under
 // the auto console-error guard. Entity ids are matched by FUNCTION-SLUG substring
 // (never inlined), mirroring `data/energy`.
@@ -563,9 +564,9 @@ test.describe('tc-my-home Scene — Story 8.5 vehicle node (live layout)', () =>
     await demo.open(AWAKE.open);
   });
 
-  // ── AC1 — the vehicle is the sixth, packed load-row cell with a REAL box ───────
+  // ── AC1 — the vehicle is the full embedded card in its OWN full-width row (Story 8.9) ─
 
-  test('AC1 — a present car renders a compact vehicle cell LAST in the load row (real geometry)', async ({
+  test('AC1 — a present car renders the detailed tesla-card in its own row BELOW the load row (real geometry)', async ({
     page,
   }) => {
     await mountScene(page);
@@ -581,28 +582,36 @@ test.describe('tc-my-home Scene — Story 8.5 vehicle node (live layout)', () =>
     expect(box!.width).toBeGreaterThan(0);
     expect(box!.height).toBeGreaterThan(0);
 
-    // It is the LAST cell of the packed load row (after Home · Wall Connector) — no
-    // ghost cell, and laid out to the RIGHT of the Wall Connector on the SAME row.
-    const lastLoadNode = await scene(page)
-      .locator('.load-row .scene-cell')
-      .evaluateAll((cs) => (cs.at(-1) as HTMLElement)?.dataset.node);
-    expect(lastLoadNode).toBe('vehicle');
+    // It is NOT a load-row cell — it lives in its own `.vehicle-row` band, which follows
+    // the load row in document order (Story 8.9; reverses the 8.5 load-row placement).
+    await expect(scene(page).locator('.load-row .scene-cell[data-node="vehicle"]')).toHaveCount(0);
+    await expect(scene(page).locator('.vehicle-row .scene-cell[data-node="vehicle"]')).toHaveCount(1);
+    const rowOrder = await scene(page)
+      .locator('.scene-grid > div')
+      .evaluateAll((ds) => (ds as HTMLElement[]).map((d) => d.className));
+    expect(rowOrder.indexOf('vehicle-row')).toBeGreaterThan(rowOrder.indexOf('load-row'));
 
     const geo = await scene(page).evaluate((el) => {
       const root = (el as HTMLElement).shadowRoot!;
       const rect = (sel: string) => {
         const r = root.querySelector(sel)!.getBoundingClientRect();
-        return { cx: r.left + r.width / 2, top: Math.round(r.top) };
+        return { cx: r.left + r.width / 2, top: Math.round(r.top), bottom: Math.round(r.bottom), height: r.height };
       };
       return { veh: rect('.scene-cell[data-node="vehicle"]'), wc: rect('.scene-cell[data-node="wall_connector"]') };
     });
-    expect(geo.veh.cx).toBeGreaterThan(geo.wc.cx); // vehicle sits to the right of the WC
-    expect(Math.abs(geo.veh.top - geo.wc.top)).toBeLessThanOrEqual(2); // same load row
+    // The vehicle band sits BELOW the load row: its top clears the WC card's bottom edge
+    // (a genuinely separate row, not the old beside-the-WC placement).
+    expect(geo.veh.top).toBeGreaterThan(geo.wc.top);
+    expect(geo.veh.top).toBeGreaterThanOrEqual(geo.wc.bottom);
+    // The band is centred while the load row holds Home + WC centred as a pair, so the
+    // WC is RIGHT-of-centre — i.e. the vehicle's centre is now LEFT of the WC's centre.
+    expect(geo.veh.cx).toBeLessThan(geo.wc.cx);
 
-    // Compact read: the vehicle name + a live battery %.
-    const txt = (await vehCell(page).textContent()) ?? '';
-    expect(txt).toContain('Model Y');
-    expect(txt).toContain('72'); // battery_level (awake fixture)
+    // It reuses the detailed `tesla-card` — the rich hero renders inside the cell
+    // (a shadow-piercing text match; the battery/charge reads are covered by the hero
+    // suite). The name is the most stable single-node text.
+    await expect(vehCell(page).locator('tesla-card')).toHaveCount(1);
+    await expect(vehCell(page).getByText('Model Y').first()).toBeVisible();
   });
 
   // ── AC2 — the WC edge IS the car-charging edge, drawn at LIVE anchors ──────────
@@ -619,20 +628,33 @@ test.describe('tc-my-home Scene — Story 8.5 vehicle node (live layout)', () =>
     await expect(vehLeg(page).locator('.gw-leg-base')).toHaveCount(1);
     await expect(vehLeg(page).locator('.sb-flow')).toHaveCount(1); // active ⇒ dash
 
-    const txt = (await vehCell(page).textContent()) ?? '';
-    expect(txt).toMatch(/Charging/i);
-    expect(txt).toMatch(/\d+\.\d+\s*kW/); // the agreed magnitude carries its unit
+    // The embedded card's hero shows the SAME charge read (one wcVehicleEdge source),
+    // so the cell badge and the overlay edge agree by construction.
+    await expect(vehCell(page).getByText(/charging/i).first()).toBeVisible();
 
-    // The base line runs WC → vehicle (left → right) across a real, non-zero span —
-    // proof it consumed live geometry (jsdom would collapse both ends onto 0).
-    const line = await vehLeg(page)
+    // Story 8.9: the base is now an orthogonal DROP polyline (WC bottom → down → across
+    // to the band's top-centre), not a horizontal line. Parse its `points` and prove it
+    // dropped DOWN across a real, non-zero vertical span — proof it consumed live
+    // geometry (jsdom would collapse every vertex onto 0).
+    const pts = await vehLeg(page)
       .locator('.gw-leg-base')
-      .evaluate((l) => ({
-        x1: Number(l.getAttribute('x1')),
-        x2: Number(l.getAttribute('x2')),
-      }));
-    expect(line.x2).toBeGreaterThan(line.x1); // points toward the vehicle (to the right)
-    expect(Math.abs(line.x2 - line.x1)).toBeGreaterThan(20); // a real WC→car span
+      .evaluate((l) =>
+        (l.getAttribute('points') ?? '')
+          .trim()
+          .split(/\s+/)
+          .map((p) => {
+            const [x, y] = p.split(',').map(Number);
+            return { x, y };
+          })
+      );
+    expect(pts.length).toBe(3); // start (WC bottom) · corner (band top level) · end (band top-centre)
+    const [start, corner, end] = pts;
+    // First segment is a pure vertical drop: x constant, y increases (downward).
+    expect(Math.abs(corner.x - start.x)).toBeLessThanOrEqual(1);
+    expect(corner.y).toBeGreaterThan(start.y);
+    expect(corner.y - start.y).toBeGreaterThan(20); // a real WC→band drop
+    // Second segment is the horizontal run to the centred card top (no diagonal).
+    expect(Math.abs(end.y - corner.y)).toBeLessThanOrEqual(1);
   });
 
   // ── AC1/AC2 — focus coupling as REAL computed opacity (jsdom can't see this) ───
@@ -715,23 +737,20 @@ test.describe('tc-my-home Scene — Story 8.5 vehicle: half-alive (asleep) is ca
     await demo.open(ASLEEP.open);
   });
 
-  test('AC3 — asleep car: battery —, an "updated … ago" stamp, never a false "Charging"', async ({
+  test('AC3 — asleep car: the embedded detailed card degrades calm (Asleep), the WC→Vehicle edge is quiescent', async ({
     page,
   }) => {
     await mountScene(page);
     await waitForTrunk(page);
 
-    // The cell still renders (an asleep battery is `unavailable`, which IS present).
+    // The cell still renders (an asleep battery is `unavailable`, which IS present),
+    // REUSING the detailed `tesla-card` — which owns its own calm asleep read.
     await expect(vehCell(page)).toHaveCount(1);
-    await expect(vehCell(page).locator('.veh-pct')).toHaveText('—'); // no fabricated %
+    await expect(vehCell(page).locator('tesla-card')).toHaveCount(1);
+    await expect(vehCell(page).getByText(/asleep/i).first()).toBeVisible();
 
-    // An honest last-known stamp (de-emphasized copy), never a live charge.
-    const stamp = vehCell(page).locator('.veh-age.tc-stale-copy');
-    await expect(stamp).toHaveCount(1);
-    expect((await stamp.textContent()) ?? '').toMatch(/updated/i);
-    expect((await vehCell(page).textContent()) ?? '').not.toMatch(/Charging/i);
-
-    // The WC→Vehicle edge degrades to its calm read — no animated `sb-flow` dash.
+    // The WC→Vehicle edge degrades to its calm read — no animated `sb-flow` dash
+    // (the scene-level "never a false charge").
     await expect(vehLeg(page).locator('.sb-flow')).toHaveCount(0);
   });
 });

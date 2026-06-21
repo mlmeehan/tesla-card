@@ -84,10 +84,10 @@ async function mount(
   return el;
 }
 const sr = (el: Scene) => el.shadowRoot!;
-// The registered ECOSYSTEM child cards only — excludes the Story-8.5 vehicle cell
-// (an inline `.scene-cell[data-node="vehicle"]` whose firstElementChild is a
-// `<div class="surface">`, not a `tc-*` element). The vehicle cell is asserted
-// directly by its `data-node` in the Story-8.5 suite below.
+// The registered ECOSYSTEM child cards only — excludes the Story-8.5/8.9 vehicle cell
+// (a `.scene-cell[data-node="vehicle"]` in its OWN `.vehicle-row` band, embedding the
+// full `tesla-card`, not a `tc-*` ecosystem element). The vehicle cell is asserted
+// directly by its `data-node` in the Story-8.5/8.9 suite below.
 const cellTags = (el: Scene): string[] =>
   [...sr(el).querySelectorAll<HTMLElement>('.scene-cell:not([data-node="vehicle"])')].map(
     (c) => (c.firstElementChild?.tagName ?? '').toLowerCase()
@@ -487,7 +487,9 @@ function recomputeAtWidth(el: Scene, width: number): void {
   (el as unknown as { _recomputeGeometry(): void })._recomputeGeometry();
 }
 const sourceRowCells = (el: Scene): Element[] => [...sr(el).querySelectorAll('.source-row .scene-cell')];
-// Energy LOAD cards only — excludes the Story-8.5 vehicle cell appended to the load row.
+// Energy LOAD cards only. Since Story 8.9 the vehicle is NOT a load-row cell (it lives
+// in its own `.vehicle-row` band), so the `:not([data-node="vehicle"])` is now defensive
+// — the `.load-row` genuinely holds only Home · Wall Connector.
 const loadRowCells = (el: Scene): Element[] =>
   [...sr(el).querySelectorAll('.load-row .scene-cell:not([data-node="vehicle"])')];
 
@@ -509,8 +511,8 @@ describe('Story 6.7 — the exhaustive minimal→full topology sweep (AC1, AC2)'
       const el = await mount(subsetHass(roles));
       // The present cells, in canonical (sources-then-loads) order — and ONLY them.
       expect(cellTags(el)).toEqual(present.map((r) => TAG[r]));
-      // Count the ECOSYSTEM cells only (the awake fixture's vehicle cell is appended
-      // to the load row in every subset — it is asserted separately in Story 8.5).
+      // Count the ECOSYSTEM cells only (the awake fixture's vehicle cell renders in its
+      // own `.vehicle-row` band in every subset — it is asserted separately in Story 8.9).
       expect(sr(el).querySelectorAll('.scene-cell:not([data-node="vehicle"])')).toHaveLength(
         present.length
       );
@@ -646,10 +648,12 @@ describe('Story 6.7 — half-alive Scene is the normal calm state (AC3)', () => 
 });
 
 // ═══════════════════════════════════════════════════════════════════════════
-// Story 8.5 — the vehicle node: a compact, present-gated load-row cell + the
-// WC→Vehicle overlay edge, both fed by the ONE wcVehicleEdge view (AC2 agree-by-
-// construction); calm-not-broken when asleep (AC3); omitted with its edge when
-// the car is absent (AC4); and NO new registered element (AC5).
+// Story 8.5/8.9 — the vehicle node: a present-gated cell in its OWN full-width
+// `.vehicle-row` band (Story 8.9) that REUSES the detailed `tesla-card` (the
+// information-rich vehicle surface) + the WC→Vehicle overlay edge (an orthogonal drop)
+// fed by the ONE wcVehicleEdge view (AC2 agree-by-construction); the embedded card owns
+// its own calm-not-broken asleep read (AC3); omitted with its edge when the car is absent
+// (AC4); and NO NEW registered element — it reuses the existing `tesla-card` (AC5).
 // ═══════════════════════════════════════════════════════════════════════════
 const vehCell = (el: Scene): Element | null =>
   sr(el).querySelector('.scene-cell[data-node="vehicle"]');
@@ -660,48 +664,51 @@ function batteryId(s: Record<string, HassEntity>): string {
   return resolveEntities(makeHass(s), CONFIG).battery_level;
 }
 
-describe('Story 8.5 — AC1: the vehicle is the sixth, packed load-row cell', () => {
-  test('a present car renders a compact vehicle cell LAST in the load row (no ghost cell)', async () => {
+describe('Story 8.9 — AC1: the vehicle is the full embedded card in its OWN full-width row', () => {
+  test('a present car renders the detailed tesla-card in .vehicle-row below the load row (no ghost cell)', async () => {
     const el = await mount(makeHass(states(awakeFx)));
     const veh = vehCell(el);
     expect(veh).not.toBeNull();
-    // It lives in the load row, after Home · Wall Connector.
-    const loadCells = [...sr(el).querySelectorAll('.load-row .scene-cell')];
-    expect(loadCells.at(-1)!.getAttribute('data-node')).toBe('vehicle');
-    // Compact read: name + battery % + range.
-    expect(veh!.textContent).toContain(STRINGS.hero.defaultName);
-    expect(veh!.querySelector('.veh-pct')!.textContent).toContain('72'); // battery_level
+    // It is NOT a load-row cell — it lives in its own full-width band (.vehicle-row).
+    expect(sr(el).querySelector('.load-row .scene-cell[data-node="vehicle"]')).toBeNull();
+    const band = sr(el).querySelector('.vehicle-row .scene-cell[data-node="vehicle"]');
+    expect(band).not.toBeNull();
+    expect(band).toBe(veh);
+    // The band follows the load row in document order (sources → loads → vehicle).
+    const rows = [...sr(el).querySelectorAll('.scene-grid > div')].map((d) => d.className);
+    expect(rows.indexOf('vehicle-row')).toBeGreaterThan(rows.indexOf('load-row'));
+    // It REUSES the detailed card — the registered `tesla-card` element (the full
+    // information-rich vehicle surface), exactly as the energy cells reuse `tc-*`.
+    expect(veh!.querySelector('tesla-card')).not.toBeNull();
     // Keyboard-focusable, same as the ecosystem cells.
     expect(veh!.getAttribute('tabindex')).toBe('0');
   });
 
   test('the seven-element registration contract is UNCHANGED (no new tc-vehicle element)', () => {
-    // The cell is inline markup — assert no vehicle element snuck into the registry.
+    // The vehicle reuses the EXISTING `tesla-card` element — assert no NEW vehicle
+    // element snuck into the registry (the contract is still the same seven tags).
     expect(customElements.get('tc-vehicle')).toBeUndefined();
     expect(customElements.get('tc-my-home')).toBe(TcMyHome);
   });
 });
 
 describe('Story 8.5 — AC2: the WC edge IS the car-charging edge (agree by construction)', () => {
-  test('the cell shows "Charging · N.N kW" = |wcVehicleEdge(model).kW|, and the overlay edge flows', async () => {
+  test('an active WC ⇒ the overlay edge flows (= |wcVehicleEdge(model)| — agree by construction)', async () => {
     const el = await mount(makeHass(states(awakeFx)));
     recompute(el); // populate anchors (jsdom: zero rects, but the edge still draws)
     await el.updateComplete;
     const model = (el as unknown as { _model: FlowModel })._model;
     const ch = wcVehicleEdge(model);
     expect(ch.active).toBe(true);
-    const veh = vehCell(el)!;
-    expect(veh.textContent).toContain(STRINGS.status.charging);
-    // The shown kW magnitude is the WC edge magnitude (agreement, the #1 assertion).
-    expect(veh.textContent).toContain(`${ch.kW.toFixed(1)} ${STRINGS.scene.ribbon.unit}`);
-    // The overlay edge is present AND animated (sb-flow) — agrees with the badge.
+    // The drawn WC→Vehicle edge reflects the SAME model view the embedded card's
+    // charge badge reads (one `wcVehicleEdge` source) — so they cannot disagree.
     const edge = vehEdge(el)!;
     expect(edge).not.toBeNull();
     expect(edge.querySelector('.gw-leg-base')).not.toBeNull(); // calm base always
     expect(edge.querySelector('.sb-flow')).not.toBeNull(); // active ⇒ animated dash
   });
 
-  test('a sub-deadband WC ⇒ the cell is NOT charging AND the overlay edge is base-only', async () => {
+  test('a sub-deadband WC ⇒ the overlay edge is base-only (quiescent)', async () => {
     const s = states(awakeFx);
     const wcId = energyIds(s).wc_power!;
     s[wcId].state = '0'; // WC idle → edge direction:none
@@ -710,8 +717,6 @@ describe('Story 8.5 — AC2: the WC edge IS the car-charging edge (agree by cons
     await el.updateComplete;
     const model = (el as unknown as { _model: FlowModel })._model;
     expect(wcVehicleEdge(model).active).toBe(false);
-    const veh = vehCell(el)!;
-    expect(veh.textContent).not.toContain(STRINGS.status.charging);
     const edge = vehEdge(el)!;
     expect(edge.querySelector('.gw-leg-base')).not.toBeNull(); // still a calm base
     expect(edge.querySelector('.sb-flow')).toBeNull(); // quiescent — no motion
@@ -719,7 +724,7 @@ describe('Story 8.5 — AC2: the WC edge IS the car-charging edge (agree by cons
 });
 
 describe('Story 8.5 — AC3: half-alive (asleep) is calm, not broken', () => {
-  test('asleep car: battery —, an "updated … ago" stamp, and a quiescent WC→Vehicle edge', async () => {
+  test('asleep car: the cell stays present (calm) and the WC→Vehicle edge is quiescent', async () => {
     const s = states(asleepFx);
     // Half-alive: local energy is LIVE while the car sleeps. Advance one live energy
     // stamp so referenceNow moves past the asleep battery's stamp → an honest age.
@@ -730,13 +735,11 @@ describe('Story 8.5 — AC3: half-alive (asleep) is calm, not broken', () => {
     await el.updateComplete;
     const veh = vehCell(el);
     expect(veh).not.toBeNull(); // present (battery reads 'unavailable', which IS present)
-    expect(veh!.querySelector('.veh-pct')!.textContent).toContain('—'); // no fabricated %
-    const stamp = veh!.querySelector('.veh-age');
-    expect(stamp).not.toBeNull();
-    expect(stamp!.classList.contains('tc-stale-copy')).toBe(true);
-    expect(stamp!.textContent).toContain(STRINGS.hero.updatedPrefix); // "updated Nm ago"
-    expect(veh!.textContent).not.toContain(STRINGS.status.charging); // never a false charge
-    // The WC→Vehicle edge degrades to its calm base line — no motion.
+    // The embedded detailed card owns its own calm-not-broken asleep degradation
+    // (dimmed hero silhouette + "Asleep · updated Nm ago" — proven in the hero suite).
+    // The SCENE-level invariant: the card is embedded, and the WC→Vehicle edge degrades
+    // to its calm base line — no motion, never a false charge.
+    expect(veh!.querySelector('tesla-card')).not.toBeNull();
     const edge = vehEdge(el)!;
     expect(edge.querySelector('.gw-leg-base')).not.toBeNull();
     expect(edge.querySelector('.sb-flow')).toBeNull();
@@ -775,8 +778,12 @@ describe('Story 8.5 — AC4: arbitrary-topology + the full-union slice-gate', ()
     s[bId].last_updated = FUTURE;
     el.hass = makeHass(s);
     await el.updateComplete;
-    // The cell updated — with a *_power-only gate it would have frozen at 72 (the 6.5 bug).
-    expect(vehCell(el)!.querySelector('.veh-pct')!.textContent).toContain('55');
+    // The cell re-rendered — the embedded detailed card received the NEW hass (with a
+    // *_power-only gate the slice would have frozen at 72 — the 6.5 bug).
+    const card = vehCell(el)!.querySelector('tesla-card') as unknown as {
+      hass: { states: Record<string, { state: string }> };
+    };
+    expect(card.hass.states[bId].state).toBe('55');
   });
 
   test('truly-unrelated vehicle entities (climate/doors) stay OUT of the slice (anti-thrash)', async () => {
@@ -954,7 +961,7 @@ describe('Story 8.6 — AC4: reduced-motion keeps the data — static decoration
 });
 
 describe('Story 8.6 — AC1: the WC→Vehicle pill agrees with the cell by construction', () => {
-  test('the vehicle leg pill = |wcVehicleEdge(model).kW| N.N kW = the cell "Charging · N.N kW"', async () => {
+  test('the vehicle leg pill = |wcVehicleEdge(model).kW| N.N kW (the ONE shared edge view)', async () => {
     const el = await mount(makeHass(states(awakeFx)));
     recompute(el);
     await el.updateComplete;
@@ -962,9 +969,9 @@ describe('Story 8.6 — AC1: the WC→Vehicle pill agrees with the cell by const
     const ch = wcVehicleEdge(model);
     expect(ch.active).toBe(true);
     const expected = `${Math.abs(ch.kW).toFixed(1)} ${U}`;
-    // The overlay pill and the cell badge both read the ONE wcVehicleEdge view.
+    // The overlay pill reads the ONE wcVehicleEdge view — the SAME model the embedded
+    // card's charge badge reads, so they agree by construction (no second engine).
     expect(pillTxt(vehEdge(el))).toBe(expected);
-    expect(vehCell(el)!.textContent).toContain(expected);
   });
 });
 

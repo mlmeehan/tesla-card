@@ -11,10 +11,8 @@ import {
 import { customElement, property, state, query } from 'lit/decorators.js';
 import { sharedStyles } from '../styles';
 import { STRINGS } from '../strings';
-import { entityId, formatNumber, isAsleep, num, rawState, unit } from '../helpers';
-import { ageHint, batteryGauge, formatAgeHint, icon } from '../ui';
-import { accentVar } from './ecosystem-card';
-import { normalizeChargingState } from '../data/dialect';
+import { entityId, formatNumber, isAsleep, rawState } from '../helpers';
+import { formatAgeHint, icon } from '../ui';
 import { resolveEntities } from '../data/resolve';
 import { resolveEnergyEntities, type EnergyEntities } from '../data/energy';
 import { sliceChanged } from '../data/slice';
@@ -125,6 +123,13 @@ export class TcMyHome extends LitElement implements LovelaceCard {
   /** Cache key on hass/config IDENTITY (mirrors solar.ts — keeps `hass.entities`/
    *  `hass.devices` reads inside `data/`, never bare in this element). */
   private _resolveCache?: { hass: unknown; config: TeslaCardConfig };
+
+  /** The embedded detailed vehicle card (`tesla-card`), created once and reused
+   *  across renders — the vehicle's analogue of the five embedded energy cards. */
+  private _vehDetail?: HTMLElement & { setConfig?(config: TeslaCardConfig): void; hass?: HomeAssistant };
+  /** RAW `_config` identity the embedded card was last `setConfig`'d with (NOT the
+   *  per-tick resolved cfg — see {@link _vehicleDetailCard}). */
+  private _vehDetailCfg?: TeslaCardConfig;
 
   // ── live-geometry lifecycle machinery (AR-8; no precedent in the codebase) ──
   private readonly _coalescer = new RafCoalescer();
@@ -389,10 +394,9 @@ export class TcMyHome extends LitElement implements LovelaceCard {
     // channel). The two packed, centred rows keep sources-over-loads by construction.
     const sourceCells = SOURCE_ROW.filter((role) => present.has(role)).map(cell);
     const loadCells = LOAD_ROW.filter((role) => present.has(role)).map(cell);
-    // Story 8.5: the vehicle is the SIXTH Scene card — a compact inline cell APPENDED
-    // to the packed load row (after Home · Wall Connector). Same packing discipline
-    // as Story 6.7: present-gated, no ghost cell, no template-area change.
-    if (vehiclePresent) loadCells.push(this._vehicleCell(cfg, lit));
+    // Story 8.9: the vehicle is the full embedded `tesla-card` in its OWN full-width
+    // band BELOW the load row (not a 380px load-row cell). Present-gated + packed: an
+    // absent car leaves no band (and no WC->Vehicle edge). See `.vehicle-row` below.
 
     // Layering, back-to-front: the summary RIBBON (whole-home aggregates, above the
     // cards) → the cards (each composites its own vignette internally) → ONE
@@ -406,6 +410,7 @@ export class TcMyHome extends LitElement implements LovelaceCard {
         <div class="scene-grid">
           ${sourceCells.length ? html`<div class="source-row">${sourceCells}</div>` : nothing}
           ${loadCells.length ? html`<div class="load-row">${loadCells}</div>` : nothing}
+          ${vehiclePresent ? html`<div class="vehicle-row">${this._vehicleCell(lit)}</div>` : nothing}
         </div>
         ${this._bus.empty
           ? nothing
@@ -471,81 +476,63 @@ export class TcMyHome extends LitElement implements LovelaceCard {
   }
 
   /**
-   * The compact, glanceable vehicle cell (decision (c): a telemetry READ, not the
-   * full hero — name · charge state · battery · range · honest staleness). It reuses
-   * the Hero's EXACT derivations (`isAsleep`/`num`/`ageHint`) so the in-Scene read
-   * can never disagree with the main card (AC3), and degrades calm-not-broken when
-   * asleep (`—` battery, "updated Nm ago" stamp, no false charge). It is a
-   * keyboard-focusable `scene-cell` carrying `data-node="vehicle"` so its live rect
-   * is captured by the existing geometry read — but it is NOT a registered element.
+   * The vehicle cell — the SIXTH Scene card. Like the five energy cells (which embed
+   * `tc-solar`/`tc-powerwall`/… via {@link _childCard}), it REUSES the real detailed
+   * card: the registered `tesla-card` element (hero · quick actions · panels ·
+   * commands — the full information-rich vehicle surface). The card owns its own
+   * charge/asleep degradation, so the in-Scene render agrees with the standalone card
+   * for free. The wrapper is unchanged from the energy cells: a keyboard-focusable
+   * `scene-cell` carrying `data-node="vehicle"`, whose live rect drives the existing
+   * WC→Vehicle edge anchor + focus highlight.
    */
-  private _vehicleCell(cfg: TeslaCardConfig, lit?: Set<Role>): TemplateResult {
-    const asleep = isAsleep(this.hass, cfg);
-    const ch = this._vehicleCharge(cfg);
-    // SoC/range are suppressed to `—` when asleep (never a fabricated 0/%).
-    const soc = asleep ? undefined : num(this.hass, cfg, 'battery_level');
-    const range = asleep ? undefined : num(this.hass, cfg, 'battery_range');
-    const rangeUnit = unit(this.hass, cfg, 'battery_range') || 'mi';
-    const stamp = ageHint(this.hass, cfg); // the single shared battery-backed stamp
-    const name = cfg.name ?? STRINGS.hero.defaultName;
-    const u = STRINGS.scene.ribbon.unit;
-
-    // Charging is asserted ONLY when the WC edge is active (AC2) — otherwise the
-    // discrete `charging_status` gives the plugged/parked nuance (AC2), and an asleep
-    // car reads the calm asleep word (never a false "Charging").
-    let statusWord: string;
-    let kwSub: string | undefined;
-    if (ch.active) {
-      statusWord = STRINGS.status.charging;
-      kwSub = `${formatNumber(ch.kW, 1)} ${u}`;
-    } else if (asleep) {
-      statusWord = STRINGS.status.asleep;
-    } else {
-      const cs = normalizeChargingState(rawState(this.hass, cfg, 'charging_status'));
-      statusWord =
-        cs === 'disconnected' || cs === 'unknown' ? STRINGS.status.parked : STRINGS.status.pluggedIdle;
-    }
-
-    // State-bearing aria-label (mirrors the Hero's pattern): name · state · SoC.
-    const label = `${name} · ${statusWord}${soc !== undefined ? ` · ${formatNumber(soc)}%` : ''}`;
-
+  private _vehicleCell(lit?: Set<Role>): TemplateResult {
     return html`
       <div
         class="scene-cell veh-cell ${lit?.has('vehicle') ? 'lit' : ''}"
         data-node=${VEHICLE_NODE_ID}
         tabindex="0"
-        style="--node-accent:${accentVar('green')}"
-        role="group"
-        aria-label=${label}
         @mouseenter=${() => this._focus('vehicle')}
         @mouseleave=${this._blur}
         @focusin=${() => this._focus('vehicle')}
         @focusout=${this._blur}
       >
-        <div class="surface veh-surface">
-          <div class="veh-head">
-            <span class="veh-name">${name}</span>
-            <span class="veh-state">
-              <span class="veh-dot"></span>
-              <span class="veh-word">${statusWord}</span>
-              ${kwSub
-                ? html`<span class="veh-sep">·</span><span class="veh-sub">${kwSub}</span>`
-                : nothing}
-            </span>
-          </div>
-          <div class="veh-body">
-            ${batteryGauge(soc, { charging: ch.active, height: 14 })}
-            <div class="veh-readout">
-              <span class="veh-pct">${soc !== undefined ? `${formatNumber(soc)}%` : '—'}</span>
-              <span class="veh-range">
-                ${range !== undefined ? `${formatNumber(range)} ${rangeUnit}` : '—'}
-              </span>
-            </div>
-          </div>
-          ${stamp ? html`<span class="veh-age tc-stale-copy">${stamp}</span>` : nothing}
-        </div>
+        ${this._vehicleDetailCard()}
       </div>
     `;
+  }
+
+  /**
+   * The embedded `tesla-card` instance — created ONCE and reused across renders. It is
+   * built imperatively (not a static import): `tesla-card.ts` already imports this
+   * module, so importing it back would be an import cycle, and `tesla-card` exposes no
+   * public `config` property (config goes in via the Lovelace `setConfig`). `setConfig`
+   * runs only when the RAW `_config` identity changes (a genuine YAML edit) — NEVER the
+   * per-tick resolved cfg, which HA replaces on every state change (re-`setConfig` each
+   * tick would reset the embedded card's open panel). `hass` is refreshed every render,
+   * so the card resolves its own entities and stays live exactly as a standalone card.
+   */
+  private _vehicleDetailCard(): HTMLElement {
+    let el = this._vehDetail;
+    if (!el) {
+      el = this._vehDetail = document.createElement('tesla-card') as HTMLElement & {
+        setConfig?(config: TeslaCardConfig): void;
+        hass?: HomeAssistant;
+      };
+    }
+    // `tesla-card` is defined by the bundle entry, so at render time the element is
+    // upgraded and `setConfig` is present. The guard keeps the Scene robust if it is
+    // ever loaded in isolation (a harness importing `my-home` alone, no `tesla-card`):
+    // the cell degrades to an empty element instead of throwing. `setConfig` runs only
+    // on a raw `_config` change — NOT the per-tick resolved cfg, which HA replaces on
+    // every state change (re-`setConfig` each tick would reset the card's open panel).
+    if (typeof el.setConfig === 'function' && this._vehDetailCfg !== this._config) {
+      el.setConfig(this._config);
+      this._vehDetailCfg = this._config;
+    }
+    // `hass` refreshes every render so the card stays live (a plain property set —
+    // safe even on an unupgraded element).
+    el.hass = this.hass;
+    return el;
   }
 
   // ── the summary ribbon (AC1b) ───────────────────────────────────────────────
@@ -669,15 +656,25 @@ export class TcMyHome extends LitElement implements LovelaceCard {
   }
 
   /**
-   * The WC→Vehicle overlay edge (Story 8.5, AC2/AC3): a horizontal leg from the
-   * Wall-Connector card anchor to the Vehicle card anchor — the WC's power CONTINUING
+   * The WC→Vehicle overlay edge (Story 8.5/8.9, AC2/AC3): an orthogonal DROP from the
+   * Wall-Connector card down to the Vehicle band below it — the WC's power CONTINUING
    * to the car (coloured `NODE_COLOR.wall_connector` teal so it reads as the SAME
-   * edge continuing — reinforcing "the WC edge IS the car-charging edge"). Present
-   * only when BOTH anchors exist (WC present + vehicle present). A calm base line
-   * always; when `ch.active`, an `sb-flow` dash from the SHARED {@link edgeVisual}
-   * (never a forked formula), clamped by {@link BUS_WIDTH_MAX}, + an arrowhead
-   * pointing WC→Vehicle. Reduced-motion freezes the dash (inherited from
-   * `sceneBusStyles` — no new animation source).
+   * edge continuing — reinforcing "the WC edge IS the car-charging edge"). Since 8.9
+   * the vehicle sits in its OWN full-width row below the load row (not beside the WC),
+   * so the edge drops DOWN, not across. The load row holds only Home + WC centred as
+   * a pair, so the WC is off-centre while the band is centred — `wc.cx ≠ veh.cx`
+   * essentially always — and the route is an L: a vertical drop from the WC card's
+   * bottom-centre to the band's top level, then a short horizontal run to the band's
+   * top-centre (so the landing reads as joining the card, not floating off its edge).
+   * Vertical-first orthogonal segments only (never a diagonal); the `sb-flow` dash
+   * rides the vertical drop. Present only when BOTH anchors exist (WC + vehicle). A
+   * calm base line always; when `ch.active`, an `sb-flow` dash from the SHARED
+   * {@link edgeVisual} (never a forked formula), clamped by {@link BUS_WIDTH_MAX}, +
+   * an arrowhead pointing DOWN into the vehicle. Reduced-motion freezes the dash
+   * (inherited from `sceneBusStyles` — no new animation source). At phone width
+   * (`_axis === 'y'`, the ≤540px reflow where the row-gap collapses to 16px) the
+   * pill + terminals + arrow cannot fit the gap without spilling into the cards, so
+   * the decorations are suppressed and only the base + flow drop is drawn.
    */
   private _vehicleEdge(
     anchors: Readonly<Record<string, RectLike>>,
@@ -687,38 +684,52 @@ export class TcMyHome extends LitElement implements LovelaceCard {
     const wc = anchors['wall_connector'];
     const veh = anchors[VEHICLE_NODE_ID];
     if (!wc || !veh) return svg``; // both anchors required (WC + vehicle present)
-    // Horizontal leg at the cards' shared cross level (the battery-readout level):
-    // from the WC card's vehicle-facing edge to the vehicle card's WC-facing edge.
-    const y = (wc.top + wc.height / 2 + veh.top + veh.height / 2) / 2;
-    const wcCx = wc.left + wc.width / 2;
-    const vehCx = veh.left + veh.width / 2;
-    const start = { x: wcCx < vehCx ? wc.left + wc.width : wc.left, y };
-    const end = { x: wcCx < vehCx ? veh.left : veh.left + veh.width, y };
+    // The L drop: from the WC card's bottom-centre, straight DOWN to the vehicle
+    // band's top level, then ACROSS to the band's top-centre (the WC is off-centre,
+    // the band centred, so the horizontal run rejoins the centred card). All segments
+    // are axis-aligned — no diagonal — matching the Gateway bus language.
+    const start = { x: wc.left + wc.width / 2, y: wc.top + wc.height }; // WC bottom-centre
+    const corner = { x: start.x, y: veh.top }; // bend at the band's top level
+    const end = { x: veh.left + veh.width / 2, y: veh.top }; // band top-centre
     const color = NODE_COLOR.wall_connector;
+    // The flow dash rides the vertical DROP + the short cross run (one polyline along
+    // the whole L); orientation-independent (it animates `stroke-dashoffset`), so it
+    // flows correctly DOWN the drop. The arrow sits on the drop pointing DOWN, parked
+    // at its midpoint so it clears BOTH terminals (the WC-bottom start above and the
+    // band-top landing across the bend) — it rides with the decorations (hidden at
+    // phone width, where the 16px gap can't hold a 9px head).
+    const dropMid = { x: start.x, y: (start.y + corner.y) / 2 };
     const flow = ch.active
-      ? svg`
-          <line
+      ? svg`<polyline
             class="sb-flow"
             style="stroke:${color};animation-duration:${edgeVisual(ch.kW).durSec}s"
             stroke-width=${Math.min(BUS_WIDTH_MAX, edgeVisual(ch.kW).width)}
-            x1=${start.x} y1=${start.y} x2=${end.x} y2=${end.y}
-          ></line>
-          ${this._arrow({ x: (start.x + end.x) / 2, y }, end, color)}
-        `
+            fill="none"
+            points="${start.x},${start.y} ${corner.x},${corner.y} ${end.x},${end.y}"
+          ></polyline>`
       : nothing;
-    // Story 8.6: the WC→Vehicle leg is horizontal and touches NO trunk — so it gets
-    // TWO terminals (one per card end) + one pill, and NO tap. The pill shows
+    const arrow = ch.active ? this._arrow(dropMid, corner, color) : nothing;
+    // Story 8.6/8.9: the WC→Vehicle leg touches NO trunk — so it gets TWO terminals
+    // (WC bottom + band top) + one pill, and NO tap. The pill shows
     // `wcVehicleEdge(model).kW` (= `ch.kW`), agreeing by construction with the cell's
-    // "Charging · N.N kW" (both read the one `wcVehicleEdge`). All inside the leg
-    // group so the widened (Role) focus coupling dims/lights them.
-    const mid = { x: (start.x + end.x) / 2, y };
+    // "Charging · N.N kW" (both read the one `wcVehicleEdge`). The decorations carry a
+    // `gw-veh-dec` class so the phone @media can HIDE them: at ≤540px the row-gap
+    // collapses to 16px (vs 150px desktop) — far too tight for a 26px pill + two
+    // terminals + the arrow without spilling into the cards above/below — so they are
+    // hidden there (CSS, not an axis branch: jsdom's zero-width recompute reports the
+    // phone axis even on the desktop assertions). All inside the leg group so the
+    // widened (Role) focus coupling dims/lights them.
+    const pillAt = { x: (corner.x + end.x) / 2, y: corner.y }; // along the short cross run
     return svg`
       <g class="gw-leg ${lit?.has('vehicle') ? 'on' : ''}" data-role=${VEHICLE_NODE_ID}>
-        <line class="gw-leg-base" style="stroke:${color}" x1=${start.x} y1=${start.y} x2=${end.x} y2=${end.y}></line>
+        <polyline class="gw-leg-base" style="stroke:${color}" fill="none" points="${start.x},${start.y} ${corner.x},${corner.y} ${end.x},${end.y}"></polyline>
         ${flow}
-        ${this._terminal(start, color)}
-        ${this._terminal(end, color)}
-        ${this._pill(mid, color, `${formatNumber(Math.abs(ch.kW), 1)} ${STRINGS.scene.ribbon.unit}`)}
+        <g class="gw-veh-dec">
+          ${arrow}
+          ${this._terminal(start, color)}
+          ${this._terminal(end, color)}
+          ${this._pill(pillAt, color, `${formatNumber(Math.abs(ch.kW), 1)} ${STRINGS.scene.ribbon.unit}`)}
+        </g>
       </g>
     `;
   }
@@ -1055,84 +1066,19 @@ export class TcMyHome extends LitElement implements LovelaceCard {
         min-width: 0;
       }
 
-      /* ── The compact vehicle cell (Story 8.5) — the sixth Scene card, appended to
-         the packed load row. It is INLINE markup (no registered element), so it
-         provides its own surface chrome (the gate has no closed-set allowlist; this
-         does NOT re-declare the single sanctioned surface gradient — it inherits it
-         from the .surface recipe). Layout is scene-local; every var carries its
-         DESIGN.md fallback. */
-      .veh-cell .veh-surface {
-        padding: var(--tc-space-4, 16px);
-        display: flex;
-        flex-direction: column;
-        gap: var(--tc-space-3, 12px);
-        height: 100%;
-        box-sizing: border-box;
+      /* Story 8.9: the vehicle is the full embedded tesla-card in its OWN full-width
+         band below the load row. The band fills the column; the card fills up to its
+         own design width (the tesla-card host caps at 1080px) and is centred via
+         margin-inline, never crushed to a 380px track nor smeared edge-to-edge. The
+         card brings its own surface chrome + styles (shadow DOM). */
+      .vehicle-row {
+        width: 100%;
       }
-      .veh-head {
-        display: flex;
-        flex-direction: column;
-        gap: var(--tc-space-1, 4px);
-        min-width: 0;
-      }
-      .veh-name {
-        font-family: var(--tc-font-display, var(--tc-font, ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif));
-        font-size: var(--tc-fs-name, 21px);
-        font-weight: var(--tc-fw-name, 750);
-        letter-spacing: -0.01em;
-        color: var(--tc-text, #f1f5f9);
-      }
-      .veh-state {
-        display: inline-flex;
-        align-items: center;
-        gap: 6px;
-        font-size: var(--tc-fs-body, 14px);
-        color: var(--tc-text-dim, #9aa7b8);
-        flex-wrap: wrap;
-      }
-      /* The charging-cue dot follows the cell accent (charging green by default). */
-      .veh-dot {
-        width: 8px;
-        height: 8px;
-        border-radius: 50%;
-        flex: 0 0 auto;
-        background: var(--node-accent, var(--tc-green, #34d399));
-        box-shadow: 0 0 8px currentColor;
-      }
-      .veh-word {
-        font-weight: var(--tc-fw-body, 600);
-        color: var(--tc-text, #f1f5f9);
-      }
-      .veh-sep {
-        opacity: 0.5;
-      }
-      .veh-body {
-        display: flex;
-        flex-direction: column;
-        gap: var(--tc-space-2, 8px);
-      }
-      .veh-readout {
-        display: flex;
-        align-items: baseline;
-        justify-content: space-between;
-        gap: 12px;
-      }
-      .veh-pct {
-        font-family: var(--tc-font-display, var(--tc-font, ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif));
-        font-size: var(--tc-fs-battery, 26px);
-        font-weight: var(--tc-fw-battery, 760);
-        letter-spacing: -0.02em;
-        color: var(--tc-text, #f1f5f9);
-        line-height: 1;
-      }
-      .veh-range {
-        font-size: var(--tc-fs-body, 14px);
-        font-weight: var(--tc-fw-body, 600);
-        color: var(--tc-text-dim, #9aa7b8);
-      }
-      /* Honest staleness stamp — colour via the shared .tc-stale-copy recipe. */
-      .veh-age {
-        font-size: var(--tc-fs-label, 11.5px);
+      .veh-cell > tesla-card {
+        display: block;
+        width: 100%;
+        max-width: 1080px;
+        margin-inline: auto;
       }
       /* Keyboard focus ring — the 2px blue outline (EXPERIENCE.md:175 a11y floor),
          never the hairline border alone. */
@@ -1237,6 +1183,13 @@ export class TcMyHome extends LitElement implements LovelaceCard {
           column-gap: 0;
           row-gap: var(--tc-space-4, 16px);
           width: 100%;
+        }
+        /* Story 8.9: the WC->Vehicle drop's decorations (the two terminals, the kW
+           pill, the down-arrow) cannot fit the 16px phone gap without spilling into
+           the cards above/below — exactly the overlap this story removes. Hide them
+           at phone width; the base drop + flow dash stay as the calm connector. */
+        .gw-veh-dec {
+          display: none;
         }
       }
     `,
