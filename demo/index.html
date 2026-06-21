@@ -3,6 +3,9 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <!-- Empty-data favicon: suppress the browser's automatic /favicon.ico request so
+         a clean Scene logs ZERO console errors (the NFR-1 profiler precondition). -->
+    <link rel="icon" href="data:," />
     <title>Tesla Card — demo</title>
     <style>
       :root {
@@ -316,6 +319,18 @@
                 : awakeStates();
         states = reprefix(base, env.prefix);
         registry = buildRegistry(states, env);
+        // Composed-Scene profiler path (?card=my-home): the Scene's tc-solar renders
+        // the Story 6.4 weather vignette from HA-core weather.home (+ sun.sun for
+        // day/night). The captured vehicle fixture carries neither — they're
+        // install-wide core entities, not Tesla-prefixed — so without this the
+        // vignette is honestly OMITTED (weather-vignette.ts: absent ⇒ `nothing`) and
+        // the profiler subject is missing its third animated layer. Inject a daytime
+        // partlycloudy sky so the vignette animates (sun glow/rays + drifting cloud),
+        // matching the documented AC3 subject (6 cards + bus + vignette).
+        if (new URLSearchParams(location.search).get('card') === 'my-home') {
+          states['weather.home'] = s('partlycloudy', { temperature: 18, friendly_name: 'Home' });
+          states['sun.sun'] = s('above_horizon');
+        }
       }
       rebuild();
 
