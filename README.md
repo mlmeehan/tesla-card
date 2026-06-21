@@ -11,41 +11,35 @@ a live energy-flow overlay.
 
 ## Features
 
-- **Centred hero** — your car render front-and-centre with a live battery
-  bar, charge-limit marker, charging shimmer, and a status line that reads
-  *Charging · 1h 30m to 80%*, *Parked · Locked*, *Driving*, or *Asleep*.
+- **Centred hero** — your car render front-and-centre with a live battery bar,
+  charge-limit marker, charging shimmer, and a status line (*Charging · 1h 30m
+  to 80%*, *Parked · Locked*, *Driving*, *Asleep*).
 - **Quick actions** — circular toggles for lock, climate, charge port, frunk,
-  trunk, and sentry. Active controls light up in their own accent colour.
-- **Closures diagram** — a top-down car schematic. Tap the frunk, trunk,
-  windows, or charge port to open/close; doors show open/closed status; a
-  centre lock glyph and a primary lock button keep it secure. No more a wall
-  of identical buttons.
+  trunk, and sentry, each lighting up in its own accent colour.
+- **Closures diagram** — a tappable top-down schematic for frunk, trunk,
+  windows, charge port, and doors, instead of a wall of identical buttons.
 - **Charging** — battery summary, start/stop, draggable charge-limit and
   charge-current sliders, plus power / rate / energy / time-to-full / voltage.
-- **Energy** — when a Tesla **Powerwall** / **Wall Connector** is detected, a
-  live power-flow diagram (solar · grid · Powerwall · home · car) with animated
-  directional flows, plus backup-reserve, operation-mode and charging-session
-  readouts. The tab auto-appears only when you have an energy site.
+- **Energy** — an auto-appearing power-flow diagram with status tiles when a
+  Tesla **Powerwall** / **Wall Connector** is detected — see
+  [Energy panel](#energy-panel).
 - **Climate** — temperature stepper, per-seat heater cyclers (Off→Low→Med→High),
   steering-wheel heater, defrost, and cabin-overheat protection.
-- **Tyres** — pressures laid out at each corner of the car with low-pressure
-  warnings.
+- **Tyres** — pressures at each corner of the car with low-pressure warnings.
 - **Location** — embedded OpenStreetMap with odometer, speed, power, and live
   ETA when a route is active.
 - **Media** — now-playing, transport, and a volume slider.
 - **Graceful asleep state** — when the vehicle is offline the card dims rather
   than showing a wall of *Unknown*.
-- **Built-in car render** — ships with a clean, recolorable EV illustration, so
-  a zero-config card looks right immediately. Swap in your own `image:` or a
-  layered `body:` render whenever you like.
-- **Zero entity config** — auto-detects your Tesla device and resolves every
-  entity by its stable function-name, so it works whatever your vehicle is
-  called. Every key is still overridable.
-- **Private by design** — no telemetry, no analytics, no phone-home. The card
-  opens no network connection of its own: it reads `hass.states` and acts via
-  `hass.callService`, so **all** traffic — including your car's location — rides
-  your Home Assistant's own connection and never leaves your instance via this
-  card. Enforced by a merge-blocking CI gate. See [Privacy](docs/privacy.md).
+- **Built-in car render** — a clean, recolorable EV illustration so a zero-config
+  card looks right immediately; swap in your own `image:` or a layered `body:`
+  render whenever you like — see [Recolorable car body](#recolorable-car-body).
+- **Zero entity config** — auto-detects your Tesla and resolves every entity by
+  its stable function-name, so it works whatever your vehicle is called; every
+  key stays overridable — see [Entity resolution](#entity-resolution-automatic).
+- **Private by design** — no telemetry, no analytics, no phone-home; all traffic
+  rides your Home Assistant's own connection, enforced by a merge-blocking CI
+  gate — see [Privacy](docs/privacy.md).
 
 ## Screenshots
 
@@ -53,8 +47,8 @@ a live energy-flow overlay.
 | :---: | :---: | :---: |
 | ![Closures](docs/screenshot-closures.png) | ![Climate](docs/screenshot-climate.png) | ![Tyres](docs/screenshot-tyres.png) |
 | Tappable **closures** diagram | **Climate** & seat heaters | **Tyre** pressures |
-| ![Media](docs/screenshot-media.png) | ![Asleep](docs/screenshot-asleep.png) | ![Charging](docs/screenshot-charging.png) |
-| **Media** player | Graceful **asleep** state | **Charging** controls |
+| ![Media](docs/screenshot-media.png) | ![Asleep](docs/screenshot-asleep.png) | ![Energy](docs/screenshot-energy.png) |
+| **Media** player | Graceful **asleep** state | Live **energy** flow |
 
 ## Installation
 
@@ -160,11 +154,10 @@ The full list of keys (≈80) lives in [`src/const.ts`](src/const.ts).
 ## Recolorable car body
 
 Out of the box the hero shows a **built-in EV illustration** that already
-recolours to any [paint](#paint) — a deliberately generic car, not modelled on
-any specific vehicle, so a fresh install looks right with zero config. Point
-`image:` at your own render to replace it, or — for a photoreal car that *also*
-recolours to any colour — supply a **layered body render** so one asset set
-covers every colour instead of one PNG per colour.
+recolours to any [paint](#paint), so a fresh install looks right with zero
+config. Point `image:` at your own render to replace it, or — for a photoreal
+car that *also* recolours to any colour — supply a **layered body render** so one
+asset set covers every colour instead of one PNG per colour.
 
 ```yaml
 type: custom:tesla-card
@@ -179,25 +172,25 @@ body:
   # height: 687
 ```
 
-How it composites: the `color` image is drawn as-is, then **inside the `mask`**
-the card stacks your chosen `paint`, the `shade` layer (`multiply`, so the body's
-form survives on any colour), and the `highlight` layer (`screen`, so clearcoat
-glints stay bright). All the per-vehicle geometry lives in the **mask**, so the
-renderer itself is generic.
+How it composites: inside the `mask`, the card stacks your `paint`, the `shade`
+layer (`multiply`), and the `highlight` layer (`screen`) over the `color` base.
+All per-vehicle geometry lives in the **mask**, so the renderer itself is generic.
 
-**No vehicle artwork ships with this card** — you bring your own render. The
-step-by-step pipeline for baking the four layers from a single source image is
-in **[docs/recolorable-body.md](docs/recolorable-body.md)**. Bringing your own
+The step-by-step pipeline for baking the four layers from a single source image
+is in **[docs/recolorable-body.md](docs/recolorable-body.md)**. Bringing your own
 render or running multiple models? See **[docs/asset-packs.md](docs/asset-packs.md)**
 (`@unstable`) for WebP externalization, per-model placement, and swapping models
 by URL.
 
-> **Trademark note.** Tesla's vehicle designs are trade dress and Tesla's
-> badges/wordmark are trademarks. Use a render you have the right to use, keep it
-> for your personal install, and don't redistribute Tesla's artwork. A generic
-> EV silhouette is the safe default for anything public.
+> **Trademark note.** No vehicle artwork ships with this card: the built-in EV
+> illustration is deliberately generic — not modelled on any specific vehicle —
+> and you bring your own render for a photoreal look. Tesla's vehicle designs are
+> trade dress and its badges/wordmark are trademarks, so use a render you have
+> the right to use, keep it for your personal install, and don't redistribute
+> Tesla's artwork. A generic EV silhouette is the safe default for anything
+> public.
 
-### Paint
+## Paint
 
 `paint` colours the built-in EV render and a `body` layer set; it has no effect
 on a custom `image`, which can't be tinted. It accepts three forms:
@@ -256,6 +249,30 @@ energy:
 
 Any key you omit is auto-resolved; any hardware you don't have is simply left
 out of the diagram.
+
+## My Home scene
+
+If you run a **Powerwall** and/or **Wall Connector**, a second, standalone card —
+**`tc-my-home`** — composes your whole home-energy picture into one view: Solar,
+Powerwall, Grid, Home and Wall Connector cards laid out in two rows, with your car
+joining the load row, all tied together by a live **Gateway bus** that shows power
+flowing between them. A summary ribbon leads with how *self-powered* your home is
+right now.
+
+![My Home scene](docs/screenshot-my-home.png)
+
+It's a separate card from `custom:tesla-card`, added on its own:
+
+```yaml
+type: custom:tc-my-home
+```
+
+Like the main card it **auto-detects** the energy site and vehicle from the
+`tesla_fleet` / `powerwall` integration — there's nothing to configure. Any node
+you don't have is simply left out (no ghost cells); hovering or focusing a card
+lights its couplings and dims the rest; and on a phone the cards pack to a single
+column with the bus re-routed vertically. It's a wide composition — give it a
+full-width dashboard column.
 
 ## Development
 
