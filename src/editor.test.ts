@@ -82,7 +82,7 @@ describe('AC1 — editor renders + reflects all four field groups', () => {
 
   test('a stub-only config ({ type }) renders without error (all optional fields absent)', async () => {
     const el = makeEditor();
-    el.setConfig({ type: 'custom:tesla-card' } as TeslaCardConfig);
+    el.setConfig({ type: 'custom:tesla-card', setup_complete: true } as TeslaCardConfig);
     await el.updateComplete;
     expect($(el, 'input[type="text"]')).toBeTruthy();
     expect(($(el, 'input[type="text"]') as HTMLInputElement).value).toBe('');
@@ -104,7 +104,7 @@ describe('AC1 — lazy-load via getConfigElement', () => {
 describe('AC4 — an edit emits a valid TeslaCardConfig', () => {
   test('editing name emits config-changed with the new value + preserved type', async () => {
     const el = makeEditor();
-    el.setConfig({ type: 'custom:tesla-card' } as TeslaCardConfig);
+    el.setConfig({ type: 'custom:tesla-card', setup_complete: true } as TeslaCardConfig);
     await el.updateComplete;
     const cap = captureEmit(el);
 
@@ -120,7 +120,7 @@ describe('AC4 — an edit emits a valid TeslaCardConfig', () => {
 
   test('selecting a default panel emits the snake_case key', async () => {
     const el = makeEditor();
-    el.setConfig({ type: 'custom:tesla-card' } as TeslaCardConfig);
+    el.setConfig({ type: 'custom:tesla-card', setup_complete: true } as TeslaCardConfig);
     await el.updateComplete;
     const cap = captureEmit(el);
 
@@ -135,7 +135,7 @@ describe('AC4 — an edit emits a valid TeslaCardConfig', () => {
 
   test('toggling a hide checkbox emits the boolean', async () => {
     const el = makeEditor();
-    el.setConfig({ type: 'custom:tesla-card' } as TeslaCardConfig);
+    el.setConfig({ type: 'custom:tesla-card', setup_complete: true } as TeslaCardConfig);
     await el.updateComplete;
     const cap = captureEmit(el);
 
@@ -225,7 +225,7 @@ describe('AC2 — editor element tolerates partial/absent hass', () => {
   test('hass = undefined: setConfig + render does not throw, form still renders', async () => {
     const el = makeEditor();
     el.hass = undefined;
-    expect(() => el.setConfig({ type: 'custom:tesla-card' } as TeslaCardConfig)).not.toThrow();
+    expect(() => el.setConfig({ type: 'custom:tesla-card', setup_complete: true } as TeslaCardConfig)).not.toThrow();
     await expect(el.updateComplete).resolves.toBeDefined();
     expect($(el, 'input[type="text"]')).toBeTruthy(); // form rendered despite no hass
     el.remove();
@@ -244,7 +244,7 @@ describe('AC2 — editor element tolerates partial/absent hass', () => {
 describe('AC3 — per-entity-override boundary documented in the UI (YAML-only)', () => {
   test('the note references the `entities:` YAML map', async () => {
     const el = makeEditor();
-    el.setConfig({ type: 'custom:tesla-card' } as TeslaCardConfig);
+    el.setConfig({ type: 'custom:tesla-card', setup_complete: true } as TeslaCardConfig);
     await el.updateComplete;
     const note = $(el, '.note');
     expect(note).toBeTruthy();
@@ -271,7 +271,7 @@ describe('AC3 — per-entity-override boundary documented in the UI (YAML-only)'
 describe('AC4 — a real tesla-card consumes the editor-emitted config without error', () => {
   test('an editor edit produces a config the live card accepts via setConfig', async () => {
     const ed = makeEditor();
-    ed.setConfig({ type: 'custom:tesla-card' } as TeslaCardConfig);
+    ed.setConfig({ type: 'custom:tesla-card', setup_complete: true } as TeslaCardConfig);
     await ed.updateComplete;
     const cap = captureEmit(ed);
 
@@ -349,7 +349,7 @@ describe('AC1/AC4 — the image text field mirrors name (edit + clear-to-remove)
 describe('AC1 — the default-panel select presents the full panel union', () => {
   test('all six vehicle panels are selectable options, in render order', async () => {
     const el = makeEditor();
-    el.setConfig({ type: 'custom:tesla-card' } as TeslaCardConfig);
+    el.setConfig({ type: 'custom:tesla-card', setup_complete: true } as TeslaCardConfig);
     await el.updateComplete;
     // Scope to the panel select — the Story 9.15 per-node row selects (`.row-select`)
     // also carry <option>s, so the broad `select option` query would catch them too.
@@ -378,7 +378,7 @@ describe('AC4 — text-field hygiene + event wiring contract', () => {
 
   test('config-changed bubbles AND is composed (crosses the shadow boundary for HA)', async () => {
     const el = makeEditor();
-    el.setConfig({ type: 'custom:tesla-card' } as TeslaCardConfig);
+    el.setConfig({ type: 'custom:tesla-card', setup_complete: true } as TeslaCardConfig);
     await el.updateComplete;
     let evt: Event | undefined;
     el.addEventListener('config-changed', (e) => (evt = e));
@@ -471,7 +471,7 @@ type EnergyShape = { nodes?: { hide?: string[]; order?: string[]; instances?: un
 describe('Story 9.4 AC1/AC2 — seven per-node show toggles render + reflect', () => {
   test('all seven ROLES render a show checkbox, checked by default (nothing hidden)', async () => {
     const el = makeEditor();
-    el.setConfig({ type: 'custom:tesla-card' } as TeslaCardConfig);
+    el.setConfig({ type: 'custom:tesla-card', setup_complete: true } as TeslaCardConfig);
     await el.updateComplete;
     const checks = nodeChecks(el);
     expect(checks.length).toBe(7); // Story 9.14 — the generator joins the node list for free
@@ -495,7 +495,7 @@ describe('Story 9.4 AC1/AC2 — seven per-node show toggles render + reflect', (
 describe('Story 9.4 AC1/AC3 — hide toggle writes energy.nodes.hide + prunes to zero-diff', () => {
   test('hiding a node writes energy.nodes.hide; showing it again DELETES the key (and energy)', async () => {
     const el = makeEditor();
-    el.setConfig({ type: 'custom:tesla-card' } as TeslaCardConfig);
+    el.setConfig({ type: 'custom:tesla-card', setup_complete: true } as TeslaCardConfig);
     await el.updateComplete;
     const cap = captureEmit(el);
 
@@ -520,7 +520,7 @@ describe('Story 9.4 AC1/AC3 — hide toggle writes energy.nodes.hide + prunes to
 
   test('hide list is built in canonical ROLES order regardless of click order', async () => {
     const el = makeEditor();
-    el.setConfig({ type: 'custom:tesla-card' } as TeslaCardConfig);
+    el.setConfig({ type: 'custom:tesla-card', setup_complete: true } as TeslaCardConfig);
     await el.updateComplete;
     const cap = captureEmit(el);
 
@@ -566,7 +566,7 @@ describe('Story 9.4 AC1/AC3 — hide toggle writes energy.nodes.hide + prunes to
 describe('Story 9.4 AC1/AC4 — order control writes energy.nodes.order + prunes canonical', () => {
   test('default display order is the row-grouped canonical order (sources then loads)', async () => {
     const el = makeEditor();
-    el.setConfig({ type: 'custom:tesla-card' } as TeslaCardConfig);
+    el.setConfig({ type: 'custom:tesla-card', setup_complete: true } as TeslaCardConfig);
     await el.updateComplete;
     // Sources [solar, powerwall, grid, generator] then loads [home, wall_connector, vehicle].
     expect(orderLabels(el)).toEqual([
@@ -583,7 +583,7 @@ describe('Story 9.4 AC1/AC4 — order control writes energy.nodes.order + prunes
 
   test('move-down on the first source emits the full row-grouped order with the within-row swap', async () => {
     const el = makeEditor();
-    el.setConfig({ type: 'custom:tesla-card' } as TeslaCardConfig);
+    el.setConfig({ type: 'custom:tesla-card', setup_complete: true } as TeslaCardConfig);
     await el.updateComplete;
     const cap = captureEmit(el);
 
@@ -641,7 +641,7 @@ describe('Story 9.4 AC1/AC4 — order control writes energy.nodes.order + prunes
 
   test('move gating is per ROW edge — never crosses the source/load boundary', async () => {
     const el = makeEditor();
-    el.setConfig({ type: 'custom:tesla-card' } as TeslaCardConfig);
+    el.setConfig({ type: 'custom:tesla-card', setup_complete: true } as TeslaCardConfig);
     await el.updateComplete;
     // First source (solar): up disabled; last source (generator): down disabled — so a
     // move can't push a source into the load row (that is the row selector's job).
@@ -720,7 +720,7 @@ describe('Story 9.4 AC3 — forward-compat: a node edit never drops an unknown t
 describe('Story 9.4 AC1/AC4 — move-UP swaps with the previous node in-row (the dir:-1 path)', () => {
   test('move-up on a mid-row source emits the full row-grouped order with that pair swapped', async () => {
     const el = makeEditor();
-    el.setConfig({ type: 'custom:tesla-card' } as TeslaCardConfig);
+    el.setConfig({ type: 'custom:tesla-card', setup_complete: true } as TeslaCardConfig);
     await el.updateComplete;
     const cap = captureEmit(el);
 
@@ -816,7 +816,7 @@ describe('Story 9.4 — the editor writes intent, not precedence (Dev Notes)', (
 describe('Story 9.4 AC3 — full hide→show sweep prunes back to a byte-identical default', () => {
   test('hiding all seven nodes then showing all seven leaves no energy key (zero-diff)', async () => {
     const el = makeEditor();
-    el.setConfig({ type: 'custom:tesla-card' } as TeslaCardConfig);
+    el.setConfig({ type: 'custom:tesla-card', setup_complete: true } as TeslaCardConfig);
     await el.updateComplete;
     const cap = captureEmit(el);
 
@@ -850,7 +850,7 @@ describe('Story 9.4 AC3 — full hide→show sweep prunes back to a byte-identic
 describe('Story 9.4 AC5 — controls are accessible + state-free (AR-1)', () => {
   test('move buttons are real <button>s with aria-labels and an inline svg icon', async () => {
     const el = makeEditor();
-    el.setConfig({ type: 'custom:tesla-card' } as TeslaCardConfig);
+    el.setConfig({ type: 'custom:tesla-card', setup_complete: true } as TeslaCardConfig);
     await el.updateComplete;
     const { up, down } = moveButtons(el, 1);
     expect(up.tagName.toLowerCase()).toBe('button');
@@ -1026,7 +1026,7 @@ function rowSelectFor(el: EditorEl, label: string): HTMLSelectElement {
 describe('Story 9.15 — cross-row row selector reflects + writes energy.nodes.rows', () => {
   test('every node renders a row select defaulting to its CANONICAL row', async () => {
     const el = makeEditor();
-    el.setConfig({ type: 'custom:tesla-card' } as TeslaCardConfig);
+    el.setConfig({ type: 'custom:tesla-card', setup_complete: true } as TeslaCardConfig);
     await el.updateComplete;
     const selects = el.shadowRoot!.querySelectorAll('.node-row .row-select');
     expect(selects.length).toBe(7); // one per Scene node (incl. vehicle + generator)
@@ -1052,7 +1052,7 @@ describe('Story 9.15 — cross-row row selector reflects + writes energy.nodes.r
 
   test('promoting a load to the source row writes energy.nodes.rows[role]', async () => {
     const el = makeEditor();
-    el.setConfig({ type: 'custom:tesla-card' } as TeslaCardConfig);
+    el.setConfig({ type: 'custom:tesla-card', setup_complete: true } as TeslaCardConfig);
     await el.updateComplete;
     const cap = captureEmit(el);
 
@@ -1133,6 +1133,323 @@ describe('Story 9.15 — cross-row row selector reflects + writes energy.nodes.r
     await el.updateComplete;
     expect(rowSelectFor(el, STRINGS.energy.nodes.solar).value).toBe('source'); // invalid → canonical
     expect(rowSelectFor(el, STRINGS.energy.nodes.home).value).toBe('source'); // valid override honored
+    el.remove();
+  });
+});
+
+// ── Story 9.9 — guided first-run wizard (the no-YAML wizard FRAME) ─────────────
+// The wizard shell, trigger, stepper, footer, Detect honesty, Finish write,
+// persistence/resume, and "Run guided setup" re-entry. jsdom + label/role helpers,
+// no network, partial hass tolerated. Discovery rides the existing data/ resolvers
+// (AR-1) — these fixtures seed `hass.states` so the probe finds (or doesn't find)
+// the bundled-default vehicle id + a substring-matched energy sensor.
+const ONLINE_HASS = {
+  states: {
+    'binary_sensor.garage_model_y_status': { entity_id: 'binary_sensor.garage_model_y_status', state: 'on', attributes: {} },
+    'sensor.my_home_solar_power': { entity_id: 'sensor.my_home_solar_power', state: '2.4', attributes: {} },
+    'sensor.my_home_battery_power': { entity_id: 'sensor.my_home_battery_power', state: '-1.1', attributes: {} },
+  },
+} as unknown as HomeAssistant;
+const EMPTY_HASS = { states: {} } as unknown as HomeAssistant;
+
+const wiz = (el: EditorEl) => el.shadowRoot?.querySelector('.wizard');
+const stepEls = (el: EditorEl) => Array.from(el.shadowRoot!.querySelectorAll('.step'));
+const wizBtn = (el: EditorEl, cls: string) =>
+  el.shadowRoot!.querySelector(`.wiz-btn.${cls}`) as HTMLButtonElement | null;
+/** Drive the emphatic Next/Done control once, awaiting the re-render. */
+async function clickPrimary(el: EditorEl): Promise<void> {
+  wizBtn(el, 'primary')!.click();
+  await el.updateComplete;
+}
+
+describe('Story 9.9 AC1 — wizard trigger (bare ⇒ wizard, configured ⇒ normal form)', () => {
+  test('a bare stub config opens the 5-step wizard, not the normal form', async () => {
+    const el = makeEditor();
+    el.hass = ONLINE_HASS;
+    el.setConfig({ type: 'custom:tesla-card' } as TeslaCardConfig);
+    await el.updateComplete;
+    expect(wiz(el)).toBeTruthy();
+    expect($(el, '.form')).toBeFalsy(); // normal form NOT shown
+    expect(stepEls(el).length).toBe(5); // DETECT · CONFIRM · APPEARANCE · TUNE · FINISH
+    el.remove();
+  });
+
+  test('a pre-existing user config (no marker, non-bare) opens the NORMAL form, never the wizard', async () => {
+    const el = makeEditor();
+    el.hass = ONLINE_HASS;
+    el.setConfig({ type: 'custom:tesla-card', name: 'Garage Y' } as TeslaCardConfig);
+    await el.updateComplete;
+    expect(wiz(el)).toBeFalsy();
+    expect($(el, '.form')).toBeTruthy();
+    el.remove();
+  });
+
+  test('a completed config (setup_complete: true) opens the normal form forever', async () => {
+    const el = makeEditor();
+    el.hass = ONLINE_HASS;
+    el.setConfig({ type: 'custom:tesla-card', setup_complete: true } as TeslaCardConfig);
+    await el.updateComplete;
+    expect(wiz(el)).toBeFalsy();
+    expect($(el, '.form')).toBeTruthy();
+    el.remove();
+  });
+});
+
+describe('Story 9.9 AC5 — stepper advances + announces state non-visually', () => {
+  test('the stepper advances with the step; state is announced in text (Step N of 5, …, current)', async () => {
+    const el = makeEditor();
+    el.hass = ONLINE_HASS;
+    el.setConfig({ type: 'custom:tesla-card' } as TeslaCardConfig);
+    await el.updateComplete;
+
+    let steps = stepEls(el);
+    expect(steps[0].classList.contains('current')).toBe(true);
+    expect(steps[0].getAttribute('aria-label')).toContain('Step 1 of 5');
+    expect(steps[0].getAttribute('aria-label')).toContain(STRINGS.wizard.stateCurrent);
+    expect(steps[1].getAttribute('aria-label')).toContain(STRINGS.wizard.stateNotStarted);
+
+    await clickPrimary(el); // → Confirm (step 2)
+    steps = stepEls(el);
+    expect(steps[0].classList.contains('done')).toBe(true); // completed
+    expect(steps[1].classList.contains('current')).toBe(true); // advanced — never static on Detect
+    expect(steps[1].getAttribute('aria-label')).toContain('Step 2 of 5');
+    expect(steps[1].getAttribute('aria-label')).toContain(STRINGS.wizard.stateCurrent);
+    expect(steps[1].getAttribute('aria-current')).toBe('step');
+    el.remove();
+  });
+
+  test('state is encoded by COLOUR AND SHAPE — done renders a tick glyph, not a number', async () => {
+    const el = makeEditor();
+    el.hass = ONLINE_HASS;
+    el.setConfig({ type: 'custom:tesla-card' } as TeslaCardConfig);
+    await el.updateComplete;
+    await clickPrimary(el); // Detect → done
+    const done = stepEls(el)[0];
+    expect(done.querySelector('.step-mark svg')).toBeTruthy(); // tick glyph (shape)
+    expect(done.querySelector('.step-mark .step-num')).toBeFalsy(); // not a number
+    el.remove();
+  });
+});
+
+describe('Story 9.9 AC5 — footer Back/Skip/Next/Finish-now + Skip announces its default', () => {
+  test('Back is disabled on step 0 and re-enabled after advancing; it returns', async () => {
+    const el = makeEditor();
+    el.hass = ONLINE_HASS;
+    el.setConfig({ type: 'custom:tesla-card' } as TeslaCardConfig);
+    await el.updateComplete;
+    expect(wizBtn(el, 'tertiary')!.disabled).toBe(true); // Back disabled at Detect
+    await clickPrimary(el); // → Confirm
+    expect(wizBtn(el, 'tertiary')!.disabled).toBe(false);
+    wizBtn(el, 'tertiary')!.click(); // Back
+    await el.updateComplete;
+    expect(stepEls(el)[0].classList.contains('current')).toBe(true);
+    el.remove();
+  });
+
+  test('Skip announces the default it will apply (never a bare "Skip")', async () => {
+    const el = makeEditor();
+    el.hass = ONLINE_HASS;
+    el.setConfig({ type: 'custom:tesla-card' } as TeslaCardConfig);
+    await el.updateComplete;
+    const skip = wizBtn(el, 'secondary')!;
+    expect(skip.textContent?.trim()).toBe(STRINGS.wizard.skip);
+    expect(skip.getAttribute('aria-label')).toBe(
+      `${STRINGS.wizard.skipPrefix} — ${STRINGS.wizard.detect.skipDefault}`
+    );
+    el.remove();
+  });
+
+  test('Skip advances like Next (skip-to-default per step)', async () => {
+    const el = makeEditor();
+    el.hass = ONLINE_HASS;
+    el.setConfig({ type: 'custom:tesla-card' } as TeslaCardConfig);
+    await el.updateComplete;
+    wizBtn(el, 'secondary')!.click(); // Skip Detect
+    await el.updateComplete;
+    expect(stepEls(el)[1].classList.contains('current')).toBe(true);
+    el.remove();
+  });
+
+  test('every footer control is a keyboard-operable <button>, focus order Back→Skip→Next→Finish-now', async () => {
+    const el = makeEditor();
+    el.hass = ONLINE_HASS;
+    el.setConfig({ type: 'custom:tesla-card' } as TeslaCardConfig);
+    await el.updateComplete;
+    const btns = Array.from(el.shadowRoot!.querySelectorAll('.wiz-footer .wiz-btn')) as HTMLButtonElement[];
+    expect(btns.every((b) => b.tagName === 'BUTTON' && b.type === 'button')).toBe(true);
+    expect(btns.map((b) => b.classList[1])).toEqual(['tertiary', 'secondary', 'primary', 'quiet']);
+    el.remove();
+  });
+});
+
+describe('Story 9.9 AC2 — Detect honesty (three-state found vs empty + manual fallback)', () => {
+  test('found: every role shows a three-state row announced in TEXT (never hue-only)', async () => {
+    const el = makeEditor();
+    el.hass = ONLINE_HASS;
+    el.setConfig({ type: 'custom:tesla-card' } as TeslaCardConfig);
+    await el.updateComplete;
+    const rows = Array.from(el.shadowRoot!.querySelectorAll('.disco-row'));
+    expect(rows.length).toBe(7); // all seven roles shown (absent shown absent — CAP-4)
+
+    const vehicle = rows.find((r) => r.getAttribute('aria-label')?.startsWith(STRINGS.editor.nodeVehicle))!;
+    expect(vehicle.getAttribute('aria-label')).toBe(`${STRINGS.editor.nodeVehicle}, ${STRINGS.wizard.detect.online}`);
+    expect(vehicle.classList.contains('online')).toBe(true);
+
+    // An absent role is shown ABSENT (— not found), not an empty field.
+    const gen = rows.find((r) => r.getAttribute('aria-label')?.startsWith(STRINGS.energy.nodes.generator))!;
+    expect(gen.getAttribute('aria-label')).toBe(`${STRINGS.energy.nodes.generator}, ${STRINGS.wizard.detect.notFound}`);
+    expect(gen.classList.contains('absent')).toBe(true);
+    el.remove();
+  });
+
+  test('empty/fail: a calm honest message + manual fallback, Next disabled, never a fake "all set"', async () => {
+    const el = makeEditor();
+    el.hass = EMPTY_HASS;
+    el.setConfig({ type: 'custom:tesla-card' } as TeslaCardConfig);
+    await el.updateComplete;
+    const empty = el.shadowRoot!.querySelector('.wiz-empty');
+    expect(empty).toBeTruthy();
+    expect(empty!.getAttribute('role')).toBe('status'); // labelled live region
+    expect(empty!.textContent).toContain(STRINGS.wizard.detect.emptyBody);
+    const footerNext = el.shadowRoot!.querySelector('.wiz-footer .wiz-btn.primary') as HTMLButtonElement;
+    expect(footerNext.disabled).toBe(true); // Next gated — must go manual
+    // The manual-selection CTA routes into the Step-2 mapping.
+    const manual = empty!.querySelector('button')!;
+    expect(manual.textContent?.trim()).toBe(STRINGS.wizard.detect.selectManually);
+    manual.click();
+    await el.updateComplete;
+    expect(stepEls(el)[1].classList.contains('current')).toBe(true);
+    el.remove();
+  });
+
+  test('no hass: Detect degrades to the empty state without throwing (AR-15 / AR-1)', async () => {
+    const el = makeEditor();
+    el.hass = undefined;
+    expect(() => el.setConfig({ type: 'custom:tesla-card' } as TeslaCardConfig)).not.toThrow();
+    await el.updateComplete;
+    expect(el.shadowRoot!.querySelector('.wiz-empty')).toBeTruthy();
+    el.remove();
+  });
+});
+
+describe('Story 9.9 AC3 — Finish writes a complete, forward-compatible config + revert to normal form', () => {
+  test('Done. emits a config the live card accepts via setConfig, preserves an unknown key (R9), and marks complete', async () => {
+    const el = makeEditor();
+    el.hass = ONLINE_HASS;
+    // An in-progress wizard (setup_complete:false) carrying an unknown future key.
+    el.setConfig({ type: 'custom:tesla-card', setup_complete: false, future_x: 'keep' } as unknown as TeslaCardConfig);
+    await el.updateComplete;
+    const cap = captureEmit(el);
+
+    // Resume lands at Confirm (step 2). Advance to Finish, then click Done.
+    await clickPrimary(el); // Confirm → Appearance
+    await clickPrimary(el); // Appearance → Tune
+    await clickPrimary(el); // Tune → Finish
+    await clickPrimary(el); // Done.
+
+    const emitted = cap.get() as unknown as Record<string, unknown>;
+    expect(emitted).toBeDefined();
+    expect(emitted.setup_complete).toBe(true);
+    expect(emitted.type).toBe('custom:tesla-card');
+    expect(emitted.future_x).toBe('keep'); // R9 — unknown key preserved through Finish
+
+    // Re-opening with the completed config is the NORMAL form (revert).
+    el.setConfig(emitted as unknown as TeslaCardConfig);
+    await el.updateComplete;
+    expect(wiz(el)).toBeFalsy();
+    expect($(el, '.form')).toBeTruthy();
+
+    // The emitted config is consumed by a live card without throwing.
+    const card = document.createElement('tesla-card') as unknown as {
+      hass?: HomeAssistant;
+      setConfig(c: TeslaCardConfig): void;
+      updateComplete: Promise<boolean>;
+    };
+    document.body.appendChild(card as unknown as HTMLElement);
+    expect(() => card.setConfig(emitted as unknown as TeslaCardConfig)).not.toThrow();
+    await expect(card.updateComplete).resolves.toBeDefined();
+    (card as unknown as HTMLElement).remove();
+    el.remove();
+  });
+
+  test('Finish renders the result name but NO fabricated telemetry (freshness discipline)', async () => {
+    const el = makeEditor();
+    el.hass = ONLINE_HASS;
+    el.setConfig({ type: 'custom:tesla-card', name: 'Garage Y', setup_complete: false } as TeslaCardConfig);
+    await el.updateComplete;
+    await clickPrimary(el); // Confirm → Appearance
+    await clickPrimary(el); // Appearance → Tune
+    await clickPrimary(el); // Tune → Finish
+    const result = el.shadowRoot!.querySelector('.wiz-result')!;
+    expect(result.textContent).toContain('Garage Y');
+    expect(result.textContent).not.toContain('%'); // never a fabricated SoC
+    el.remove();
+  });
+});
+
+describe('Story 9.9 AC6 — persistence/resume + "Run guided setup" re-entry', () => {
+  test('leaving Detect persists setup_complete:false to Lovelace (refresh-resumable marker)', async () => {
+    const el = makeEditor();
+    el.hass = ONLINE_HASS;
+    el.setConfig({ type: 'custom:tesla-card' } as TeslaCardConfig);
+    await el.updateComplete;
+    const cap = captureEmit(el);
+    await clickPrimary(el); // leave Detect
+    const emitted = cap.get() as unknown as Record<string, unknown>;
+    expect(emitted.setup_complete).toBe(false); // in-progress marker written to config (not localStorage)
+    expect(emitted.type).toBe('custom:tesla-card');
+    el.remove();
+  });
+
+  test('an in-progress config (setup_complete:false) resumes the wizard past Detect at Confirm', async () => {
+    const el = makeEditor();
+    el.hass = ONLINE_HASS;
+    el.setConfig({ type: 'custom:tesla-card', setup_complete: false } as TeslaCardConfig);
+    await el.updateComplete;
+    expect(wiz(el)).toBeTruthy();
+    expect(stepEls(el)[1].classList.contains('current')).toBe(true); // resumed at Confirm (step 2)
+    el.remove();
+  });
+
+  test('"Run guided setup" re-enters the wizard from the normal form at Detect (marker not cleared)', async () => {
+    const el = makeEditor();
+    el.hass = ONLINE_HASS;
+    el.setConfig({ type: 'custom:tesla-card', name: 'Garage Y', setup_complete: true } as TeslaCardConfig);
+    await el.updateComplete;
+    const run = el.shadowRoot!.querySelector('.run-setup') as HTMLButtonElement;
+    expect(run).toBeTruthy();
+    expect(run.textContent).toContain(STRINGS.editor.runGuidedSetup);
+    run.click();
+    await el.updateComplete;
+    expect(wiz(el)).toBeTruthy();
+    expect(stepEls(el)[0].classList.contains('current')).toBe(true); // restarts at Detect
+    el.remove();
+  });
+});
+
+describe('Story 9.9 AC4 — reduced-motion cut + trade-dress + a11y floor (chrome)', () => {
+  test('the step transition degrades to an instant cut under prefers-reduced-motion', () => {
+    const styles = String((customElements.get('tesla-card-editor') as unknown as { styles: unknown }).styles);
+    expect(styles).toContain('prefers-reduced-motion');
+    expect(styles).toContain('wiz-fade'); // the crossfade keyframe (gated by the media query)
+  });
+
+  test('every wizard control clears the ≥44px touch/keyboard target floor (AC5)', () => {
+    const styles = String((customElements.get('tesla-card-editor') as unknown as { styles: unknown }).styles);
+    expect(styles).toContain('min-height: 44px');
+  });
+
+  test('wizard chrome carries the disclaimer and NO Tesla / HA copyright marks (trade-dress)', async () => {
+    const el = makeEditor();
+    el.hass = ONLINE_HASS;
+    el.setConfig({ type: 'custom:tesla-card' } as TeslaCardConfig);
+    await el.updateComplete;
+    const chrome = wiz(el)!.textContent ?? '';
+    // The ONLY mark is the "Not affiliated with Tesla, Inc." disclaimer — no HA
+    // copyright (reconcile divergence #2), no Tesla brand stamp beyond the disclaimer.
+    expect(chrome).toContain(STRINGS.wizard.disclaimer);
+    expect(chrome).not.toContain('©');
+    expect(chrome).not.toContain('HOME ASSISTANT');
     el.remove();
   });
 });

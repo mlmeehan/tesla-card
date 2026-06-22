@@ -172,6 +172,38 @@ describe('centralized strings — voice contract (Story 2.5)', () => {
     for (const w of words.slice(1)) expect(w).toMatch(/^[a-z]/);
   });
 
+  test('Story 9.9: guided first-run wizard copy is calm/plain/honest (no hype, British English)', () => {
+    // The wizard frame's copy — single-sourced here, British English, calm/plain
+    // voice with no hype, exclamation, or celebration (reconcile divergence: no
+    // "Success!"/confetti). The five stepper labels + the three honest discovery
+    // state words + the "Done."/"Finish now"/"Run guided setup" actions are pinned.
+    expect(Object.values(STRINGS.wizard.steps)).toEqual([
+      'Detect',
+      'Confirm',
+      'Appearance',
+      'Tune',
+      'Finish',
+    ]);
+    // The three honest discovery states (CAP-4) — announced in text, never hue-only.
+    expect(STRINGS.wizard.detect.online).toBe('online');
+    expect(STRINGS.wizard.detect.unavailable).toBe('unavailable');
+    expect(STRINGS.wizard.detect.notFound).toBe('not found');
+    // Step 5 primary is "Done." (NOT "Finish now" — reconcile divergence #6).
+    expect(STRINGS.wizard.done).toBe('Done.');
+    expect(STRINGS.wizard.finishNow).toBe('Finish now');
+    expect(STRINGS.editor.runGuidedSetup).toBe('Run guided setup');
+    // The ONLY chrome mark is the disclaimer (no HA copyright — divergence #2).
+    expect(STRINGS.wizard.disclaimer).toBe('Not affiliated with Tesla, Inc.');
+    // Voice: no celebration/exclamation anywhere in the wizard sub-tree.
+    const wizardCopy: string[] = [];
+    const walkWiz = (n: unknown): void => {
+      if (typeof n === 'string') wizardCopy.push(n);
+      else if (n && typeof n === 'object') Object.values(n).forEach(walkWiz);
+    };
+    walkWiz(STRINGS.wizard);
+    expect(wizardCopy.filter((v) => v.includes('!')), 'no exclamation/hype in wizard copy').toEqual([]);
+  });
+
   test('migration backstop: copy-bearing components import from ./strings', () => {
     const consumers = [
       'tesla-card.ts',

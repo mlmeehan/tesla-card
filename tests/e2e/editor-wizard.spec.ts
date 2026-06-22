@@ -1,0 +1,188 @@
+// Story 9.9 — guided first-run wizard, REAL-BROWSER E2E.
+//
+// The wizard's logic is exhaustively pinned in jsdom (src/editor.test.ts, 42 tests).
+// This spec covers only what jsdom structurally CANNOT verify, by driving the real
+// lazy-loaded editor (tesla-card-editor, mounted exactly as Lovelace mounts it — via
+// getConfigElement — by the harness's ?editor=1 mode) in Chromium:
+//   • computed ≥44×44 touch/keyboard targets (jsdom asserts the CSS *string*, never layout)
+//   • real `prefers-reduced-motion` behaviour (jsdom asserts the rule exists, never that it cuts)
+//   • real keyboard focus traversal (jsdom can't Tab through focusable controls)
+//   • the full Detect→…→Finish→Done click-through rendering cleanly (console-guard, auto)
+//   • Detect honesty (found vs empty) against the card's own resolvers in a live DOM
+//
+// The console-guard fixture (auto) fails any test where the editor emits an uncaught
+// exception or unexpected console error — so every test below is also a "mounts and
+// renders cleanly in a real browser" proof, which the jsdom suite cannot give.
+import { test, expect, TeslaEditorPage } from '../support/fixtures';
+
+// Deepest active element across nested shadow roots (focus order crosses the editor's
+// shadow boundary, so document.activeElement alone is not enough).
+async function deepActiveClass(page: import('@playwright/test').Page): Promise<string> {
+  return page.evaluate(() => {
+    let a: Element | null = document.activeElement;
+    while (a?.shadowRoot?.activeElement) a = a.shadowRoot.activeElement;
+    return a ? a.className : '';
+  });
+}
+
+test.describe('Story 9.9 wizard — trigger + chrome (real browser)', () => {
+  test('a bare config opens the 5-node wizard; a configured card opens the normal form', async ({ page }) => {
+    const ed = new TeslaEditorPage(page);
+    await ed.open(); // bare ⇒ wizard
+    await expect(ed.wizard).toBeVisible();
+    await expect(ed.normalForm).toHaveCount(0);
+    await expect(ed.steps).toHaveCount(5); // DETECT · CONFIRM · APPEARANCE · TUNE · FINISH
+    await expect(ed.step(0)).toHaveClass(/current/); // never static — starts AT Detect
+
+    await ed.openAt('done'); // completed ⇒ normal form forever
+    await expect(ed.normalForm).toBeVisible();
+    await expect(ed.wizard).toHaveCount(0);
+  });
+
+  test('every footer control clears the ≥44×44 target floor (computed layout, not CSS source)', async ({ page }) => {
+    const ed = new TeslaEditorPage(page);
+    await ed.open();
+    // Advance to Confirm so Back is enabled (it is disabled — and zero-sized intent
+    // aside, still rendered — on Detect); then all four footer controls are live.
+    await ed.clickNext();
+    await expect(ed.step(1)).toHaveClass(/current/);
+
+    const count = await ed.footerButtons.count();
+    expect(count).toBe(4); // Back · Skip · Next · Finish now
+    for (let i = 0; i < count; i++) {
+      const box = await ed.footerButtons.nth(i).boundingBox();
+      expect(box, `footer button ${i} has a layout box`).not.toBeNull();
+      expect(box!.height, `footer button ${i} height`).toBeGreaterThanOrEqual(44);
+      expect(box!.width, `footer button ${i} width`).toBeGreaterThanOrEqual(44);
+    }
+  });
+
+  test('keyboard focus order is Back → Skip → Next → Finish now', async ({ page }) => {
+    const ed = new TeslaEditorPage(page);
+    await ed.open();
+    await ed.clickNext(); // → Confirm, Back now enabled
+    await expect(ed.step(1)).toHaveClass(/current/);
+
+    await ed.footerBtn('tertiary').focus(); // start on Back
+    expect(await deepActiveClass(page)).toContain('tertiary');
+    await page.keyboard.press('Tab');
+    expect(await deepActiveClass(page)).toContain('secondary'); // Skip
+    await page.keyboard.press('Tab');
+    expect(await deepActiveClass(page)).toContain('primary'); // Next
+    await page.keyboard.press('Tab');
+    expect(await deepActiveClass(page)).toContain('quiet'); // Finish now
+  });
+
+  test('state is encoded by shape — a completed step renders a tick glyph, not a number', async ({ page }) => {
+    const ed = new TeslaEditorPage(page);
+    await ed.open();
+    await ed.clickNext(); // Detect → done
+    const done = ed.step(0);
+    await expect(done).toHaveClass(/done/);
+    await expect(done.locator('.step-mark svg')).toHaveCount(1); // tick (shape, not hue-only)
+    await expect(done.locator('.step-mark .step-num')).toHaveCount(0); // no number
+  });
+});
+
+test.describe('Story 9.9 wizard — reduced motion (real media query)', () => {
+  test('the step crossfade animates by default and is cut under prefers-reduced-motion', async ({ page }) => {
+    const ed = new TeslaEditorPage(page);
+
+    await page.emulateMedia({ reducedMotion: 'no-preference' });
+    await ed.open();
+    expect(await ed.body.evaluate((el) => getComputedStyle(el).animationName)).toBe('wiz-fade');
+
+    await page.emulateMedia({ reducedMotion: 'reduce' });
+    await ed.open();
+    expect(await ed.body.evaluate((el) => getComputedStyle(el).animationName)).toBe('none'); // instant cut, no info lost
+  });
+});
+
+test.describe('Story 9.9 wizard — Detect honesty (live resolvers)', () => {
+  test('found: the vehicle reads online and an absent product reads "not found" (three-state in text)', async ({
+    page,
+  }) => {
+    const ed = new TeslaEditorPage(page); // default scenario → vehicle resolves, energy absent
+    await ed.open();
+    await expect(ed.discoRows).toHaveCount(7); // all seven roles shown; absent shown absent (CAP-4)
+    await expect(ed.discoRows.filter({ hasText: 'online' }).first()).toBeVisible();
+    // At least one role is honestly absent (— not found), never an empty field to fill.
+    await expect(ed.editor.locator('.disco-row.absent').first()).toBeVisible();
+    // States are announced in TEXT, never hue-only.
+    const vehicle = ed.discoRows.filter({ hasText: 'Vehicle' }).first();
+    await expect(vehicle).toHaveAttribute('aria-label', /Vehicle, online/);
+  });
+
+  test('empty: an honest message + manual fallback; Next gated; never a fake "all set"', async ({ page }) => {
+    const ed = new TeslaEditorPage(page);
+    await ed.open({ scenario: 'unresolved' }); // nothing Tesla resolves
+    await expect(ed.emptyPanel).toBeVisible();
+    await expect(ed.emptyPanel).toHaveAttribute('role', 'status'); // labelled live region
+    await expect(ed.footerBtn('primary')).toBeDisabled(); // Next gated — must go manual
+    const manual = ed.emptyPanel.getByRole('button', { name: 'Select entities manually' });
+    await expect(manual).toBeVisible();
+    await manual.click();
+    await expect(ed.step(1)).toHaveClass(/current/); // routed into Step-2 mapping
+  });
+});
+
+test.describe('Story 9.9 wizard — Finish, persistence, re-entry', () => {
+  test('click-through Detect→Finish→Done writes a complete config and reverts to the normal form', async ({
+    page,
+  }) => {
+    const ed = new TeslaEditorPage(page);
+    await ed.open();
+    await ed.clickNext(); // Detect → Confirm
+    await ed.clickNext(); // Confirm → Appearance
+    await ed.clickNext(); // Appearance → Tune
+    await ed.clickNext(); // Tune → Finish
+    await expect(ed.step(4)).toHaveClass(/current/);
+    await expect(ed.result).toBeVisible();
+    await expect(ed.result).not.toContainText('%'); // freshness discipline — no fabricated SoC
+
+    await ed.clickNext(); // Done.
+    const cfg = await ed.lastConfig();
+    expect(cfg).not.toBeNull();
+    expect(cfg!.setup_complete).toBe(true); // complete, forward-compatible write to Lovelace
+    expect(cfg!.type).toBe('custom:tesla-card');
+
+    // The editor reverts to the normal (non-wizard) form on completion.
+    await expect(ed.normalForm).toBeVisible();
+    await expect(ed.wizard).toHaveCount(0);
+  });
+
+  test('leaving Detect persists setup_complete:false to Lovelace (refresh-resumable marker)', async ({ page }) => {
+    const ed = new TeslaEditorPage(page);
+    await ed.open();
+    await ed.clickNext(); // leave Detect
+    const cfg = await ed.lastConfig();
+    expect(cfg!.setup_complete).toBe(false); // written to config, not browser-local scratch
+  });
+
+  test('an in-progress config resumes the wizard past Detect at Confirm', async ({ page }) => {
+    const ed = new TeslaEditorPage(page);
+    await ed.openAt('progress'); // setup_complete:false
+    await expect(ed.wizard).toBeVisible();
+    await expect(ed.step(1)).toHaveClass(/current/); // resumed at Confirm (step 2)
+  });
+
+  test('"Run guided setup" re-enters the wizard from the normal form at Detect', async ({ page }) => {
+    const ed = new TeslaEditorPage(page);
+    await ed.openAt('done');
+    await expect(ed.runSetup).toBeVisible();
+    await ed.runSetup.click();
+    await expect(ed.wizard).toBeVisible();
+    await expect(ed.step(0)).toHaveClass(/current/); // restarts at Detect
+  });
+});
+
+test.describe('Story 9.9 wizard — trade-dress chrome', () => {
+  test('the only mark is the disclaimer — no Tesla render, no HA copyright', async ({ page }) => {
+    const ed = new TeslaEditorPage(page);
+    await ed.open();
+    await expect(ed.disclaimer).toHaveText('Not affiliated with Tesla, Inc.');
+    const chrome = (await ed.wizard.innerText()) ?? '';
+    expect(chrome).not.toContain('©');
+    expect(chrome).not.toContain('HOME ASSISTANT');
+  });
+});

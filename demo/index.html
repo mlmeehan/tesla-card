@@ -385,6 +385,42 @@
       // capture. The standalone vehicle card is hidden so the Scene is the sole
       // subject, and the stage widens to the desktop horizontal-bus layout (not the
       // ≤540px vertical reflow). See docs/profiler-checklist-nfr1.md.
+      // Editor harness mode (?editor=1). Mounts the REAL lazy-loaded config editor
+      // (tesla-card-editor, reached exactly as Lovelace does — `getConfigElement`)
+      // fed the SAME mock hass as the card, so the Story 9.9 guided-setup wizard is
+      // drivable in a real browser. The jsdom suite (editor.test.ts) proves the
+      // wizard's logic but cannot verify computed layout (≥44px targets), real
+      // `prefers-reduced-motion`, or keyboard focus order — that is this mode's job.
+      // `&setup=` picks the starting config state:
+      //   bare (default) → { type }                         → wizard at Detect
+      //   progress       → { type, setup_complete:false }    → wizard resumes at Confirm
+      //   done           → { name, setup_complete:true }     → normal form (Run-guided-setup re-entry)
+      // Discovery honesty rides the card's own resolvers, so the discovery scenario
+      // is the usual ?scenario= flag: default (awake) → vehicle online; ?scenario=unresolved
+      // → nothing found (the empty/manual-fallback path).
+      const wantEditor = params.get('editor') === '1';
+      let editor = null;
+      if (wantEditor) {
+        card.style.display = 'none';
+        const setupMode = params.get('setup') || 'bare';
+        const editorConfig =
+          setupMode === 'done'
+            ? { type: 'custom:tesla-card', name: 'Garage Y', setup_complete: true }
+            : setupMode === 'progress'
+              ? { type: 'custom:tesla-card', setup_complete: false }
+              : { type: 'custom:tesla-card' };
+        await customElements.whenDefined('tesla-card');
+        editor = await customElements.get('tesla-card').getConfigElement();
+        editor.id = 'editor';
+        editor.setConfig(editorConfig);
+        // The editor's ONLY output is the Lovelace `config-changed` event — surface
+        // its last payload for assertions (this is the config the wizard would write).
+        editor.addEventListener('config-changed', (e) => {
+          window.__lastConfig = (e.detail && e.detail.config) || null;
+        });
+        document.getElementById('stage').appendChild(editor);
+      }
+
       const wantMyHome = params.get('card') === 'my-home';
       let scene = null;
       if (wantMyHome) {
@@ -407,6 +443,7 @@
         };
         card.hass = hass;
         if (scene) scene.hass = hass;
+        if (editor) editor.hass = hass;
       }
 
       // optimistic service handler so the demo is interactive

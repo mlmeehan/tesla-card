@@ -466,6 +466,86 @@ export const STRINGS = {
     // The note wraps a `<code>entities:</code>` element — split around it.
     noteBefore: 'Per-entity overrides are configured in YAML via the',
     noteAfter: 'map. All keys default to the standard Tesla Fleet / Teslemetry entity IDs.',
+    // ── Guided first-run re-entry (Story 9.9) ─────────────────────────────────
+    // The normal-form action that re-opens the wizard (explicit, distinct from the
+    // bare-config auto-trigger). An `@mdi/js` named-path icon sits alongside it.
+    runGuidedSetup: 'Run guided setup',
+  },
+
+  // Guided first-run wizard (Story 9.9 / CAP-5 — the no-YAML first-run flow).
+  // British English, calm/plain/honest voice: no hype, no exclamation, no
+  // celebration. `strings.test.ts` pins the voice. Step content owned by siblings
+  // (remap 9.11, appearance 9.12, Tune 9.13) — this is the frame's copy only.
+  wizard: {
+    /** Dialog accessible name. */
+    title: 'Set up your card',
+    // The five stepper node labels (uppercased in CSS) — DETECT · CONFIRM ·
+    // APPEARANCE · TUNE · FINISH. The advancing 5-node stepper, never a static header.
+    steps: {
+      detect: 'Detect',
+      confirm: 'Confirm',
+      appearance: 'Appearance',
+      tune: 'Tune',
+      finish: 'Finish',
+    },
+    // Non-visual stepper position announcement, composed at the call site:
+    // `${stepWord} ${n} ${of} 5, ${label}, ${state}` → "Step 2 of 5, Confirm, current".
+    stepWord: 'Step',
+    of: 'of',
+    stateCurrent: 'current',
+    stateDone: 'done',
+    stateNotStarted: 'not started',
+    // Footer controls. `next`/`back`/`skip` are the nav trio; `finishNow` is the
+    // persistent early-escape (writes remaining defaults) present on EVERY step;
+    // `done` completes the Finish step (distinct from `finishNow` — never conflate).
+    back: 'Back',
+    skip: 'Skip',
+    next: 'Next',
+    finishNow: 'Finish now',
+    done: 'Done.',
+    // Skip announces the default it will apply (never a bare "Skip"). Composed:
+    // `${skip} — ${default}`. One honest default sentence per skippable step.
+    skipPrefix: 'Skip',
+    // ── Step 1 — Detect & discover ────────────────────────────────────────────
+    detect: {
+      heading: 'Detect & discover',
+      subhead: 'Looking for your vehicle and energy devices.',
+      // The three honest discovery states (CAP-4) — announced in TEXT, never hue-only.
+      online: 'online',
+      unavailable: 'unavailable',
+      notFound: 'not found',
+      // Empty/fail state — never a fake "all set", never an endless spinner.
+      emptyTitle: 'Nothing detected yet',
+      emptyBody: 'No Tesla or energy entities detected. Check that your integration is set up.',
+      selectManually: 'Select entities manually',
+      skipDefault: 'accept the detected devices',
+    },
+    // ── Step 2 — Confirm & remap (container; controls are Story 9.11) ──────────
+    confirm: {
+      heading: 'Confirm & remap',
+      subhead: 'These are the cards we will show. They look right by default.',
+      skipDefault: 'keep the detected mapping',
+    },
+    // ── Step 3 — Make it yours / appearance (container; pickers are Story 9.12) ─
+    appearance: {
+      heading: 'Make it yours',
+      subhead: 'Name, paint and theme. Skip to keep the calm defaults.',
+      skipDefault: 'keep the default appearance',
+    },
+    // ── Step 4 — Tune (optional; widgets are Story 9.13) ──────────────────────
+    tune: {
+      heading: 'Tune',
+      subhead: 'Optional fine-tuning — units, thresholds and what to show.',
+      skipDefault: 'keep the standard settings',
+    },
+    // ── Step 5 — Finish ───────────────────────────────────────────────────────
+    finish: {
+      heading: 'Finish',
+      subhead: 'Here is your card. Open it any time to adjust.',
+      skipDefault: 'finish now',
+    },
+    // Trade-dress: the ONLY mark in wizard chrome (no Tesla marks, no HA copyright).
+    disclaimer: 'Not affiliated with Tesla, Inc.',
   },
 
   // Card-picker catalog copy (window.customCards) — judgment call: card-authored

@@ -11,4 +11,5 @@ export { expect } from '@playwright/test';
 
 export { TeslaCardPage } from '../page-objects/tesla-card.page';
 export type { PanelName } from '../page-objects/tesla-card.page';
+export { TeslaEditorPage } from '../page-objects/tesla-editor.page';
 export * from './scenarios';

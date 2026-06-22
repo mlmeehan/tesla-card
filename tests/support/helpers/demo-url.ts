@@ -16,6 +16,7 @@
 //   unavail=<aperture>         (apertures scenario) force one entity unavailable — graceful-degrade check
 
 export type Scenario = 'awake' | 'asleep' | 'parked' | 'plugged' | 'apertures' | 'unresolved';
+export type SetupState = 'bare' | 'progress' | 'done';
 export type ApertureName = 'frunk' | 'liftgate' | 'door' | 'window';
 export type Env = 'default' | 'renamed' | 'tesla_custom';
 export type PanelId =
@@ -38,6 +39,8 @@ export interface DemoOptions {
   colorentity?: string; // entity-driven paint (also implies recolor in the harness)
   apertures?: ApertureName[]; // (apertures scenario) open ONLY these — independence check
   unavail?: ApertureName; // (apertures scenario) force one entity unavailable — degrade check
+  editor?: boolean; // ?editor=1 — mount the real config editor (tesla-card-editor) instead of just the card
+  setup?: SetupState; // editor starting config: bare⇒wizard@Detect · progress⇒wizard@Confirm · done⇒normal form
 }
 
 const DEMO_PATH = '/demo/index.html';
@@ -61,6 +64,8 @@ export function buildDemoUrl(opts: DemoOptions = {}): string {
   if (opts.colorentity) q.set('colorentity', opts.colorentity);
   for (const a of opts.apertures ?? []) q.set(a, '1'); // open only these (independence)
   if (opts.unavail) q.set('unavail', opts.unavail); // force one unavailable (degrade)
+  if (opts.editor) q.set('editor', '1'); // mount the real config editor
+  if (opts.setup) q.set('setup', opts.setup); // editor starting config state
   const qs = q.toString();
   return qs ? `${DEMO_PATH}?${qs}` : DEMO_PATH;
 }

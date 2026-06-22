@@ -324,6 +324,20 @@ export interface TeslaCardConfig {
   /** Hide the command buttons (wake/honk/flash/…) under the panels. */
   hide_commands?: boolean;
   /**
+   * Guided first-run wizard state marker (Story 9.9 / CAP-5). Additive, optional,
+   * snake_case (F4), R9-tolerated — `setConfig` never throws on it. Three states:
+   *   • `true`  — setup finished; the editor opens as the NORMAL form forever (until
+   *     the user re-runs "Run guided setup", which is explicit and does not clear it).
+   *   • `false` — the wizard is IN PROGRESS (written when leaving the Detect step), so a
+   *     refresh / reopen / other device resumes the wizard rather than restarting.
+   *   • absent  — never started: the wizard auto-opens ONLY for a bare stub config
+   *     (just `type`); a pre-existing user YAML config opens as the normal form.
+   * Emptying the config back to a bare stub (marker + user keys removed) re-arms the
+   * auto-trigger. The wizard persists ONLY to Lovelace config (this marker), never to
+   * `localStorage`/component state (D-9.13-4).
+   */
+  setup_complete?: boolean;
+  /**
    * Render density. `'full'` (default, also the value used when omitted or set to
    * any unknown/garbage string — forward-compat, no eager validation) renders the
    * complete card. `'compact'` renders the hero + status line + battery gauge ONLY:
