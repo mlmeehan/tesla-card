@@ -2320,3 +2320,164 @@ describe('Story 9.14 — composes with the 9.7 multi-instance machinery (no new 
     expect(sr(el).querySelectorAll('.scene-cell[data-node^="generator"] tc-generator')).toHaveLength(2);
   });
 });
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Story 9.15 — cross-row promotion: move a node BETWEEN the sources and loads rows
+// by config (additive `energy.nodes.rows`). Relaxes 9.3's within-row-only default.
+// The render is the lever (`_rowOf` drives both `_orderedRows` AND `_bandIds`, so they
+// can never disagree — Hazard A); the bus follows by construction (taps sort by spatial
+// x); the sign stays measured (Hazard B — net never reads the rendered row). jsdom has
+// zero rects, so this pins the cell roster / ids / band classification / reflow-key /
+// balance sign — the pixel bus-Y re-seat + live cross-row top is the e2e Story 9.15 block.
+// ═══════════════════════════════════════════════════════════════════════════
+const rowsCfg = (rows: unknown, extra?: { order?: unknown; hide?: Role[] }): TeslaCardConfig =>
+  ({
+    type: 'tc-my-home',
+    energy: { nodes: { rows, ...(extra ?? {}) } },
+  }) as unknown as TeslaCardConfig;
+const bandIds = (el: Scene, cfg: TeslaCardConfig | undefined, side: 'source' | 'load'): string[] =>
+  (el as unknown as { _bandIds(c: TeslaCardConfig | undefined, s: 'source' | 'load'): string[] })._bandIds(cfg, side);
+const modelOf = (el: Scene): FlowModel => (el as unknown as { _model: FlowModel })._model;
+
+describe('Story 9.15 — cross-row promotion (additive energy.nodes.rows, render-is-geometry)', () => {
+  test('AC1 — rows:{wall_connector:"source"} draws the WC in the SOURCE band, absent from the load band', async () => {
+    const el = await mount(makeHass(states(awakeFx)), rowsCfg({ wall_connector: 'source' }));
+    expect(sourceNodes(el)).toEqual(['solar', 'powerwall', 'grid', 'wall_connector']);
+    expect(loadNodes(el)).toEqual(['home', 'vehicle']);
+    // The WC cell exists exactly once, in the source row.
+    expect(sr(el).querySelectorAll('.scene-cell[data-node="wall_connector"]')).toHaveLength(1);
+    expect(sr(el).querySelector('.source-row .scene-cell[data-node="wall_connector"]')).not.toBeNull();
+  });
+
+  test('AC1 — rows:{solar:"load"} draws solar in the LOAD band (source demotion)', async () => {
+    const el = await mount(makeHass(states(awakeFx)), rowsCfg({ solar: 'load' }));
+    expect(sourceNodes(el)).toEqual(['powerwall', 'grid']);
+    expect(loadNodes(el)).toEqual(['solar', 'home', 'wall_connector', 'vehicle']);
+  });
+
+  test('AC1 — promotion × order: rows:{grid:"load"}, order:["grid","home"] lands grid in the LOAD row, positioned per order', async () => {
+    const el = await mount(
+      makeHass(states(awakeFx)),
+      rowsCfg({ grid: 'load' }, { order: ['grid', 'home'] })
+    );
+    // grid demoted to load AND placed first there by `order`; source loses it.
+    expect(sourceNodes(el)).toEqual(['solar', 'powerwall']);
+    expect(loadNodes(el)).toEqual(['grid', 'home', 'wall_connector', 'vehicle']);
+  });
+
+  test('AC3 — promotion × wrap: promoting a 4th card into a 3-card band triggers the 9.7 wrap (primary 3 + overflow 1)', async () => {
+    // home → source makes the source band [solar, powerwall, grid, home] (4 > WRAP_MAX_PER_ROW).
+    const el = await mount(makeHass(states(awakeFx)), rowsCfg({ home: 'source' }));
+    const wrapped = sr(el).querySelector('.source-row.wrapped');
+    expect(wrapped).not.toBeNull();
+    const primary = [...wrapped!.querySelectorAll('.subrow.primary .scene-cell')].map(
+      (c) => (c as HTMLElement).dataset.node
+    );
+    const overflow = [...wrapped!.querySelectorAll('.subrow.overflow .scene-cell')].map(
+      (c) => (c as HTMLElement).dataset.node
+    );
+    expect(primary).toEqual(['solar', 'powerwall', 'grid']);
+    expect(overflow).toEqual(['home']);
+  });
+
+  test('AC2 — sign-by-measurement: a LOAD (home) promoted to the SOURCE row still nets NEGATIVE, net unchanged node-for-node (Hazard B)', async () => {
+    const base = await mount(makeHass(states(awakeFx))); // canonical
+    const promoted = await mount(makeHass(states(awakeFx)), rowsCfg({ home: 'source' }));
+    const netBase = computeBalance(modelOf(base)).net;
+    const netPromoted = computeBalance(modelOf(promoted)).net;
+    // home is a load (BUS_ORIENTATION -1) — it draws from the bus, so its net is negative
+    // in BOTH layouts. The promotion is purely presentational: net is identical per node.
+    expect(netPromoted['home']).toBeLessThan(0);
+    expect(netPromoted).toEqual(netBase);
+    // …and it really did render in the source row (the presentation moved, the sign did not).
+    expect(sr(promoted).querySelector('.source-row .scene-cell[data-node="home"]')).not.toBeNull();
+  });
+
+  test('AC3/AC1 — _bandIds classifies by EFFECTIVE row: a promoted node moves to the other band (Hazard A fix)', async () => {
+    const canonical = await mount(makeHass(states(awakeFx)));
+    const cfg = rowsCfg({ wall_connector: 'source' });
+    const el = await mount(makeHass(states(awakeFx)), cfg);
+    // wall_connector (a canonical load) is now in the SOURCE band-id list, gone from load.
+    expect(bandIds(el, cfg, 'source')).toContain('wall_connector');
+    expect(bandIds(el, cfg, 'load')).not.toContain('wall_connector');
+    // Zero-diff sanity: no `rows` ⇒ canonical band membership.
+    expect(bandIds(canonical, undefined, 'source')).toEqual(['solar', 'powerwall', 'grid']);
+    expect(bandIds(canonical, undefined, 'load')).toEqual(['home', 'wall_connector']);
+  });
+
+  test('FR-24 — a non-object `rows` degrades to canonical, no crash', async () => {
+    const el = await mount(makeHass(states(awakeFx)), rowsCfg('nope'));
+    expect(sourceNodes(el)).toEqual(['solar', 'powerwall', 'grid']);
+    expect(loadNodes(el)).toEqual(['home', 'wall_connector', 'vehicle']);
+  });
+
+  test('FR-24 — an unknown-string key + an invalid value are ignored; present cells stay canonical', async () => {
+    const el = await mount(
+      makeHass(states(awakeFx)),
+      rowsCfg({ not_a_node: 'source', solar: 'middle' })
+    );
+    // unknown key is inert; solar's invalid value ("middle") falls through to canonical.
+    expect(sourceNodes(el)).toEqual(['solar', 'powerwall', 'grid']);
+    expect(loadNodes(el)).toEqual(['home', 'wall_connector', 'vehicle']);
+  });
+
+  test('FR-24 — a rows entry naming a HIDDEN node is inert (hide wins; nothing promotes)', async () => {
+    const el = await mount(
+      makeHass(states(awakeFx)),
+      rowsCfg({ solar: 'load' }, { hide: ['solar'] })
+    );
+    // solar hidden ⇒ not present ⇒ renders in NEITHER row (no ghost cross-row cell).
+    expect(sr(el).querySelector('.scene-cell[data-node="solar"]')).toBeNull();
+    expect(sourceNodes(el)).toEqual(['powerwall', 'grid']);
+    expect(loadNodes(el)).toEqual(['home', 'wall_connector', 'vehicle']);
+  });
+
+  test('AC3 — a promotion-only CONFIG change fires the present-set reflow EXACTLY once', async () => {
+    const el = await mount(makeHass(states(awakeFx)));
+    expect(loadNodes(el)).toEqual(['home', 'wall_connector', 'vehicle']);
+    const spy = vi.spyOn(el as unknown as { _scheduleGeometry: () => void }, '_scheduleGeometry');
+    el.setConfig(rowsCfg({ wall_connector: 'source' })); // same present-set, NEW row
+    await el.updateComplete;
+    expect(spy).toHaveBeenCalledTimes(1); // the id crosses the source|load partition ⇒ key flips ⇒ one reflow
+    expect(sourceNodes(el)).toEqual(['solar', 'powerwall', 'grid', 'wall_connector']);
+  });
+
+  test('AC3 — a re-render with the SAME rows schedules ZERO geometry recomputes', async () => {
+    const cfg = rowsCfg({ wall_connector: 'source' });
+    const el = await mount(makeHass(states(awakeFx)), cfg);
+    const spy = vi.spyOn(el as unknown as { _scheduleGeometry: () => void }, '_scheduleGeometry');
+    el.setConfig(rowsCfg({ wall_connector: 'source' })); // identical present-set + rows
+    await el.updateComplete;
+    expect(spy).not.toHaveBeenCalled();
+  });
+
+  test('AC5 — zero-diff: no `rows` packs byte-for-byte as today (each node in its canonical row)', async () => {
+    const el = await mount(makeHass(states(awakeFx)), rowsCfg(undefined));
+    expect(sourceNodes(el)).toEqual(['solar', 'powerwall', 'grid']);
+    expect(loadNodes(el)).toEqual(['home', 'wall_connector', 'vehicle']);
+  });
+
+  test('AC1 — the synthetic VEHICLE cell promotes too: rows:{vehicle:"source"} draws it in the source band, gone from load', async () => {
+    // `rows` is keyed by Role INCL. `vehicle` (the synthetic presentation cell). The
+    // effective-domain packing flows through `SCENE_ROW_ORDER` (which includes 'vehicle'),
+    // so the vehicle cell relocates exactly like an energy node — proving promotion is
+    // role-generic, not energy-only.
+    const el = await mount(makeHass(states(awakeFx)), rowsCfg({ vehicle: 'source' }));
+    expect(sourceNodes(el)).toEqual(['solar', 'powerwall', 'grid', 'vehicle']);
+    expect(loadNodes(el)).toEqual(['home', 'wall_connector']);
+    expect(sr(el).querySelector('.source-row .scene-cell[data-node="vehicle"]')).not.toBeNull();
+  });
+
+  test('AC3 — a promoted VEHICLE is STILL excluded from the bus-Y band ids (not a FlowNode) — busY stays energy-load-only', async () => {
+    // The Hazard-A classifier moves the CELL, but `_bandIds` filters `_model.nodes` — the
+    // vehicle is never a FlowNode, so it cannot enter EITHER band-id list wherever it is
+    // drawn. The bus-Y derivation therefore stays energy-load-only by construction, even
+    // when the vehicle card is promoted into the source row.
+    const cfg = rowsCfg({ vehicle: 'source' });
+    const el = await mount(makeHass(states(awakeFx)), cfg);
+    expect(bandIds(el, cfg, 'source')).toEqual(['solar', 'powerwall', 'grid']);
+    expect(bandIds(el, cfg, 'load')).toEqual(['home', 'wall_connector']);
+    // No vehicle id leaked into either band (it is not in the model at all).
+    expect([...bandIds(el, cfg, 'source'), ...bandIds(el, cfg, 'load')]).not.toContain('vehicle');
+  });
+});

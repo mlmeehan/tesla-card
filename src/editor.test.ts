@@ -351,8 +351,10 @@ describe('AC1 — the default-panel select presents the full panel union', () =>
     const el = makeEditor();
     el.setConfig({ type: 'custom:tesla-card' } as TeslaCardConfig);
     await el.updateComplete;
+    // Scope to the panel select — the Story 9.15 per-node row selects (`.row-select`)
+    // also carry <option>s, so the broad `select option` query would catch them too.
     const options = el.shadowRoot?.querySelectorAll(
-      'select option'
+      'select:not(.row-select) option'
     ) as NodeListOf<HTMLOptionElement>;
     const values = Array.from(options).map((o) => o.value);
     expect(values).toEqual(['climate', 'charging', 'closures', 'tyres', 'location', 'media']);
@@ -832,6 +834,133 @@ describe('Story 9.4 AC5 — controls are accessible + state-free (AR-1)', () => 
     await expect(el.updateComplete).resolves.toBeDefined();
     expect(nodeChecks(el).length).toBe(7); // toggles rendered without any hass
     expect(orderLabels(el).length).toBe(7);
+    el.remove();
+  });
+});
+
+// ── Story 9.15 — the per-node Source/Load row selector (cross-row promotion) ──────
+// Rides the SAME `energy.nodes` customization surface as hide/order (Story 9.4), via
+// `_commitNodes` with a delete-on-canonical prune. These pin the read/write contract:
+// reflect the effective row, write `rows[role]`, prune to zero-diff, and round-trip
+// forward-compatibly with hide/order/instances.
+type RowsShape = { nodes?: { hide?: string[]; order?: string[]; instances?: unknown; rows?: Record<string, string> } };
+/** The Source/Load select for the node whose display label is `label`. */
+function rowSelectFor(el: EditorEl, label: string): HTMLSelectElement {
+  return el.shadowRoot!.querySelector(
+    `.node-row .row-select[aria-label="${STRINGS.editor.sceneNodesRowLabel}: ${label}"]`
+  ) as HTMLSelectElement;
+}
+
+describe('Story 9.15 — cross-row row selector reflects + writes energy.nodes.rows', () => {
+  test('every node renders a row select defaulting to its CANONICAL row', async () => {
+    const el = makeEditor();
+    el.setConfig({ type: 'custom:tesla-card' } as TeslaCardConfig);
+    await el.updateComplete;
+    const selects = el.shadowRoot!.querySelectorAll('.node-row .row-select');
+    expect(selects.length).toBe(7); // one per Scene node (incl. vehicle + generator)
+    // Sources default to 'source', loads (incl. the vehicle cell) to 'load'.
+    expect(rowSelectFor(el, STRINGS.energy.nodes.solar).value).toBe('source');
+    expect(rowSelectFor(el, STRINGS.energy.nodes.generator).value).toBe('source');
+    expect(rowSelectFor(el, STRINGS.energy.nodes.home).value).toBe('load');
+    expect(rowSelectFor(el, STRINGS.editor.nodeVehicle).value).toBe('load');
+    el.remove();
+  });
+
+  test('a stored rows override reflects in the select', async () => {
+    const el = makeEditor();
+    el.setConfig({
+      type: 'custom:tesla-card',
+      energy: { nodes: { rows: { wall_connector: 'source' } } },
+    } as unknown as TeslaCardConfig);
+    await el.updateComplete;
+    expect(rowSelectFor(el, STRINGS.energy.nodes.wall_connector).value).toBe('source');
+    expect(rowSelectFor(el, STRINGS.energy.nodes.solar).value).toBe('source'); // others canonical
+    el.remove();
+  });
+
+  test('promoting a load to the source row writes energy.nodes.rows[role]', async () => {
+    const el = makeEditor();
+    el.setConfig({ type: 'custom:tesla-card' } as TeslaCardConfig);
+    await el.updateComplete;
+    const cap = captureEmit(el);
+
+    const sel = rowSelectFor(el, STRINGS.energy.nodes.wall_connector);
+    sel.value = 'source';
+    sel.dispatchEvent(new Event('change'));
+    const emitted = cap.get() as unknown as TeslaCardConfig & { energy?: RowsShape };
+    expect(emitted.energy?.nodes?.rows).toEqual({ wall_connector: 'source' });
+    el.remove();
+  });
+
+  test('restoring a node to its canonical row DELETES the rows entry (and energy) — zero-diff', async () => {
+    const el = makeEditor();
+    el.setConfig({
+      type: 'custom:tesla-card',
+      energy: { nodes: { rows: { wall_connector: 'source' } } },
+    } as unknown as TeslaCardConfig);
+    await el.updateComplete;
+    const cap = captureEmit(el);
+
+    // wall_connector's canonical row is 'load' → selecting it prunes the override.
+    const sel = rowSelectFor(el, STRINGS.energy.nodes.wall_connector);
+    sel.value = 'load';
+    sel.dispatchEvent(new Event('change'));
+    const emitted = cap.get() as unknown as TeslaCardConfig & { energy?: RowsShape };
+    expect('energy' in emitted).toBe(false); // rows emptied → nodes + energy pruned
+    el.remove();
+  });
+
+  test('a promotion preserves sibling hide / order / instances sub-keys (round-trip, R9)', async () => {
+    const el = makeEditor();
+    el.setConfig({
+      type: 'custom:tesla-card',
+      energy: { nodes: { hide: ['solar'], order: ['home'], instances: { grid: [{}, {}] } } },
+    } as unknown as TeslaCardConfig);
+    await el.updateComplete;
+    const cap = captureEmit(el);
+
+    const sel = rowSelectFor(el, STRINGS.energy.nodes.home);
+    sel.value = 'source';
+    sel.dispatchEvent(new Event('change'));
+    const emitted = cap.get() as unknown as TeslaCardConfig & { energy?: RowsShape };
+    expect(emitted.energy?.nodes?.rows).toEqual({ home: 'source' });
+    expect(emitted.energy?.nodes?.hide).toEqual(['solar']); // sibling kept
+    expect(emitted.energy?.nodes?.order).toEqual(['home']); // sibling kept
+    expect(emitted.energy?.nodes?.instances).toEqual({ grid: [{}, {}] }); // sibling kept
+    el.remove();
+  });
+
+  test('FR-24 — a non-object garbage stored `rows` does NOT throw the editor; every select reflects its CANONICAL row', async () => {
+    // Task-5 contract: the editor reads `rows` defensively (mirrors `_isHidden`). A garbage
+    // stored value must not crash render, and `_nodeRow` falls through to canonical for
+    // every node (a string can't index a role to a valid 'source'/'load').
+    const el = makeEditor();
+    expect(() =>
+      el.setConfig({
+        type: 'custom:tesla-card',
+        energy: { nodes: { rows: 'nope' } },
+      } as unknown as TeslaCardConfig)
+    ).not.toThrow();
+    await el.updateComplete;
+    // All 7 selects rendered, each showing the node's canonical row (no override consumed).
+    expect(el.shadowRoot!.querySelectorAll('.node-row .row-select').length).toBe(7);
+    expect(rowSelectFor(el, STRINGS.energy.nodes.solar).value).toBe('source');
+    expect(rowSelectFor(el, STRINGS.energy.nodes.home).value).toBe('load');
+    expect(rowSelectFor(el, STRINGS.editor.nodeVehicle).value).toBe('load');
+    el.remove();
+  });
+
+  test('FR-24 — an invalid stored row VALUE reflects as the canonical row (not the garbage value)', async () => {
+    // A stored `rows[role]` that is not exactly 'source'/'load' (here 'middle') must degrade
+    // to the role's canonical row in the select — matching the card's `_rowOf` validation.
+    const el = makeEditor();
+    el.setConfig({
+      type: 'custom:tesla-card',
+      energy: { nodes: { rows: { solar: 'middle', home: 'source' } } },
+    } as unknown as TeslaCardConfig);
+    await el.updateComplete;
+    expect(rowSelectFor(el, STRINGS.energy.nodes.solar).value).toBe('source'); // invalid → canonical
+    expect(rowSelectFor(el, STRINGS.energy.nodes.home).value).toBe('source'); // valid override honored
     el.remove();
   });
 });

@@ -7,6 +7,7 @@ import type {
   LovelaceCardEditor,
   PanelId,
   NodeCustomization,
+  SceneRow,
 } from './types';
 import { ROLES, type Role } from './data/registry';
 import { STRINGS } from './strings';
@@ -38,6 +39,12 @@ const NODE_LABELS: Record<Role, string> = {
 function rolesEqual(a: readonly Role[], b: readonly Role[]): boolean {
   return a.length === b.length && a.every((r, i) => r === b[i]);
 }
+
+// Story 9.15 — the canonical source roles (mirrors `my-home.ts` SOURCE_ROW), so the
+// editor can compute a node's DEFAULT row to prune a `rows` entry that equals it
+// (delete-on-canonical, SM-C4). Every other role is a canonical load.
+const SOURCE_ROLES: readonly Role[] = ['solar', 'powerwall', 'grid', 'generator'];
+const canonicalRow = (role: Role): SceneRow => (SOURCE_ROLES.includes(role) ? 'source' : 'load');
 
 /**
  * The order the editor displays (and the card draws, per Story 9.3): the
@@ -122,6 +129,7 @@ export class TeslaCardEditor extends LitElement implements LovelaceCardEditor {
     const nodes: NodeCustomization = { ...(c.energy?.nodes ?? {}) };
     if (nodes.hide) nodes.hide = [...nodes.hide];
     if (nodes.order) nodes.order = [...nodes.order];
+    if (nodes.rows) nodes.rows = { ...nodes.rows };
     mutate(nodes);
 
     if (nodes.hide && nodes.hide.length === 0) delete nodes.hide;
@@ -171,6 +179,29 @@ export class TeslaCardEditor extends LitElement implements LovelaceCardEditor {
     });
   }
 
+  // Story 9.15 — the node's EFFECTIVE row from `energy.nodes.rows`, defensively read
+  // (FR-24, mirrors `_isHidden`): a valid `'source'`/`'load'` override wins, anything
+  // else (absent / invalid / garbage) falls through to the role's canonical row. Drives
+  // the row selector's selected value, matching the card's `_rowOf` classifier.
+  private _nodeRow(role: Role): SceneRow {
+    const v = this._config.energy?.nodes?.rows?.[role];
+    return v === 'source' || v === 'load' ? v : canonicalRow(role);
+  }
+
+  // Promote a node to the chosen row (Story 9.15). Commits through `_commitNodes` with a
+  // DELETE-ON-CANONICAL prune: a `rows[role]` equal to the role's canonical row (or an
+  // emptied `rows` map) is removed, so a defaulted node serializes byte-identically
+  // (SM-C4). The `Object.keys(nodes).length` prune then drops an emptied `nodes`/`energy`.
+  private _setNodeRow(role: Role, row: SceneRow): void {
+    this._commitNodes((nodes) => {
+      const rows = { ...(nodes.rows ?? {}) };
+      if (row === canonicalRow(role)) delete rows[role];
+      else rows[role] = row;
+      if (Object.keys(rows).length > 0) nodes.rows = rows;
+      else delete nodes.rows;
+    });
+  }
+
   // Inline monoline mdi icon (path from `@mdi/js`), `fill: currentColor` — matches
   // the `ui.ts` `icon()` pattern; kept local so the editor pulls no extra module.
   private _icon(path: string): TemplateResult {
@@ -206,6 +237,16 @@ export class TeslaCardEditor extends LitElement implements LovelaceCardEditor {
           (role, i) => html`
             <div class="node-row">
               <span class="node-name">${NODE_LABELS[role]}</span>
+              <select
+                class="row-select"
+                aria-label=${`${STRINGS.editor.sceneNodesRowLabel}: ${NODE_LABELS[role]}`}
+                .value=${this._nodeRow(role)}
+                @change=${(e: Event) =>
+                  this._setNodeRow(role, (e.target as HTMLSelectElement).value as SceneRow)}
+              >
+                <option value="source">${STRINGS.editor.rowSource}</option>
+                <option value="load">${STRINGS.editor.rowLoad}</option>
+              </select>
               <button
                 type="button"
                 class="move"
@@ -372,6 +413,18 @@ export class TeslaCardEditor extends LitElement implements LovelaceCardEditor {
     }
     .node-name {
       flex: 1;
+    }
+    /* Story 9.15 — the per-node Source/Load row selector, sized to sit inline with the
+       move buttons without stealing the node-name's flex room. */
+    .row-select {
+      min-height: 44px;
+      padding: 0 8px;
+      border-radius: 8px;
+      border: 1px solid var(--divider-color, rgba(127, 127, 127, 0.3));
+      background: var(--card-background-color, rgba(127, 127, 127, 0.08));
+      color: var(--primary-text-color, inherit);
+      font-family: inherit;
+      font-size: 13px;
     }
     .move {
       display: inline-flex;

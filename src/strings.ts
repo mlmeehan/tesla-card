@@ -459,6 +459,10 @@ export const STRINGS = {
     moveNodeUp: 'Move earlier',
     moveNodeDown: 'Move later',
     nodeVehicle: 'Vehicle',
+    // ── Cross-row promotion (Story 9.15) — assign a node to the Source or Load row ──
+    sceneNodesRowLabel: 'Row',
+    rowSource: 'Source',
+    rowLoad: 'Load',
     // The note wraps a `<code>entities:</code>` element — split around it.
     noteBefore: 'Per-entity overrides are configured in YAML via the',
     noteAfter: 'map. All keys default to the standard Tesla Fleet / Teslemetry entity IDs.',

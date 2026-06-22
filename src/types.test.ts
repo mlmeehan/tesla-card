@@ -21,6 +21,7 @@ import type {
   BodyLayers,
   NodeCustomization,
   InstanceSpec,
+  SceneRow,
 } from './types';
 import type { Role } from './data/registry';
 import type { EnergyEntities } from './data/energy';
@@ -56,6 +57,7 @@ describe('AC1 — types.ts is the PUBLIC TeslaCardConfig surface only (E9/AR-14)
         'LovelaceCardEditor',
         'NodeCustomization',
         'PanelId',
+        'SceneRow',
         'TeslaCardConfig',
         'TyresConfig',
       ].sort()
@@ -170,6 +172,16 @@ describe('Story 9.1 — energy.nodes is an ADDITIVE, optional, Role-keyed delta'
     expectTypeOf<NonNullable<NodeCustomization['instances']>>().toEqualTypeOf<
       Partial<Record<Role, InstanceSpec[]>>
     >();
+  });
+
+  test('rows is a per-node row override: Partial<Record<Role, SceneRow>> (9.15)', () => {
+    // Cross-row promotion (Story 9.15) — additive, like 9.7 widened `instances`. The
+    // keyspace is `Role` (incl. `vehicle`), and each value is the `'source'|'load'`
+    // SceneRow union. Presentation only — never a sign source (AR-6).
+    expectTypeOf<NonNullable<NodeCustomization['rows']>>().toEqualTypeOf<
+      Partial<Record<Role, SceneRow>>
+    >();
+    expectTypeOf<SceneRow>().toEqualTypeOf<'source' | 'load'>();
   });
 
   test('InstanceSpec carries an optional title + optional per-instance entities override', () => {

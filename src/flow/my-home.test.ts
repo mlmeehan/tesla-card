@@ -202,6 +202,49 @@ describe('busAnchorBetweenRows — the trunk lives in the inter-row GAP, not the
   });
 });
 
+// Story 9.15 — cross-row promotion at the engine layer. Two pure-unit proofs that the
+// pieces 9.15 reuses are correct WITHOUT any edit to balance/the gap fn: (1) feeding the
+// EFFECTIVE band ids re-seats the gap line for a promoted layout (Hazard A — proves WHY
+// `_bandIds` must classify by effective row, not the canonical constant), and (2) the bus
+// SIGN is its own measured net, never derived from a row (Hazard B / AC2 — the AR-6 witness).
+describe('Story 9.15 — cross-row promotion: effective-band re-seat + sign-by-measurement', () => {
+  // A LOAD (home) drawn UP in the source row: its rect sits in the source span (top 0),
+  // while wall_connector is the lone load below (top 500). The render moved the card; the
+  // band classification must move WITH it or the gap calc is wrong (the Hazard-A trap).
+  const promotedLayout: Record<string, RectLike> = {
+    solar: r(0, 0, 100, 80),
+    grid: r(140, 0, 100, 80),
+    home: r(280, 0, 100, 80), // home PROMOTED to the source row — physically at top 0
+    wall_connector: r(70, 500, 100, 80),
+  };
+
+  test('feeding the EFFECTIVE ids re-seats the gap; the canonical (buggy) ids degrade to the centroid', () => {
+    // Effective (9.15): home is classified as a SOURCE → clean gap between source bottom
+    // (80) and the lone load top (500).
+    const good = busAnchorBetweenRows(promotedLayout, ['solar', 'grid', 'home'], ['wall_connector'])!;
+    expect(good.top).toBe((80 + 500) / 2); // 290 — the channel centre, re-seated
+
+    // Canonical (the Hazard-A bug): home still classified as a LOAD → its top (0) collapses
+    // minTop to 0 ≤ maxBottom (80) → the overlap guard degrades to the honest centroid. So
+    // mis-classifying a promoted node by its CONSTANT row loses the clean gap line.
+    const bad = busAnchorBetweenRows(promotedLayout, ['solar', 'grid'], ['home', 'wall_connector'])!;
+    expect(bad).toEqual(deriveBusAnchor(promotedLayout));
+    expect(good.top).not.toBe(bad.top); // the re-seat is a real, observable difference
+  });
+
+  test('bus sign is the MEASURED net (BUS_ORIENTATION × flow), invariant to the rendered row (Hazard B / AC2)', () => {
+    // The model carries NO rendered-row information — promotion lives entirely in the
+    // component's render. So computeBalance.net is the witness: a measured load nets
+    // negative and a measured source nets positive, whatever row the card is drawn in.
+    const model = topology({ solar: 3, powerwall: -1, grid: 2, home: 3, wall_connector: 1 });
+    const net = computeBalance(model).net;
+    expect(net['home']).toBeLessThan(0); // home is a load (orientation -1) — draws from the bus
+    expect(net['solar']).toBeGreaterThan(0); // solar is a source (orientation +1) — injects
+    expect(net['wall_connector']).toBeLessThan(0); // WC charging the car — a load
+    // There is NO row input to read here — the witness that sign can never come from a row.
+  });
+});
+
 describe('RafCoalescer — coalesce a reflow burst into one fire', () => {
   /** A controllable fake rAF: queue callbacks; `flush()` fires them. */
   function fakeRaf() {

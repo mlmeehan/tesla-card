@@ -1827,3 +1827,93 @@ test.describe('tc-my-home Scene — Story 9.14: generator (copper source) at liv
     await expect(ribbon(page)).toHaveCount(1);
   });
 });
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Story 9.15 — cross-row promotion at LIVE geometry. The pixel tier jsdom cannot
+// reach: a promoted card actually lays out in the chosen row (real top), the Gateway
+// trunk RE-SEATS in the new inter-row gap (the Hazard-A proof — only provable with a
+// layout engine), the promoted card's tap rides the bus, and a load promoted into the
+// source row still reads as a LOAD on the bus (AC2 — the state-bearing overlay label is
+// byte-identical to canonical, because balance never reads the rendered row).
+// ═══════════════════════════════════════════════════════════════════════════
+test.describe('tc-my-home Scene — Story 9.15: cross-row promotion follows live geometry', () => {
+  test.beforeEach(async ({ demo }) => {
+    await demo.open(AWAKE.open);
+  });
+
+  test('AC1/AC3 — rows:{wall_connector:"source"} draws the WC in the SOURCE row AND the trunk re-seats below the new grouping with the WC tap on the bus', async ({
+    page,
+  }) => {
+    // Drop Solar so the promotion stays WITHIN the 3-slot source band (no 9.7 wrap) — a
+    // clean inter-row gap to assert the re-seat against. The promotion×wrap composition is
+    // proven in the jsdom suite; this e2e isolates the bus-Y re-seat at live geometry.
+    await mountScene(page, {
+      width: 1100,
+      dropSlug: 'solar_power',
+      config: { energy: { nodes: { rows: { wall_connector: 'source' } } } },
+    });
+    await waitForTrunk(page);
+
+    // (AC1) The WC card now lays out in the SOURCE row: it shares the source band's top
+    // (near grid) and sits strictly ABOVE the remaining load card (home) — the render moved
+    // the card, not just a flag.
+    const boxes = await scene(page).evaluate((el) => {
+      const root = (el as HTMLElement).shadowRoot!;
+      return [...root.querySelectorAll<HTMLElement>('.scene-cell')].map((c) => {
+        const r = c.getBoundingClientRect();
+        return { node: c.dataset.node, top: Math.round(r.top), cy: r.top + r.height / 2 };
+      });
+    });
+    const wc = boxes.find((b) => b.node === 'wall_connector')!;
+    const grid = boxes.find((b) => b.node === 'grid')!;
+    const home = boxes.find((b) => b.node === 'home')!;
+    // WC shares the SOURCE band (near grid's top) and sits strictly above home (the load row).
+    expect(Math.abs(wc.top - grid.top)).toBeLessThan(40);
+    expect(wc.top).toBeLessThan(home.top);
+
+    // (AC3) The trunk re-seats in the NEW inter-row gap: its y lands strictly between the
+    // (now 3-card) source band bottom and the load band top — BELOW the promoted WC.
+    const t = await trunkLine(page);
+    expect(Math.abs(t.y1 - t.y2)).toBeLessThanOrEqual(1); // still a horizontal rail
+    expect(t.y1).toBeGreaterThan(wc.cy); // below the promoted source card (re-seated)
+    expect(t.y1).toBeLessThan(home.cy); // above the load row
+
+    // The WC's bus tap still rides the trunk (its leg is drawn at its new source anchor).
+    await expect(scene(page).locator('.gw-leg[data-role="wall_connector"]')).toHaveCount(1);
+    // Source row now packs the WC after the two remaining sources (powerwall, grid).
+    expect(await sourceOrderByX(page)).toEqual(['powerwall', 'grid', 'wall_connector']);
+  });
+
+  test('AC2 — a LOAD (home) promoted to the source row still reads as a LOAD on the bus (the state-bearing overlay label is unchanged)', async ({
+    page,
+  }) => {
+    // Canonical baseline — capture the overlay's accessible name (built from the model's
+    // measured net, never the rendered row).
+    await mountScene(page, { width: 1100 });
+    await waitForTrunk(page);
+    const baseLabel = await overlay(page).getAttribute('aria-label');
+
+    // Promote home into the source row. The card moves; the SIGN must not.
+    await mountScene(page, {
+      width: 1100,
+      config: { energy: { nodes: { rows: { home: 'source' } } } },
+    });
+    await waitForTrunk(page);
+
+    // home actually rendered in the source row…
+    expect(await sourceOrderByX(page)).toContain('home');
+    // …yet the bus's state-bearing label is byte-identical — same nodes, same kW, same
+    // signs (home still a load). The promotion is purely presentational (AR-6 witness).
+    expect(await overlay(page).getAttribute('aria-label')).toBe(baseLabel);
+  });
+
+  test('AC5/FR-24 — a GARBAGE rows (non-object) renders the canonical Scene at live geometry, console-clean', async ({
+    page,
+  }) => {
+    await mountScene(page, { width: 1100, config: { energy: { nodes: { rows: 'nope' } } } });
+    await waitForTrunk(page);
+    // Degrades to today's canonical packing — no crash, no blank (consoleGuard asserts clean).
+    expect(await sourceOrderByX(page)).toEqual(['solar', 'powerwall', 'grid']);
+    await expect(cells(page)).toHaveCount(5);
+  });
+});

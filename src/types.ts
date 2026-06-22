@@ -124,11 +124,31 @@ export interface InstanceSpec {
   config?: Partial<TeslaCardConfig>;
 }
 
+/**
+ * The two Scene layout rows a node may sit in (Story 9.15). A PRESENTATION/GEOMETRY
+ * choice only — NEVER a sign source: a node's bus contribution is its own measured
+ * flow × `BUS_ORIENTATION[role]` (AR-6), invariant to which row the card is drawn in.
+ */
+export type SceneRow = 'source' | 'load';
+
 export interface NodeCustomization {
   /** Nodes to remove from the Scene — each behaves EXACTLY as if absent (9.2 consumes). */
   hide?: Role[];
   /** Left-to-right node order WITHIN a row (sources stay over loads); unlisted nodes keep their order (9.3 consumes). */
   order?: Role[];
+  /**
+   * Cross-row promotion (Story 9.15) — assign a node to the OTHER layout row,
+   * relaxing 9.3's sources-over-loads default. Keyed by {@link Role} (incl.
+   * `vehicle`); each value is a {@link SceneRow}. Additive + optional: omit ⇒ the
+   * node's CANONICAL row (zero-diff, SM-C4). Forward-compatible (R9 / FR-24): a
+   * non-object value, an unknown-string key, an invalid value (not `'source'`/
+   * `'load'`), or an entry naming an absent/hidden node is TOLERATED — it degrades
+   * to the node's canonical row, never a throw. PRESENTATION ONLY — row membership
+   * is NEVER a sign source: a node's bus contribution stays its own measured flow ×
+   * `BUS_ORIENTATION[role]` (AR-6), invariant to the rendered row. `order` still
+   * positions the node WITHIN its (now-effective) row.
+   */
+  rows?: Partial<Record<Role, SceneRow>>;
   /**
    * Multi-instance / duplicate-role descriptor list (9.7). Keyed by {@link Role};
    * each value is an {@link InstanceSpec}[] whose LENGTH is the instance count and

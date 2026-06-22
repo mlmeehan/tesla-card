@@ -41,7 +41,7 @@ import {
 } from '../flow/my-home';
 import { roleInstances, roleOfInstance } from '../flow/instances';
 import type { EnergyRole, Role } from '../data/registry';
-import type { HomeAssistant, LovelaceCard, TeslaCardConfig } from '../types';
+import type { HomeAssistant, LovelaceCard, TeslaCardConfig, SceneRow } from '../types';
 
 // The five Scene-unaware child cards (Stories 6.2 / 6.3). Side-effect imports so
 // `tc-my-home` registers its whole composition from this one module — even though
@@ -84,7 +84,6 @@ const LONG_LEG_PX = 160;
  * order, so `cellTags`/anchor walks are unchanged.
  */
 const SOURCE_ROW: readonly EnergyRole[] = ['solar', 'powerwall', 'grid', 'generator'];
-const LOAD_ROW: readonly EnergyRole[] = ['home', 'wall_connector'];
 
 /**
  * Story 9.3: the load row's ORDERING domain — the two energy loads PLUS the
@@ -93,9 +92,20 @@ const LOAD_ROW: readonly EnergyRole[] = ['home', 'wall_connector'];
  * `'vehicle'`, so a defaulted/absent/garbage `order` keeps it trailing — byte-for-byte
  * Story 8.10's behaviour (zero-diff). This is NOT a flow-node list (the vehicle never
  * enters `gatewaySegments`' tap walk — it is not a `FlowNode`); it is purely the
- * load-row CELL packing domain. The energy loads stay `LOAD_ROW` everywhere else.
+ * load-row CELL packing domain. The canonical load roles are everything in here that
+ * is NOT a {@link SOURCE_ROW} member (Story 9.15's `_rowOf` derives the canonical row
+ * from these two constants).
  */
 const LOAD_ROW_WITH_VEHICLE: readonly Role[] = ['home', 'wall_connector', 'vehicle'];
+
+/**
+ * Story 9.15 — the FULL Scene cell vocabulary in canonical (deterministic) base
+ * order: every source role, then every load role + the synthetic `'vehicle'`. The
+ * effective per-row domain is this list FILTERED by {@link TcMyHome._rowOf} (the
+ * one cross-row classifier), so a defaulted node lands in its canonical row exactly
+ * as before (zero-diff) and a promotion just re-partitions the same ordered list.
+ */
+const SCENE_ROW_ORDER: readonly Role[] = [...SOURCE_ROW, ...LOAD_ROW_WITH_VEHICLE];
 
 /**
  * Story 9.3 — order a row's PRESENT roles by the user's `order` list. A STABLE
@@ -472,7 +482,13 @@ export class TcMyHome extends LitElement implements LovelaceCard {
     // Story 9.7: pass the present per-INSTANCE ids per band (not the role constants)
     // so multi-instance + wrapped anchors are found; `max(source bottoms)` is the
     // PRIMARY (near) sub-row's bottom, keeping busY just below it.
-    const bus = busAnchorBetweenRows(rel, this._bandIds(SOURCE_ROW), this._bandIds(LOAD_ROW));
+    // Story 9.15: classify each band by the EFFECTIVE rendered row (the same `_rowOf`
+    // the grid packs by), so a promoted node's bottom/top feeds the correct side of the
+    // gap line — the trunk re-seats in the NEW inter-row gap. `busAnchorBetweenRows`
+    // itself is unchanged (it takes the band id lists as params; only which ids we hand
+    // it changes). No `rows` ⇒ canonical ids ⇒ today's busY (zero-diff).
+    const cfg = this._resolvedConfig ?? this._config;
+    const bus = busAnchorBetweenRows(rel, this._bandIds(cfg, 'source'), this._bandIds(cfg, 'load'));
     if (bus) rel[BUS_NODE_ID] = bus;
     this._bus.setAnchors(rel);
     // Story 6.6: cache the relativized anchors for the Gateway overlay.
@@ -488,11 +504,16 @@ export class TcMyHome extends LitElement implements LovelaceCard {
     this.requestUpdate(); // redraw the overlay over the cached geometry
   }
 
-  /** The present per-instance node ids whose role is in `roles` — a band's bus-tap
-   *  anchor keys (Story 9.7). Single-instance ⇒ the ids ARE the roles (zero-diff). */
-  private _bandIds(roles: readonly EnergyRole[]): string[] {
-    const set = new Set<EnergyRole>(roles);
-    return this._model.nodes.filter((n) => n.present && set.has(n.role)).map((n) => n.id);
+  /** The present per-instance node ids whose EFFECTIVE row (Story 9.15 — `_rowOf`, the
+   *  same classifier `_orderedRows` renders by) is `side` — a band's bus-tap anchor keys
+   *  (Story 9.7). Classifying by the effective row (not the canonical constant) re-seats
+   *  the bus-Y gap when a node is promoted (Hazard A). The vehicle is excluded by
+   *  construction (not a `FlowNode`), so the busY derivation stays energy-load-only.
+   *  No `rows` ⇒ `_rowOf` returns canonical ⇒ the ids match the pre-9.15 band (zero-diff). */
+  private _bandIds(cfg: TeslaCardConfig | undefined, side: SceneRow): string[] {
+    return this._model.nodes
+      .filter((n) => n.present && this._rowOf(n.role, cfg) === side)
+      .map((n) => n.id);
   }
 
   // ── render (AC1b, AC3d) ─────────────────────────────────────────────────────
@@ -736,6 +757,35 @@ export class TcMyHome extends LitElement implements LovelaceCard {
   }
 
   /**
+   * Story 9.15 — the cross-row promotion map from `energy.nodes.rows`. Defensive
+   * (FR-24), a sibling of {@link _orderList}/{@link _hiddenRoles}: a non-object /
+   * array / garbage `rows` degrades to "no promotion" (`{}`), never throws. Values
+   * are NOT validated here (an unknown key / invalid value is inert) — {@link _rowOf}
+   * validates each value at consumption. Pure config (no `hass.states`, no entity ids
+   * — AR-1 safe).
+   */
+  private _rowOverrides(cfg: TeslaCardConfig | undefined): Partial<Record<Role, SceneRow>> {
+    const rows = cfg?.energy?.nodes?.rows;
+    return rows && typeof rows === 'object' && !Array.isArray(rows)
+      ? (rows as Partial<Record<Role, SceneRow>>)
+      : {};
+  }
+
+  /**
+   * Story 9.15 — the SINGLE source of truth for a role's EFFECTIVE (rendered) layout
+   * row: its `rows` override iff that override is exactly `'source'`/`'load'`, else
+   * the role's CANONICAL row. BOTH the render ({@link _orderedRows}) and the bus-Y
+   * band classification ({@link _bandIds}) consult this one classifier, so they can
+   * never disagree (Hazard A). An unknown-string key or an invalid value falls
+   * through to canonical — graceful, zero-diff when no `rows`.
+   */
+  private _rowOf(role: Role, cfg: TeslaCardConfig | undefined): SceneRow {
+    const override = this._rowOverrides(cfg)[role];
+    if (override === 'source' || override === 'load') return override;
+    return (SOURCE_ROW as readonly Role[]).includes(role) ? 'source' : 'load';
+  }
+
+  /**
    * Story 9.3 — the SINGLE source of truth for the rendered, order-applied cell
    * sequence of each row. {@link render} packs its cells from this, and {@link updated}
    * derives the geometry reflow signature (`_presentKey`) from it — so a reorder-only
@@ -748,19 +798,28 @@ export class TcMyHome extends LitElement implements LovelaceCard {
   private _orderedRows(cfg: TeslaCardConfig): { source: SceneCell[]; load: SceneCell[] } {
     const present = new Set<Role>(this._model.nodes.filter((n) => n.present).map((n) => n.role));
     const order = this._orderList(cfg);
-    // Order the present ROLES (9.3), then EXPAND each into its present instance cells
-    // (9.7) in instance order — so a duplicated role contributes N adjacent cells.
-    const source = orderRow(SOURCE_ROW, present, order).flatMap((role) =>
-      this._instanceCells(cfg, role)
-    );
-    const loadPresent = new Set<Role>(LOAD_ROW.filter((role) => present.has(role)));
     // Story 9.8: N present vehicle cells (was a single hardcoded cell). The vehicle slot
     // is present iff at least one car resolves; its cells expand in instance order.
     const vehicleCells = this._vehicleInstanceCells(cfg);
-    if (vehicleCells.length) loadPresent.add('vehicle');
-    const load = orderRow(LOAD_ROW_WITH_VEHICLE, loadPresent, order).flatMap((role) =>
-      role === 'vehicle' ? vehicleCells : this._instanceCells(cfg, role)
+    // The synthetic `'vehicle'` cell is present iff a car resolves; energy roles come
+    // from the model. Build ONE present-set over the full Scene vocabulary.
+    const presentRoles = new Set<Role>(
+      SCENE_ROW_ORDER.filter((role) =>
+        role === 'vehicle' ? vehicleCells.length > 0 : present.has(role)
+      )
     );
+    // Story 9.15 — each row's EFFECTIVE domain is the canonical vocabulary filtered by
+    // `_rowOf` (the one classifier), NOT the canonical SOURCE_ROW/LOAD_ROW constants —
+    // so a promoted node packs in its chosen row. With no `rows`, `_rowOf` returns each
+    // role's canonical row ⇒ the domains == SOURCE_ROW / LOAD_ROW_WITH_VEHICLE (filtered
+    // to present) ⇒ byte-for-byte today (zero-diff). `orderRow` then positions `order`
+    // WITHIN the effective row, and each present role EXPANDS to its instance cells (9.7).
+    const sourceDomain = SCENE_ROW_ORDER.filter((role) => this._rowOf(role, cfg) === 'source');
+    const loadDomain = SCENE_ROW_ORDER.filter((role) => this._rowOf(role, cfg) === 'load');
+    const expand = (role: Role): SceneCell[] =>
+      role === 'vehicle' ? vehicleCells : this._instanceCells(cfg, role);
+    const source = orderRow(sourceDomain, presentRoles, order).flatMap(expand);
+    const load = orderRow(loadDomain, presentRoles, order).flatMap(expand);
     return { source, load };
   }
 
