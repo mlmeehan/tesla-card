@@ -831,3 +831,115 @@ test.describe('tc-my-home Scene — Story 8.5 vehicle: half-alive (asleep) is ca
     await expect(vehCell(page).getByText(/updated 47m ago/i).first()).toBeVisible();
   });
 });
+
+// ── Story 8.12 — gw-term anchors at the card's VISIBLE bottom (live layout) ─────────
+// The ONLY tier that proves the fix: jsdom has zero layout, so the source-row align flip
+// is invisible there. Here, in real Chromium, the short Solar cell genuinely shrinks to
+// content under align-items:start, so its terminal rises to the visible bottom and the
+// source row reads with RAGGED bottoms — while the inter-row trunk Y holds (the existing
+// AC2/AC4 trunk-Y assertions above are the guard, unchanged).
+test.describe('tc-my-home Scene — Story 8.12: gw-term anchors at the card visible bottom', () => {
+  test.beforeEach(async ({ demo }) => {
+    await demo.open(AWAKE.open);
+  });
+
+  test('AC1 — the Solar terminal sits at the Solar card VISIBLE bottom (ragged row), not in ballooned dead space', async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width: 1280, height: 800 });
+    await mountScene(page, { width: 1100 });
+    await waitForTrunk(page);
+
+    // Geometry in the overlay's container space (the `.scene` box — the overlay has no
+    // viewBox and draws relative to it, exactly as `relativeAnchors` subtracts the host top).
+    const geom = await scene(page).evaluate((el) => {
+      const root = (el as HTMLElement).shadowRoot!;
+      const sceneTop = root.querySelector('.scene')!.getBoundingClientRect().top;
+      const bottomOf = (sel: string) =>
+        root.querySelector(sel)!.getBoundingClientRect().bottom - sceneTop;
+      return {
+        solarBottom: bottomOf('.scene-cell[data-node="solar"]'),
+        powerwallBottom: bottomOf('.scene-cell[data-node="powerwall"]'),
+      };
+    });
+    const solarTermCy = Number(
+      await scene(page).locator('.gw-leg[data-role="solar"] .gw-term').first().getAttribute('cy'),
+    );
+
+    // RAGGED bottoms — the red→green discriminator. Before 8.12, align-items:stretch
+    // ballooned Solar to its taller row-mate Powerwall's height, so both source cells
+    // shared an EQUAL bottom; after, align:start shrinks Solar to its own content, so it
+    // ends well ABOVE the taller Powerwall.
+    expect(geom.solarBottom).toBeLessThan(geom.powerwallBottom - 20);
+    // AC1: the terminal anchors at Solar's OWN visible bottom (within a few px — the ring
+    // `cy` IS the cell's near edge `rect.top + rect.height`, now honest after the shrink).
+    expect(Math.abs(solarTermCy - geom.solarBottom)).toBeLessThanOrEqual(5);
+    // …and therefore the ring sits well above where the old ballooned bottom dropped it —
+    // no dead gap between the visible Solar artwork and its terminal.
+    expect(solarTermCy).toBeLessThan(geom.powerwallBottom - 20);
+  });
+
+  test('AC2 — the inter-row trunk Y is unchanged by the align flip (still a horizontal trunk between the rows)', async ({
+    page,
+  }) => {
+    // The bus trunk Y is invariant to align-items (the row TRACK height = the tallest
+    // card's height either way), so the existing AC2/AC4 trunk-Y guards hold. Re-assert
+    // the trunk is a real horizontal rail BETWEEN the source and load rows here too.
+    await page.setViewportSize({ width: 1280, height: 800 });
+    await mountScene(page, { width: 1100 });
+    await waitForTrunk(page);
+    const t = await trunkLine(page);
+    expect(Math.abs(t.y1 - t.y2)).toBeLessThanOrEqual(1); // horizontal: constant y
+    expect(Math.abs(t.x2 - t.x1)).toBeGreaterThan(50); // real left→right span
+
+    // The trunk sits between the source bottoms and the load tops (it did not jump onto a row).
+    const rows = await scene(page).evaluate((el) => {
+      const root = (el as HTMLElement).shadowRoot!;
+      const sceneTop = root.querySelector('.scene')!.getBoundingClientRect().top;
+      const cellBottom = (sel: string) =>
+        root.querySelector(sel)!.getBoundingClientRect().bottom - sceneTop;
+      const cellTop = (sel: string) =>
+        root.querySelector(sel)!.getBoundingClientRect().top - sceneTop;
+      return {
+        sourceMaxBottom: cellBottom('.scene-cell[data-node="powerwall"]'),
+        loadMinTop: cellTop('.scene-cell[data-node="home"]'),
+      };
+    });
+    expect(t.y1).toBeGreaterThan(rows.sourceMaxBottom - 1);
+    expect(t.y1).toBeLessThan(rows.loadMinTop + 1);
+  });
+
+  test('AC3 — the long Solar leg carries the `.long` conduit class on desktop (short hops do not)', async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width: 1280, height: 800 });
+    await mountScene(page, { width: 1100 });
+    await waitForTrunk(page);
+    const solarLong = await scene(page)
+      .locator('.gw-leg[data-role="solar"] .gw-leg-base')
+      .first()
+      .evaluate((l) => l.classList.contains('long'));
+    expect(solarLong).toBe(true);
+    // A short hop (Home — a load card adjacent to the trunk) stays a calm hairline.
+    const homeLong = await scene(page)
+      .locator('.gw-leg[data-role="home"] .gw-leg-base')
+      .first()
+      .evaluate((l) => l.classList.contains('long'));
+    expect(homeLong).toBe(false);
+  });
+
+  test('AC4 — at phone ≤540px NO leg crosses the threshold (the `.long` polish never reaches phone — layout identical to today)', async ({
+    page,
+  }) => {
+    // `.long` is horiz-gated in `_legs` (`horiz && len > LONG_LEG_PX`), so at the ≤540px
+    // phone reflow (vertical bus, `_axis === 'y'`) it is suppressed for EVERY leg regardless
+    // of length — the phone layout stays identical to today. This count-0 assertion is the
+    // real-≤540px-layout backstop; the guard that proves it is the GATE (not merely that no
+    // phone leg happens to be long enough) is the unit test "Task 6/AC4" (forced `_axis='y'`,
+    // a 300px vertical leg that still stays calm).
+    await page.setViewportSize({ width: 500, height: 1000 });
+    await mountScene(page, { width: 460 });
+    await waitForTrunk(page);
+    await expect(scene(page).locator('.gw-leg-base.long')).toHaveCount(0);
+  });
+});

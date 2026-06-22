@@ -63,6 +63,16 @@ import './wall-connector';
 const GATEWAY_STROKE = '#cfe2ff';
 
 /**
+ * Story 8.12 (CAP-3): the cross-axis length (container px) above which a node's Gateway
+ * leg counts as "long" and earns the `.long` conduit polish. Short hops (~75–90px) stay
+ * calm hairlines; a short source card's now-honest leg (Solar — ~400px once its cell
+ * stops ballooning under align-items:start, Task 1) crosses this and reads as a deliberate
+ * energy conduit, resolving the Longer-Leg Paradox. A layout constant (not a brand/
+ * trade-dress literal), a starting point tuned against the desktop screenshot (Task 7).
+ */
+const LONG_LEG_PX = 160;
+
+/**
  * The Scene's two LAYOUT rows (Story 6.6/6.7) — a fixed role partition, NOT the
  * dynamic net-sign source/load (a Powerwall discharging still sits in the top
  * row). The order within each row is canonical (matches `SCENE_NODES`). Each row
@@ -907,9 +917,19 @@ export class TcMyHome extends LitElement implements LovelaceCard {
         // value); an absent edge draws NO pill (AC2 honesty — but a present leg
         // always carries an edge, so this is a defensive guard).
         const mid = { x: (start.x + end.x) / 2, y: (start.y + end.y) / 2 };
+        // Story 8.12 (CAP-3): the leg's cross-axis length (start/end differ only on the
+        // cross axis, so |near - cross|). Over LONG_LEG_PX it earns the .long conduit
+        // polish below — a length-aware bump, never a global one (short hops stay calm).
+        // GATED to the horizontal (desktop) bus (AC4): at the ≤540px phone reflow the rows
+        // stack full-width, so EVERY vertical leg spans ~half the card width (well over the
+        // threshold) — an un-gated .long would bolden every phone leg, changing the phone
+        // layout. The long-conduit read is a desktop-bus affordance anyway (a short source
+        // card dropping a long way to the horizontal trunk); the e2e pins zero .long legs
+        // at phone width.
+        const len = Math.abs(near - cross);
         return svg`
           <g class="gw-leg ${lit?.has(n.role) ? 'on' : ''}" data-role=${n.role}>
-            <line class="gw-leg-base" style="stroke:${color}" x1=${start.x} y1=${start.y} x2=${end.x} y2=${end.y}></line>
+            <line class="gw-leg-base ${horiz && len > LONG_LEG_PX ? 'long' : ''}" style="stroke:${color}" x1=${start.x} y1=${start.y} x2=${end.x} y2=${end.y}></line>
             ${flow}
             ${this._terminal(start, color)}
             ${this._tap(end, color)}
@@ -1083,14 +1103,29 @@ export class TcMyHome extends LitElement implements LovelaceCard {
         column-gap: 80px;
         justify-content: center;
       }
-      /* Story 8.10: top-align the LOAD-row cells (NOT the source row — its stretch is
-         tuned for the inter-row bus-trunk placement). The load row now mixes the Home/WC
-         node cards with the compact vehicle card, which have different natural heights, so
-         the default align-items:stretch would balloon the shorter cells to the tallest
-         cell's height (dead space + an over-tall focus ring), and the WC->Vehicle leg would
-         anchor to the stretched cell midpoint, off the shorter card's content.
-         align-items:start keeps each card its natural height with tops aligned, so the leg
+      /* Story 8.12: top-align BOTH rows. SOURCE-row reason: a short Solar cell under the
+         grid-default align-items:stretch balloons to its tallest row-mate's (Powerwall)
+         height, so the cell's MEASURED bottom drops far below the visible artwork — and
+         with it the Gateway terminal, which _legs anchors at the cell's near edge
+         rect.top + rect.height. align-items:start shrinks the cell to its content, so the
+         ring rises to the card's TRUE visible bottom (the _legs near-edge math is
+         unchanged). Bus-Y is INVARIANT to align-items: the grid row TRACK height = the
+         tallest card's height whether items stretch or start (align positions items WITHIN
+         the track, it does not resize the track), so busAnchorBetweenRows' maxBottom
+         (flow/my-home.ts) is unchanged and the inter-row trunk does NOT move — the retired
+         "stretch is tuned for the bus" claim was stale. The source row now reads with
+         RAGGED bottoms (short Solar beside tall Powerwall): the accepted trade — terminal
+         proximity over a tidy equal-height row, mirroring the load-row precedent — not a
+         regression. The durable forward-contract for node customization is that bus-Y
+         depends only on the TALLEST card per row (adding a taller card still shifts it). A
+         long source leg then earns the .long conduit polish below.
+         Story 8.10 (LOAD-row) reason, still in force: the load row mixes the Home/WC node
+         cards with the compact vehicle card at different natural heights; stretch would
+         balloon the shorter cells (dead space + an over-tall focus ring) and the
+         WC->Vehicle leg would anchor to the stretched-cell midpoint, off the shorter card's
+         content. start keeps each card its natural height with tops aligned, so the leg
          lands at the cards' true overlap centre. */
+      .source-row,
       .load-row {
         align-items: start;
       }
@@ -1153,6 +1188,19 @@ export class TcMyHome extends LitElement implements LovelaceCard {
         stroke-width: 2;
         stroke-linecap: round;
         opacity: 0.45;
+      }
+      /* Story 8.12 (CAP-3): a length-aware bump for a LONG leg (over LONG_LEG_PX in
+         _legs) so it reads as a deliberate energy conduit — the Solar leg, now honest
+         after the source-row top-align (Task 1), instead of a faint lonely thread. Same
+         KIND of literal as the sibling .gw-leg-base — direct SVG stroke props (NOT a
+         --tc-* token, NOT a gradient) — but a deliberate bump FROM the sibling's
+         stroke-width 2 / opacity 0.45 TO 2.5 / 0.6; opacity + stroke-width only, no
+         gradient/taper (the codebase avoids gradients). Length-aware so short hops never
+         gain body. The leg reads by day via its sb-flow dash and by night via the kW pill
+         + this bolder base. Tunable starting values (SPEC Open Question, Task 7). */
+      .gw-leg-base.long {
+        opacity: 0.6;
+        stroke-width: 2.5;
       }
       /* ── Story 8.6: enriched-leg decorations (kW pill · terminal · tap). All
          STATIC SVG (no @media, no keyframe) so reduced-motion keeps them as the

@@ -1291,3 +1291,96 @@ describe('Story 8.7 — the self-powered lead + per-node tiles', () => {
     expect(pillTxt(legOf(el, 'grid'))).toContain(tileMag);
   });
 });
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Story 8.12 — the Gateway terminal anchors at its card's VISIBLE bottom (source-row
+// top-align) and a long leg reads as a deliberate conduit (length-aware `.long`).
+// The per-card Solar-bottom GEOMETRY is the E2E's job (jsdom layout is zero); here we
+// pin the CSS contract via the styles-string idiom and the `len > LONG_LEG_PX` LOGIC
+// via the Story-8.10 inject-`_anchors` + force-`_axis` pattern (which feeds geometry
+// directly, bypassing jsdom's zero layout — so both branches are real coverage).
+// ═══════════════════════════════════════════════════════════════════════════
+describe('Story 8.12 — gw-term anchors at the card visible bottom (source-row top-align + length-aware long leg)', () => {
+  const flatten = (s: unknown): string =>
+    Array.isArray(s) ? s.map(flatten).join('\n') : ((s as { cssText?: string })?.cssText ?? '');
+  const cssText = (): string => flatten((TcMyHome as unknown as { styles: unknown }).styles);
+  const baseClasses = (el: Scene, role: string): DOMTokenList => {
+    // Assert the leg + its base line actually rendered BEFORE reading classes: a bare
+    // `?.contains('long')` yields `undefined` for a missing leg, so the positive case would
+    // fail as "undefined !== true" and could not distinguish "leg absent" from "leg lacks
+    // .long". Throw a named error instead so a missing leg is unambiguous.
+    const base = legOf(el, role)?.querySelector('.gw-leg-base') ?? null;
+    if (!base) throw new Error(`Story 8.12 test: no .gw-leg-base rendered for role="${role}"`);
+    return base.classList;
+  };
+
+  test('Task 1/AC1/AC2 — the SOURCE row top-aligns (align-items:start) alongside the load row; the column-centering is untouched', () => {
+    const css = cssText();
+    // Both rows now share ONE align-items:start rule. Before 8.12 only `.load-row {
+    // align-items:start }` existed (guarded by a stale "source stretch is tuned for the
+    // bus" comment), so the GROUPED `.source-row, .load-row { align-items: start }` is the
+    // red->green proof of the source-row top-align (a bare toContain('align-items: start')
+    // already passed on the load-row alone — it would NOT prove the source-row change).
+    expect(css).toMatch(/\.source-row,\s*\.load-row\s*\{\s*align-items:\s*start/);
+    // AC2: the trunk does NOT move — bus-Y is invariant to align (the row TRACK height is
+    // the tallest card's either way). The `.scene-grid` COLUMN centering is a DIFFERENT
+    // selector and stays put (the 6.7 unit pin) — align is never flipped to center on a row.
+    // Bind the check to the `.scene-grid` rule BLOCK — a bare toContain('align-items: center')
+    // is a global substring that would pass if `align-items: center` appeared in ANY rule, so
+    // it would NOT prove the column-centering selector specifically stayed put.
+    expect(css).toMatch(/\.scene-grid\s*\{[^}]*align-items:\s*center/);
+  });
+
+  test('Task 3/AC3/AC5 — a `.gw-leg-base.long` polish rule exists (opacity:0.6 + stroke-width:2.5), as direct SVG literals — no new token, no gradient', () => {
+    const css = cssText();
+    expect(css).toMatch(/\.gw-leg-base\.long\s*\{[^}]*opacity:\s*0\.6/);
+    expect(css).toMatch(/\.gw-leg-base\.long\s*\{[^}]*stroke-width:\s*2\.5/);
+    // AC5: the polish is direct stroke literals — NO new `--tc-*` token, NO gradient (the
+    // codebase avoids gradients). Scope the checks to the rule BLOCK so neither the
+    // explanatory comment nor unrelated token rules can mask a violation.
+    const longBlock = css.match(/\.gw-leg-base\.long\s*\{[^}]*\}/)?.[0] ?? '';
+    expect(longBlock).not.toBe('');
+    expect(longBlock).not.toContain('--tc-');
+    expect(longBlock).not.toContain('gradient');
+  });
+
+  test('Task 2/AC3 — only a leg whose cross-axis length exceeds LONG_LEG_PX gets the `long` class; short hops stay calm', async () => {
+    const el = await mount(makeHass(states(awakeFx)));
+    recompute(el); // populate the bus so the overlay renders (jsdom: zero rects)
+    await el.updateComplete;
+    const inst = el as unknown as { _anchors: Record<string, unknown>; _axis: string };
+    // Desktop axis. Both source cards sit ABOVE the trunk (cy < cross => near = card BOTTOM,
+    // the post-Task-1 visible-bottom anchor). Solar's bottom is FAR from the trunk (a long
+    // conduit); Powerwall's bottom is near it (a calm hairline) — well clear of the 160px
+    // threshold on either side, so this stays valid across any reasonable Task-7 tuning.
+    inst._anchors = {
+      solar: { left: 0, top: 0, width: 100, height: 50 }, // bottom=50, len=|50-400|=350 (long)
+      powerwall: { left: 200, top: 280, width: 100, height: 50 }, // bottom=330, len=|330-400|=70 (short)
+      bus: { left: 0, top: 400, width: 0, height: 0 }, // trunk cross = 400
+    };
+    inst._axis = 'x';
+    (el as unknown as { requestUpdate(): void }).requestUpdate();
+    await el.updateComplete;
+    expect(baseClasses(el, 'solar').contains('long')).toBe(true); // honest long conduit
+    expect(baseClasses(el, 'powerwall').contains('long')).toBe(false); // short hop stays calm
+  });
+
+  test('Task 6/AC4 — `long` is GATED to the horizontal (desktop) bus: a long VERTICAL phone-axis leg stays calm', async () => {
+    const el = await mount(makeHass(states(awakeFx)));
+    recompute(el);
+    await el.updateComplete;
+    const inst = el as unknown as { _anchors: Record<string, unknown>; _axis: string };
+    // Phone axis (y): the trunk is vertical, legs run horizontally. A full-width stacked
+    // card's near edge sits a LONG way from the bus x (len = |100 - 400| = 300 >> 160) —
+    // yet AC4 keeps the phone layout identical to today, so the horiz-gate suppresses
+    // .long for EVERY phone leg (the e2e pins this at real ≤540px width too).
+    inst._anchors = {
+      solar: { left: 0, top: 0, width: 100, height: 50 },
+      bus: { left: 400, top: 0, width: 0, height: 0 }, // cross (bus x) = 400
+    };
+    inst._axis = 'y';
+    (el as unknown as { requestUpdate(): void }).requestUpdate();
+    await el.updateComplete;
+    expect(baseClasses(el, 'solar').contains('long')).toBe(false); // gated off at phone
+  });
+});
