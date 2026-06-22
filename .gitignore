@@ -11,6 +11,48 @@ dist/
 /.claude/
 /_bmad-output/
 
+# BMAD / planning artifact FILENAMES — advisory first layer so a stray planning doc
+# written outside the dirs above (into docs/, root, …) isn't accidentally `git add`ed.
+# The hard, source-of-truth enforcement is scripts/lint/no-planning-artifacts.mjs
+# (npm run lint + the native pre-commit hook + the Claude Bash guard). The doc-project
+# outputs we DO publish (docs/architecture.md, source-tree-analysis.md,
+# component-inventory.md, layer-contract.md, audit-r6-*.md) are NOT matched here.
+prd.md
+prd-*.md
+prd_*.md
+epic.md
+epics.md
+epic-*.md
+epics-*.md
+story-*.md
+*.story.md
+spec-*.md
+ux-*.md
+brief-*.md
+sprint-status*.md
+sprint-status*.yaml
+sprint-status*.yml
+sprint-plan*.md
+sprint-change*.md
+correct-course*.md
+retrospective*.md
+retro-*.md
+brainstorming-*.md
+product-brief*.md
+prfaq*.md
+pr-faq*.md
+market-research*.md
+domain-research*.md
+technical-research*.md
+traceability-matrix*.md
+test-design*.md
+test-review*.md
+nfr-assessment*.md
+implementation-readiness*.md
+project-context.md
+# (numeric story files like 5-10-media-panel.md / 8.12.md are enforced by the gate,
+#  not gitignored, to avoid silently hiding a date-named doc like 2026-06-20-notes.md)
+
 # Local-only recolor test art (bring-your-own; Tesla trade-dress stays out of the repo)
 demo/local/
 

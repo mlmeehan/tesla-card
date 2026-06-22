@@ -1,0 +1,35 @@
+#!/usr/bin/env bash
+# Native git pre-commit gate — Layer 1 of the planning-artifact guard.
+#
+# Runs on EVERY `git commit` by ANY committer (you, Claude, a bot), which is what
+# .gitignore + the Claude-only PreToolUse hooks cannot give you: it also catches a
+# `git add -f` that bypassed .gitignore, and it catches the human. It checks only
+# the STAGED set for this commit (fast) and delegates the actual deny decision to
+# the single source of truth, scripts/lint/no-planning-artifacts.mjs --staged.
+#
+# Wired via `core.hooksPath = scripts/hooks` (set by the package.json "prepare"
+# script on `npm install`/`npm ci`). To install by hand:
+#     git config core.hooksPath scripts/hooks
+#
+# Bypass (intentionally noisy): `git commit --no-verify` skips this — but the Claude
+# guard (.claude/hooks/guard-no-planning-artifacts.sh) still checks --no-verify
+# commits, and `npm run lint` / CI re-check the whole tracked tree.
+set -euo pipefail
+
+repo="$(git rev-parse --show-toplevel)"
+gate="$repo/scripts/lint/no-planning-artifacts.mjs"
+
+# Node is required to run the gate. This is a Node project, so it's always present
+# for contributors — but degrade gracefully (warn, allow) rather than wedge commits
+# in a node-less environment; CI's `npm run lint` is the un-bypassable backstop.
+if ! command -v node >/dev/null 2>&1; then
+  echo "pre-commit: node not found — skipping planning-artifact gate (CI still enforces it)." >&2
+  exit 0
+fi
+
+if [[ ! -f "$gate" ]]; then
+  echo "pre-commit: $gate missing — skipping planning-artifact gate." >&2
+  exit 0
+fi
+
+exec node "$gate" --staged
