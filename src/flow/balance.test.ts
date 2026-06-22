@@ -9,7 +9,7 @@ import { describe, expect, test } from 'vitest';
 import type { HomeAssistant, TeslaCardConfig } from '../types';
 import { resolveEnergyEntities, numById, type EnergyEntities } from '../data/energy';
 import { adapterFor } from '../data/dialect';
-import { BUS_ORIENTATION } from '../data/registry';
+import { BUS_ORIENTATION, type EnergyRole } from '../data/registry';
 import { buildFlowModel, BUS_NODE_ID, type FlowInput, type FlowModel } from './model';
 import { flowInputsFrom, POWER_KEY, ENERGY_ROLES } from './binding';
 import * as balanceModule from './balance';
@@ -182,5 +182,74 @@ describe('computeBalance — sign-convention holds on the fixture CORPUS (Story 
       const canonical = adapter.normalizePower(node.role, numById(hass, entities[POWER_KEY[node.role]])).value;
       expect(b.net[node.id]).toBeCloseTo(BUS_ORIENTATION[node.role] * (canonical as number), 6);
     }
+  });
+});
+
+// ───────────────────────────────────────────────────────────────────────────
+// Story 9.2 — "hidden == absent" is a GUARANTEE, not a coincidence (AC5). Build the
+// model two ways and assert `computeBalance().net` is identical node-for-node:
+//   (a) the entity is PRESENT but its role is in `hide` (the 9.2 binding path), and
+//   (b) the entity is genuinely ABSENT from `hass` (the entity removed).
+// If these ever diverge, someone added a "hidden" code path an absent node doesn't
+// take — the forbidden variant-matrix branch. They stay converged because hide forces
+// the SAME `kW:undefined` absence produces — there is NO second engine or sign
+// convention (AR-6/7). Driven through the PRODUCTION binding, like the rest of D5.
+// ───────────────────────────────────────────────────────────────────────────
+describe('computeBalance — Story 9.2: a hidden node balances IDENTICALLY to an absent one (AC5)', () => {
+  const STAMP = '2026-06-15T14:41:00Z';
+  const NOW = Date.parse(STAMP);
+  const mk = (id: string, state: string): Record<string, unknown> => ({
+    [id]: { entity_id: id, state, attributes: {}, last_changed: STAMP, last_updated: STAMP },
+  });
+
+  /** A copy of `base` with the entity backing `role`'s power removed (genuinely absent). */
+  function withRoleAbsent(base: Record<string, any>, role: EnergyRole): Record<string, any> {
+    const id = resolveEnergyEntities(makeHass(base), cfg())[POWER_KEY[role]];
+    const states = { ...base };
+    if (id) delete states[id];
+    return states;
+  }
+
+  /** The teeth: hide(role) and absent(role) must produce a balance equal in every part. */
+  function assertHiddenEqualsAbsent(base: Record<string, any>, role: EnergyRole, now?: number): void {
+    const opts = now === undefined ? {} : { now };
+    const hidden = computeBalance(buildFlowModel(flowInputsFrom(makeHass(base), cfg(), opts, [role])));
+    const absent = computeBalance(buildFlowModel(flowInputsFrom(makeHass(withRoleAbsent(base, role)), cfg(), opts)));
+    expect(hidden.net).toEqual(absent.net); // node-for-node net injections identical
+    expect(hidden.residual).toBeCloseTo(absent.residual, 9);
+    expect(hidden.balanced).toBe(absent.balanced);
+  }
+
+  test('full 5-node awake corpus — hiding solar (a source) == solar absent', () => {
+    assertHiddenEqualsAbsent(awake.states, 'solar');
+  });
+
+  test('full 5-node awake corpus — hiding the wall_connector (a load) == it absent', () => {
+    assertHiddenEqualsAbsent(awake.states, 'wall_connector');
+  });
+
+  test('minimal Grid+Home topology — hiding home leaves a single-node bus equal to home-absent', () => {
+    const minimal = { ...mk('sensor.my_home_grid_power', '2.0'), ...mk('sensor.my_home_load_power', '2.0') };
+    assertHiddenEqualsAbsent(minimal, 'home', NOW);
+  });
+
+  test('both-sides-fed load (Solar+Grid → Home) — hiding solar collapses to Grid→Home, == solar absent', () => {
+    const fed = {
+      ...mk('sensor.my_home_solar_power', '3.0'),
+      ...mk('sensor.my_home_grid_power', '1.0'),
+      ...mk('sensor.my_home_load_power', '4.0'),
+    };
+    assertHiddenEqualsAbsent(fed, 'solar', NOW);
+  });
+
+  test('hiding EVERY energy role == an all-absent install (the degenerate empty bus)', () => {
+    const opts = { now: NOW };
+    const allHidden = computeBalance(
+      buildFlowModel(flowInputsFrom(makeHass(awake.states), cfg(), opts, [...ENERGY_ROLES]))
+    );
+    const allAbsent = computeBalance(buildFlowModel(flowInputsFrom(makeHass({}), cfg(), opts)));
+    expect(allHidden.net).toEqual(allAbsent.net); // both: no edges ⇒ empty net
+    expect(allHidden.residual).toBe(0);
+    expect(allHidden.balanced).toBe(true); // an empty bus is trivially balanced (calm, not broken)
   });
 });

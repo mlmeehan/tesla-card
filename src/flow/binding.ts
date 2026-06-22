@@ -1,5 +1,5 @@
 import type { HomeAssistant, TeslaCardConfig } from '../types';
-import type { EnergyRole } from '../data/registry';
+import type { EnergyRole, Role } from '../data/registry';
 import { resolveEnergyEntities, numById, type EnergyEntities } from '../data/energy';
 import { adapterFor } from '../data/dialect';
 import { read, isQuiescent, type ReadOpts } from '../data/freshness';
@@ -52,6 +52,20 @@ export const ENERGY_ROLES = Object.keys(POWER_KEY) as EnergyRole[];
 export const DEADBAND = IDLE_KW;
 
 /**
+ * The canonical ABSENT-node `FlowInput`: `kW:undefined` ⇒ `buildFlowModel` emits
+ * `present:false` with NO edge. The ONE definition of "this node is not here",
+ * shared by the two ways a node goes absent — its entity is unresolved/non-finite
+ * ({@link flowInputFor}), or the Scene HID it ({@link flowInputsFrom}, Story 9.2).
+ * Sharing this literal is what makes "hidden == absent" true BY CONSTRUCTION (CAP-4
+ * / INV-2) instead of by two literals coincidentally matching — they can never
+ * drift. Provenance is moot (no edge is emitted); `'measured'` is the neutral
+ * placeholder `buildFlowModel` ignores for a `present:false` node.
+ */
+function absentInput(role: EnergyRole): FlowInput {
+  return { role, kW: undefined, provenance: 'measured' };
+}
+
+/**
  * Bind one role to its canonical `FlowInput`. Pipeline: resolve → NaN-safe read →
  * dialect-normalize → derive provenance. An unresolved id or a missing/`unavailable`
  * /non-finite read yields `kW: undefined` ⇒ `buildFlowModel` emits `present:false`
@@ -70,8 +84,7 @@ function flowInputFor(
   // in → undefined out). The model must only ever see canonical signs.
   const kW = adapter.normalizePower(role, numById(hass, id)).value;
   if (id === undefined || kW === undefined) {
-    // Absent node — provenance is moot (no edge is emitted); 'measured' is the
-    // neutral placeholder buildFlowModel ignores for a `present:false` node.
+    // Absent node — the canonical "not here" input (shared with the hide path).
     //
     // AC2/AC4 reconciliation: a quiescent EDGE needs a last-known number to echo,
     // so the freshness→quiescent coupling below only fires for a stale/asleep
@@ -81,7 +94,7 @@ function flowInputFor(
     // becomes an ABSENT node (AC4 + the buildFlowModel `kW===undefined` contract),
     // never a phantom zero-kW edge. So `staleness:'unavailable'` ⇒ absent here;
     // `stale`/`asleep` (numeric echo) ⇒ a present `quiescent` edge.
-    return { role, kW: undefined, provenance: 'measured' };
+    return absentInput(role);
   }
 
   // Provenance is normalization-aware, NOT flip-aware: a fresh direct read is
@@ -102,25 +115,44 @@ function flowInputFor(
  * (`resolveEnergyEntities`) already honors `config.energy.entities` overrides and
  * auto-detects the rest — we do NOT re-implement either. `opts` (freshness
  * `ReadOpts`) is for hermetic tests (inject `now`); renderers omit it.
+ *
+ * `hide` (Story 9.2) is the Scene's opt-in node-hide set — a SEPARATE param, NOT
+ * an `opts` field (the freshness `ReadOpts` semantics stay untouched). A role in
+ * `hide` that is also an `ENERGY_ROLES` member is forced to the SAME `kW:undefined`
+ * an absent/unresolved entity already produces (`flowInputFor` lines 72-85), so
+ * `buildFlowModel` emits `present:false` with NO edge. There is no separate "hidden"
+ * code path: hidden == absent by construction (CAP-4 / INV-2). Default `[]` keeps
+ * every existing caller — notably the Hero (`components/hero.ts`) — a zero-diff.
+ * FR-24: an unknown / non-energy string in `hide` (e.g. `'vehicle'`, `'not_a_node'`)
+ * simply never matches an energy role here, so it is inert — never thrown.
  */
 export function flowInputsFrom(
   hass: HomeAssistant | undefined,
   config: TeslaCardConfig,
-  opts: ReadOpts = {}
+  opts: ReadOpts = {},
+  hide: readonly Role[] = []
 ): FlowInput[] {
   const entities = resolveEnergyEntities(hass, config);
   const adapter = adapterFor(hass, config);
-  return ENERGY_ROLES.map((role) => flowInputFor(hass, adapter, entities, role, opts));
+  const hidden = new Set<Role>(hide);
+  return ENERGY_ROLES.map((role) =>
+    // A hidden energy role takes the SAME absent-node input an unresolved entity
+    // produces (the one `absentInput` helper) — hidden == absent by construction.
+    hidden.has(role) ? absentInput(role) : flowInputFor(hass, adapter, entities, role, opts)
+  );
 }
 
 /**
  * The public binding surface (minimal + stable): `(hass, config) → FlowModel`.
- * Renderers (4.3/4.4) consume the returned model, never these internals.
+ * Renderers (4.3/4.4) consume the returned model, never these internals. `hide`
+ * (Story 9.2) is forwarded to {@link flowInputsFrom} — the Scene passes its
+ * hidden-node set; every other caller defaults to `[]` (zero-diff).
  */
 export function bindFlowModel(
   hass: HomeAssistant | undefined,
   config: TeslaCardConfig,
-  opts: ReadOpts = {}
+  opts: ReadOpts = {},
+  hide: readonly Role[] = []
 ): FlowModel {
-  return buildFlowModel(flowInputsFrom(hass, config, opts));
+  return buildFlowModel(flowInputsFrom(hass, config, opts, hide));
 }

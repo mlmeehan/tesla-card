@@ -183,9 +183,14 @@ export class TcMyHome extends LitElement implements LovelaceCard {
     if (changed.has('hass') || changed.has('_config')) {
       this._resolve();
       if (this._config) {
-        // The single shared model — same `bindFlowModel` the Hero calls (hero.ts:231).
+        // The single shared model — the same `bindFlowModel` the Hero calls
+        // (hero.ts:261), but Scene-scoped: we pass our hidden-node set so a node the
+        // user hid via `energy.nodes.hide` drops at the MODEL seam (→ present:false),
+        // exactly as an absent entity would — the grid cell, bus tap, leg, ribbon
+        // contribution and focus-coupling then all fall away together by construction
+        // (Story 9.2 / FR-33). The Hero stays a zero-diff (it passes no hide set).
         // Cheap (resolve → NaN-safe read → balance); geometry is NOT touched here.
-        this._model = bindFlowModel(this.hass, this._config);
+        this._model = bindFlowModel(this.hass, this._config, {}, this._hiddenRoles(this._config));
         this._bus.update(this._model);
       }
     }
@@ -451,7 +456,27 @@ export class TcMyHome extends LitElement implements LovelaceCard {
    * no bare `hass.states` reaches this `components/` module.
    */
   private _vehiclePresent(cfg: TeslaCardConfig): boolean {
+    // Story 9.2: the Vehicle is NOT a flow node — it cannot drop at the binding
+    // seam, so its hide is honored HERE, the single gate for both the presentation
+    // cell (render line 412) and, transitively, the WC→Vehicle overlay edge (drawn
+    // only when the vehicle anchor exists, i.e. only when the cell renders — see
+    // `_vehicleEdge`). Hiding the Vehicle does NOT touch the Wall-Connector energy
+    // node: the WC keeps feeding the bus, just without the car leg (AC2).
+    if (this._hiddenRoles(cfg).includes('vehicle')) return false;
     return rawState(this.hass, cfg, 'battery_level') !== undefined;
+  }
+
+  /**
+   * The Scene's hidden-node set from `energy.nodes.hide` (Story 9.2). Defensive
+   * (FR-24): a non-array / garbage `hide` degrades to "nothing hidden", never throws.
+   * Energy-role members flow to the binding seam (→ `present:false`); `'vehicle'` is
+   * honored in {@link _vehiclePresent}; unknown strings are inert at both seams. The
+   * list is passed THROUGH to `bindFlowModel` unfiltered — the binding only acts on
+   * `ENERGY_ROLES` members, so non-energy entries no-op there by construction.
+   */
+  private _hiddenRoles(cfg: TeslaCardConfig): readonly Role[] {
+    const hide = cfg.energy?.nodes?.hide;
+    return Array.isArray(hide) ? (hide as readonly Role[]) : [];
   }
 
   /**

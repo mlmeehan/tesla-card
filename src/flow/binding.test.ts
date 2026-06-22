@@ -6,7 +6,7 @@
 // fixtures, injected `now`, zero network).
 import { describe, expect, test } from 'vitest';
 import type { HomeAssistant, TeslaCardConfig } from '../types';
-import type { EnergyRole } from '../data/registry';
+import type { EnergyRole, Role } from '../data/registry';
 import { bindFlowModel, flowInputsFrom, POWER_KEY, ENERGY_ROLES, DEADBAND } from './binding';
 import awake from '../fixtures/model-y-awake.json';
 import asleep from '../fixtures/model-y-asleep.json';
@@ -254,4 +254,56 @@ describe('binding — `inferred` is reserved-but-unused: no committed fixture yi
       }
     });
   }
+});
+
+// ───────────────────────────────────────────────────────────────────────────
+// Story 9.2 — the node-hide seam (AC1). A role in the opt-in `hide` set is forced
+// to the SAME `kW:undefined` absence already produces, so `buildFlowModel` emits
+// `present:false` with no edge. This is the AC1 unit proof AT the seam: hidden ==
+// absent by construction (no separate "hidden" branch), the Hero (zero-arg call)
+// stays a zero-diff, and garbage in `hide` is inert (FR-24).
+// ───────────────────────────────────────────────────────────────────────────
+describe('binding — Story 9.2: a hidden energy role drops at the model seam (AC1)', () => {
+  const awakeStates = awake.states as Record<string, unknown>;
+
+  test('a hidden energy role → present:false with NO edge (the absent-node contract, reused)', () => {
+    const model = bindFlowModel(makeHass(awakeStates), cfg(), {}, ['solar']);
+    expect(model.nodes.find((n) => n.role === 'solar')?.present).toBe(false);
+    expect(model.edges.find((e) => e.from === 'solar')).toBeUndefined();
+    // exactly one fewer present node + edge than the un-hidden baseline (precise drop)
+    expect(model.nodes.filter((n) => n.present).length).toBe(ENERGY_ROLES.length - 1);
+    expect(model.edges.length).toBe(ENERGY_ROLES.length - 1);
+  });
+
+  test('only the named role drops — every other role still binds its live reading', () => {
+    const inputs = flowInputsFrom(makeHass(awakeStates), cfg(), {}, ['solar']);
+    expect(inputs.find((i) => i.role === 'solar')?.kW).toBeUndefined();
+    for (const role of ENERGY_ROLES.filter((r) => r !== 'solar')) {
+      expect(inputs.find((i) => i.role === role)?.kW, `${role} unaffected`).toBeDefined();
+    }
+  });
+
+  test('multiple hidden roles all drop together', () => {
+    const model = bindFlowModel(makeHass(awakeStates), cfg(), {}, ['solar', 'grid']);
+    const present = model.nodes.filter((n) => n.present).map((n) => n.role).sort();
+    expect(present).toEqual(['home', 'powerwall', 'wall_connector']);
+  });
+
+  test('an unknown string in hide is ignored — no throw, nothing dropped (FR-24)', () => {
+    const build = () =>
+      bindFlowModel(makeHass(awakeStates), cfg(), {}, ['not_a_node'] as unknown as readonly Role[]);
+    expect(build).not.toThrow();
+    expect(build().nodes.filter((n) => n.present).length).toBe(ENERGY_ROLES.length); // full roster intact
+  });
+
+  test("hiding 'vehicle' is inert at the binding seam (it is not an energy/flow node — AC2 owns it)", () => {
+    const model = bindFlowModel(makeHass(awakeStates), cfg(), {}, ['vehicle']);
+    expect(model.nodes.filter((n) => n.present).length).toBe(ENERGY_ROLES.length);
+  });
+
+  test('the Hero zero-arg bindFlowModel is UNCHANGED — no hide applied without the param (zero-diff guard)', () => {
+    const heroModel = bindFlowModel(makeHass(awakeStates), cfg()); // EXACTLY the Hero's call (hero.ts:261)
+    expect(heroModel.nodes.every((n) => n.present)).toBe(true);
+    expect(heroModel.edges.length).toBe(ENERGY_ROLES.length);
+  });
 });

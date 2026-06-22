@@ -42,7 +42,7 @@ import { SceneBusRenderer } from '../flow/scene-bus';
 import { resolveEnergyEntities } from '../data/energy';
 import { resolveEntities } from '../data/resolve';
 import { buildFlowModel, type FlowInput, type FlowModel } from '../flow/model';
-import type { EnergyRole } from '../data/registry';
+import type { EnergyRole, Role } from '../data/registry';
 import { STRINGS } from '../strings';
 import awakeFx from '../fixtures/model-y-awake.json';
 import asleepFx from '../fixtures/model-y-asleep.json';
@@ -1382,5 +1382,150 @@ describe('Story 8.12 — gw-term anchors at the card visible bottom (source-row 
     (el as unknown as { requestUpdate(): void }).requestUpdate();
     await el.updateComplete;
     expect(baseClasses(el, 'solar').contains('long')).toBe(false); // gated off at phone
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Story 9.2 — hide a present node by config (hidden == absent). The co-located proof
+// of the WIRING: an ENERGY node hidden via `energy.nodes.hide` drops at the shared
+// model (no cell, packed rows — NOT a render-only filter), the VEHICLE hide omits its
+// presentation cell AND its WC→Vehicle edge while the Wall-Connector energy node stays,
+// a hide/unhide config change fires the present-set reflow EXACTLY once (AC5), hiding
+// every node collapses to the calm empty Scene with `_bus.empty` ⇒ no overlay (AC4),
+// and garbage `hide` degrades to nothing-hidden (FR-24). The real-geometry tier (a
+// hidden node byte-for-byte == an absent one) is the e2e Story 9.2 block.
+// ═══════════════════════════════════════════════════════════════════════════
+const hideCfg = (...hide: Role[]): TeslaCardConfig => ({
+  type: 'tc-my-home',
+  energy: { nodes: { hide } },
+});
+/** The five ENERGY ecosystem cells only (excludes the Story-8.5 vehicle presentation cell). */
+const energyCells = (el: Scene): Element[] =>
+  [...sr(el).querySelectorAll('.scene-cell:not([data-node="vehicle"])')];
+
+describe('Story 9.2 — hide a present node at the model/binding seam (hidden == absent)', () => {
+  test('AC1/AC3 — a hidden ENERGY node leaves NO cell and the rows pack (one fewer cell, no gap)', async () => {
+    const baseline = await mount(makeHass(states(awakeFx)));
+    expect(energyCells(baseline)).toHaveLength(5); // sanity: the un-hidden roster
+
+    const el = await mount(makeHass(states(awakeFx)), hideCfg('solar'));
+    // The solar cell is gone; the other four energy cells remain (packed, no ghost slot).
+    expect(sr(el).querySelector('.scene-cell[data-node="solar"]')).toBeNull();
+    expect(energyCells(el)).toHaveLength(4);
+    for (const role of ['powerwall', 'grid', 'home', 'wall_connector']) {
+      expect(sr(el).querySelector(`.scene-cell[data-node="${role}"]`), `${role} present`).not.toBeNull();
+    }
+    // It dropped at the SHARED model (present:false), not via a render-only filter —
+    // so the bus tap / leg / ribbon contribution all fell away together by construction.
+    const model = (el as unknown as { _model: FlowModel })._model;
+    expect(model.nodes.find((n) => n.role === 'solar')?.present).toBe(false);
+    expect(model.edges.find((e) => e.from === 'solar')).toBeUndefined();
+  });
+
+  test('AC2 — hiding the VEHICLE omits its cell AND its WC→Vehicle edge; the WC energy node stays', async () => {
+    const el = await mount(makeHass(states(awakeFx)), hideCfg('vehicle'));
+    recompute(el); // populate anchors so the WC→Vehicle edge WOULD draw if the cell were present
+    await el.updateComplete;
+    expect(vehCell(el)).toBeNull(); // no presentation cell
+    expect(vehEdge(el)).toBeNull(); // and no orphaned WC→Vehicle overlay edge
+    // The Wall-Connector ENERGY node is untouched — still a present cell feeding the bus
+    // (hiding the car must not hide the WC; they are different things — AC2).
+    expect(sr(el).querySelector('.scene-cell[data-node="wall_connector"]')).not.toBeNull();
+    const model = (el as unknown as { _model: FlowModel })._model;
+    expect(model.nodes.find((n) => n.role === 'wall_connector')?.present).toBe(true);
+    expect(energyCells(el)).toHaveLength(5); // all five energy cells intact
+  });
+
+  test('AC5 — hiding an energy node across a CONFIG change fires the present-set reflow exactly once', async () => {
+    const el = await mount(makeHass(states(awakeFx)));
+    const spy = vi.spyOn(el as unknown as { _scheduleGeometry: () => void }, '_scheduleGeometry');
+    el.setConfig(hideCfg('solar')); // a hide config change shrinks the present-set
+    await el.updateComplete;
+    expect(spy).toHaveBeenCalledTimes(1); // ONE recompute on reflow, never per-tick
+    expect(energyCells(el)).toHaveLength(4);
+  });
+
+  test('AC5 — UN-hiding (config change back to full) reflows exactly once and restores the cell', async () => {
+    const el = await mount(makeHass(states(awakeFx)), hideCfg('solar'));
+    expect(energyCells(el)).toHaveLength(4);
+    const spy = vi.spyOn(el as unknown as { _scheduleGeometry: () => void }, '_scheduleGeometry');
+    el.setConfig({ type: 'tc-my-home' }); // drop the hide → solar returns
+    await el.updateComplete;
+    expect(spy).toHaveBeenCalledTimes(1);
+    expect(sr(el).querySelector('.scene-cell[data-node="solar"]')).not.toBeNull();
+    expect(energyCells(el)).toHaveLength(5);
+  });
+
+  test('AC4 — hiding EVERY node collapses to the calm empty Scene: _bus.empty ⇒ NO overlay', async () => {
+    const el = await mount(
+      makeHass(states(awakeFx)),
+      hideCfg('solar', 'powerwall', 'grid', 'home', 'wall_connector', 'vehicle')
+    );
+    recompute(el);
+    await el.updateComplete;
+    expect(energyCells(el)).toHaveLength(0);
+    expect(vehCell(el)).toBeNull();
+    expect((el as unknown as { _bus: SceneBusRenderer })._bus.empty).toBe(true);
+    expect(sr(el).querySelector('.scene-bus')).toBeNull(); // no degenerate single-anchor bus
+    // …and it did not crash: the calm-empty Scene container still renders.
+    expect(sr(el).querySelector('.scene')).not.toBeNull();
+  });
+
+  test('FR-24 — garbage in `hide` (a non-array) degrades to nothing-hidden, renders the full Scene', async () => {
+    const el = await mount(makeHass(states(awakeFx)), {
+      type: 'tc-my-home',
+      energy: { nodes: { hide: 'nope' } },
+    } as unknown as TeslaCardConfig);
+    expect(energyCells(el)).toHaveLength(5); // full roster — never crash, never blank
+  });
+
+  // ── Gap fill (QA, bmad-qa-generate-e2e-tests) ──────────────────────────────
+  // The story's "vehicle is special" Dev Note demands BOTH directions be pinned:
+  // the existing AC2 test proves "hide vehicle ⇒ WC stays"; this proves the reverse —
+  // "hide the WC (an ENERGY node) ⇒ the Vehicle presentation cell STAYS, but with no
+  // WC edge on the bus the WC→Vehicle overlay leg cannot draw (no phantom charge)."
+  test('AC2 (reverse) — hiding the WALL CONNECTOR drops its energy cell + WC→Vehicle edge, yet the Vehicle cell stays (no phantom charge)', async () => {
+    const el = await mount(makeHass(states(awakeFx)), hideCfg('wall_connector'));
+    recompute(el); // populate anchors so the WC→Vehicle edge WOULD draw if the WC fed the bus
+    await el.updateComplete;
+    // The WC energy node dropped at the shared model (present:false) ⇒ its cell is gone.
+    expect(sr(el).querySelector('.scene-cell[data-node="wall_connector"]')).toBeNull();
+    const model = (el as unknown as { _model: FlowModel })._model;
+    expect(model.nodes.find((n) => n.role === 'wall_connector')?.present).toBe(false);
+    // The Vehicle is a presentation cell, NOT a flow node — hiding the WC must NOT hide it.
+    expect(vehCell(el)).not.toBeNull();
+    // …but `wcVehicleEdge` finds no WC edge now, so the WC→Vehicle overlay leg is absent
+    // — the car reads parked/plugged from its discrete status, never a phantom charge (AC2).
+    expect(vehEdge(el)).toBeNull();
+    expect(energyCells(el)).toHaveLength(4); // the other four energy cells remain, packed
+  });
+
+  // AC5 has TWO _presentKey components: the present-energy-role set AND `veh:`. The
+  // existing AC5 tests exercise the energy-role half (hide/unhide solar). This pins
+  // the vehicle half — hiding the Vehicle flips `vehiclePresent`, which must also fire
+  // the present-set reflow EXACTLY once (never per-tick) on the config change.
+  test('AC5 — hiding the VEHICLE across a config change fires the present-set reflow exactly once (the veh: key path)', async () => {
+    const el = await mount(makeHass(states(awakeFx)));
+    expect(vehCell(el)).not.toBeNull(); // present to begin with
+    const spy = vi.spyOn(el as unknown as { _scheduleGeometry: () => void }, '_scheduleGeometry');
+    el.setConfig(hideCfg('vehicle')); // flips _vehiclePresent ⇒ the `veh:` _presentKey component changes
+    await el.updateComplete;
+    expect(spy).toHaveBeenCalledTimes(1); // ONE recompute on reflow
+    expect(vehCell(el)).toBeNull();
+  });
+
+  // The two seams (energy-node hide at the binding/model layer; vehicle hide at the
+  // `_vehiclePresent` gate) must COMPOSE — a user who hides their car AND their solar
+  // in one list gets both dropped, each via its own seam, neither interfering.
+  test('AC1/AC2 compose — hide:["vehicle","solar"] drops BOTH the vehicle cell and the solar energy cell together', async () => {
+    const el = await mount(makeHass(states(awakeFx)), hideCfg('vehicle', 'solar'));
+    recompute(el);
+    await el.updateComplete;
+    expect(vehCell(el)).toBeNull(); // vehicle gate honored
+    expect(sr(el).querySelector('.scene-cell[data-node="solar"]')).toBeNull(); // model seam honored
+    expect(energyCells(el)).toHaveLength(4); // the four non-solar energy cells remain
+    const model = (el as unknown as { _model: FlowModel })._model;
+    expect(model.nodes.find((n) => n.role === 'solar')?.present).toBe(false); // dropped at the model
+    expect(model.nodes.find((n) => n.role === 'wall_connector')?.present).toBe(true); // WC untouched
   });
 });

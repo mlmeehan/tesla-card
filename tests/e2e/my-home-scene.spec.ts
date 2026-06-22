@@ -1104,3 +1104,85 @@ test.describe('tc-my-home Scene — Story 9.1: energy.nodes is inert at the live
     expect(stored).toEqual(nodes);
   });
 });
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Story 9.2 — hide a present node by config: hidden == absent at the LIVE-LAYOUT tier.
+//
+// The co-located jsdom suite pins the wiring (a hidden role drops at the shared model,
+// the vehicle hide omits cell + edge, the reflow fires once). But jsdom returns ZERO-
+// sized rects, so it CANNOT prove the load-bearing CAP-4/AC3 claim where it matters: a
+// Scene with `energy.nodes.hide:['solar']` lays out BYTE-FOR-BYTE like the same Scene
+// with solar's entity genuinely ABSENT — the same packed cells, the same Gateway trunk
+// + legs at the SAME live geometry, the bus re-routed identically around the gap with no
+// orphaned tap. This block is that proof, under the auto console-error guard.
+// ═══════════════════════════════════════════════════════════════════════════
+test.describe('tc-my-home Scene — Story 9.2: a hidden node renders identically to an absent one', () => {
+  test.beforeEach(async ({ demo }) => {
+    // AWAKE / charging: full five-energy + present vehicle — the richest baseline.
+    await demo.open(AWAKE.open);
+  });
+
+  test('AC1/AC3 — hide:["solar"] is byte-for-byte == solar genuinely absent (roster, legs, trunk geometry)', async ({
+    page,
+  }) => {
+    // (a) Solar genuinely ABSENT — drop its power sensor by function-slug (no inlined id).
+    await mountScene(page, { dropSlug: 'solar_power' });
+    await waitForTrunk(page);
+    const absentFp = await sceneFingerprint(page);
+    const absentTrunk = await trunkLine(page);
+
+    // (b) Solar PRESENT but HIDDEN by config — the Story 9.2 consumption path.
+    await mountScene(page, { config: { energy: { nodes: { hide: ['solar'] } } } });
+    await waitForTrunk(page);
+    const hiddenFp = await sceneFingerprint(page);
+    const hiddenTrunk = await trunkLine(page);
+
+    // Byte-for-byte: identical roster + leg count + ribbon + trunk, AND identical LIVE
+    // trunk geometry — the bus re-routed the SAME way around the gap (hidden == absent).
+    expect(hiddenFp).toEqual(absentFp);
+    expect(hiddenTrunk).toEqual(absentTrunk);
+    // Specifically: Solar is gone from BOTH, the rest packed in canonical order.
+    expect(hiddenFp.cellNodes).not.toContain('solar');
+    expect(hiddenFp.cellNodes).toEqual(['powerwall', 'grid', 'home', 'wall_connector', 'vehicle']);
+  });
+
+  test('AC1 — the hidden Solar leaves NO cell and NO bus leg; the trunk stays a real horizontal rail', async ({
+    page,
+  }) => {
+    await mountScene(page, { config: { energy: { nodes: { hide: ['solar'] } } } });
+    await waitForTrunk(page);
+    await expect(scene(page).locator('.scene-cell[data-node="solar"]')).toHaveCount(0);
+    await expect(scene(page).locator('.gw-leg[data-role="solar"]')).toHaveCount(0);
+    await expect(legs(page)).toHaveCount(4); // four energy legs remain, no orphaned solar tap
+    const t = await trunkLine(page);
+    expect(Math.abs(t.y1 - t.y2)).toBeLessThanOrEqual(1); // constant y ⇒ horizontal
+    expect(Math.abs(t.x2 - t.x1)).toBeGreaterThan(50); // a real left→right span
+  });
+
+  test('AC2 — hide:["vehicle"] omits the vehicle cell AND its WC→Vehicle leg; the WC cell stays', async ({
+    page,
+  }) => {
+    await mountScene(page, { config: { energy: { nodes: { hide: ['vehicle'] } } } });
+    await waitForTrunk(page);
+    await expect(vehCell(page)).toHaveCount(0); // no presentation cell
+    await expect(vehLeg(page)).toHaveCount(0); // no orphaned WC→Vehicle leg
+    await expect(wcCell(page)).toHaveCount(1); // the Wall-Connector energy node is untouched
+    await expect(cells(page)).toHaveCount(5); // the five energy cells are intact
+  });
+
+  test('AC4 — hiding every node collapses to the calm empty Scene: no bus overlay, console-clean', async ({
+    page,
+  }) => {
+    await mountScene(page, {
+      config: {
+        energy: { nodes: { hide: ['solar', 'powerwall', 'grid', 'home', 'wall_connector', 'vehicle'] } },
+      },
+    });
+    // No overlay (the degenerate single-anchor bus is suppressed), no cells — but the
+    // Scene container still renders calm (not blank, not crashed; consoleGuard asserts clean).
+    await expect(scene(page).locator('.scene')).toHaveCount(1);
+    await expect(cells(page)).toHaveCount(0);
+    await expect(vehCell(page)).toHaveCount(0);
+    await expect(overlay(page)).toHaveCount(0);
+  });
+});
