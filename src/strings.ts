@@ -412,6 +412,19 @@ export const STRINGS = {
     hideQuickActions: 'Hide quick actions',
     hidePanels: 'Hide detail panels',
     hideCommands: 'Hide commands',
+    // ── My-Home Scene node customization (Story 9.4, CAP-5 Pillar 4) ──────────
+    // The editor surface for the Story 9.1 `energy.nodes.{hide,order}` keys.
+    // The six node display names reuse `STRINGS.energy.nodes.*` for the five
+    // energy roles; `vehicle` has NO key there (the Hero silhouette IS the
+    // vehicle), so its label is sourced here.
+    sceneNodesHeading: 'My Home Scene cards',
+    sceneNodesShowHint: 'Uncheck a card to hide it from the Scene.',
+    sceneNodesOrderHeading: 'Card order',
+    sceneNodesOrderHint:
+      'Reorder cards left-to-right within their row. Sources and loads stay grouped.',
+    moveNodeUp: 'Move earlier',
+    moveNodeDown: 'Move later',
+    nodeVehicle: 'Vehicle',
     // The note wraps a `<code>entities:</code>` element — split around it.
     noteBefore: 'Per-entity overrides are configured in YAML via the',
     noteAfter: 'map. All keys default to the standard Tesla Fleet / Teslemetry entity IDs.',

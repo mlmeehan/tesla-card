@@ -67,9 +67,11 @@ describe('AC1 — editor renders + reflects all four field groups', () => {
     const select = $(el, 'select') as HTMLSelectElement;
     expect(select.value).toBe('climate');
 
-    const checks = el.shadowRoot?.querySelectorAll(
-      'input[type="checkbox"]'
-    ) as NodeListOf<HTMLInputElement>;
+    // The three top-level hide toggles render OUTSIDE the Scene-nodes `.group`
+    // (which adds six per-node show toggles, Story 9.4) — scope to them.
+    const checks = Array.from(
+      el.shadowRoot!.querySelectorAll('input[type="checkbox"]')
+    ).filter((c) => !(c as HTMLElement).closest('.group')) as HTMLInputElement[];
     expect(checks.length).toBe(3); // quick_actions, panels, commands
     // hide_panels is the 2nd checkbox in render order; only it is true.
     expect(checks[0].checked).toBe(false); // hide_quick_actions
@@ -401,6 +403,430 @@ describe('AC4 — text-field hygiene + event wiring contract', () => {
     checks[2].checked = false; // hide_commands → off
     checks[2].dispatchEvent(new Event('change'));
     expect(cap.get()?.hide_commands).toBe(false);
+    el.remove();
+  });
+});
+
+// ── Story 9.4 — node hide/reorder GUI controls ─────────────────────────────────
+// The editor surfaces the Story 9.1 `energy.nodes.{hide,order}` keys via the same
+// toggle family as the three hide switches above. These pin the read/write config
+// contract: reflect, write, prune-to-zero-diff, and forward-compat round-trip.
+// The six Scene nodes incl. `vehicle` (registry `ROLES`) — render order is fixed.
+const ROLES = ['vehicle', 'solar', 'powerwall', 'grid', 'home', 'wall_connector'] as const;
+
+/** The six per-node show checkboxes (inside the Scene-nodes `.group`). */
+function nodeChecks(el: EditorEl): HTMLInputElement[] {
+  return Array.from(
+    el.shadowRoot!.querySelectorAll('.group input[type="checkbox"]')
+  ) as HTMLInputElement[];
+}
+/** The displayed node order, read off the move-row labels. */
+function orderLabels(el: EditorEl): string[] {
+  return Array.from(el.shadowRoot!.querySelectorAll('.node-row .node-name')).map(
+    (n) => n.textContent?.trim() ?? ''
+  );
+}
+/** The move-up / move-down buttons for the node at display row `i`. */
+function moveButtons(el: EditorEl, i: number): { up: HTMLButtonElement; down: HTMLButtonElement } {
+  const rows = el.shadowRoot!.querySelectorAll('.node-row');
+  const btns = rows[i].querySelectorAll('button.move');
+  return { up: btns[0] as HTMLButtonElement, down: btns[1] as HTMLButtonElement };
+}
+
+type EnergyShape = { nodes?: { hide?: string[]; order?: string[]; instances?: unknown } };
+
+describe('Story 9.4 AC1/AC2 — six per-node show toggles render + reflect', () => {
+  test('all six ROLES render a show checkbox, checked by default (nothing hidden)', async () => {
+    const el = makeEditor();
+    el.setConfig({ type: 'custom:tesla-card' } as TeslaCardConfig);
+    await el.updateComplete;
+    const checks = nodeChecks(el);
+    expect(checks.length).toBe(6);
+    expect(checks.every((c) => c.checked)).toBe(true); // show = visible by default
+    el.remove();
+  });
+
+  test('energy.nodes.hide:[solar] renders the Solar toggle unchecked (show=false)', async () => {
+    const el = makeEditor();
+    el.setConfig({
+      type: 'custom:tesla-card',
+      energy: { nodes: { hide: ['solar'] } },
+    } as unknown as TeslaCardConfig);
+    await el.updateComplete;
+    const solarIdx = ROLES.indexOf('solar');
+    const checks = nodeChecks(el);
+    expect(checks[solarIdx].checked).toBe(false); // hidden → show unchecked
+    expect(checks[ROLES.indexOf('home')].checked).toBe(true); // others still shown
+    el.remove();
+  });
+});
+
+describe('Story 9.4 AC1/AC3 — hide toggle writes energy.nodes.hide + prunes to zero-diff', () => {
+  test('hiding a node writes energy.nodes.hide; showing it again DELETES the key (and energy)', async () => {
+    const el = makeEditor();
+    el.setConfig({ type: 'custom:tesla-card' } as TeslaCardConfig);
+    await el.updateComplete;
+    const cap = captureEmit(el);
+
+    const checks = nodeChecks(el);
+    const homeIdx = ROLES.indexOf('home');
+    // Uncheck "Home" → hide it.
+    checks[homeIdx].checked = false;
+    checks[homeIdx].dispatchEvent(new Event('change'));
+    let emitted = cap.get() as unknown as TeslaCardConfig & { energy?: EnergyShape };
+    expect(emitted.energy?.nodes?.hide).toEqual(['home']);
+
+    // Re-render with the emitted config, then re-check "Home" → un-hide it.
+    el.setConfig(emitted);
+    await el.updateComplete;
+    const checks2 = nodeChecks(el);
+    checks2[homeIdx].checked = true;
+    checks2[homeIdx].dispatchEvent(new Event('change'));
+    emitted = cap.get() as unknown as TeslaCardConfig & { energy?: EnergyShape };
+    // Zero-diff default: no empty hide, no empty nodes, no empty energy.
+    expect('energy' in emitted).toBe(false);
+    el.remove();
+  });
+
+  test('hide list is built in canonical ROLES order regardless of click order', async () => {
+    const el = makeEditor();
+    el.setConfig({ type: 'custom:tesla-card' } as TeslaCardConfig);
+    await el.updateComplete;
+    const cap = captureEmit(el);
+
+    // Hide grid (index 3) first, then solar (index 1).
+    let checks = nodeChecks(el);
+    checks[ROLES.indexOf('grid')].checked = false;
+    checks[ROLES.indexOf('grid')].dispatchEvent(new Event('change'));
+    el.setConfig(cap.get() as unknown as TeslaCardConfig);
+    await el.updateComplete;
+    checks = nodeChecks(el);
+    checks[ROLES.indexOf('solar')].checked = false;
+    checks[ROLES.indexOf('solar')].dispatchEvent(new Event('change'));
+
+    const emitted = cap.get() as unknown as TeslaCardConfig & { energy?: EnergyShape };
+    // solar precedes grid in ROLES → canonical order, not click order.
+    expect(emitted.energy?.nodes?.hide).toEqual(['solar', 'grid']);
+    el.remove();
+  });
+
+  test('a node toggle preserves a sibling energy key (entities) and other nodes sub-keys', async () => {
+    const el = makeEditor();
+    el.setConfig({
+      type: 'custom:tesla-card',
+      energy: { hide: true, nodes: { instances: { solar: 2 } } },
+    } as unknown as TeslaCardConfig);
+    await el.updateComplete;
+    const cap = captureEmit(el);
+
+    const checks = nodeChecks(el);
+    checks[ROLES.indexOf('solar')].checked = false; // hide solar
+    checks[ROLES.indexOf('solar')].dispatchEvent(new Event('change'));
+
+    const emitted = cap.get() as unknown as TeslaCardConfig & {
+      energy?: EnergyShape & { hide?: boolean };
+    };
+    expect(emitted.energy?.hide).toBe(true); // sibling energy key kept
+    expect(emitted.energy?.nodes?.instances).toEqual({ solar: 2 }); // out-of-scope key kept
+    expect(emitted.energy?.nodes?.hide).toEqual(['solar']);
+    el.remove();
+  });
+});
+
+describe('Story 9.4 AC1/AC4 — order control writes energy.nodes.order + prunes canonical', () => {
+  test('default display order is the canonical ROLES order', async () => {
+    const el = makeEditor();
+    el.setConfig({ type: 'custom:tesla-card' } as TeslaCardConfig);
+    await el.updateComplete;
+    expect(orderLabels(el)).toEqual([
+      STRINGS.editor.nodeVehicle,
+      STRINGS.energy.nodes.solar,
+      STRINGS.energy.nodes.powerwall,
+      STRINGS.energy.nodes.grid,
+      STRINGS.energy.nodes.home,
+      STRINGS.energy.nodes.wall_connector,
+    ]);
+    el.remove();
+  });
+
+  test('move-down on the first node emits the full six-node order with the swap', async () => {
+    const el = makeEditor();
+    el.setConfig({ type: 'custom:tesla-card' } as TeslaCardConfig);
+    await el.updateComplete;
+    const cap = captureEmit(el);
+
+    moveButtons(el, 0).down.click(); // vehicle ↓ → swaps with solar
+    const emitted = cap.get() as unknown as TeslaCardConfig & { energy?: EnergyShape };
+    expect(emitted.energy?.nodes?.order).toEqual([
+      'solar',
+      'vehicle',
+      'powerwall',
+      'grid',
+      'home',
+      'wall_connector',
+    ]);
+    el.remove();
+  });
+
+  test('restoring canonical order DELETES energy.nodes.order (zero-diff)', async () => {
+    const el = makeEditor();
+    el.setConfig({
+      type: 'custom:tesla-card',
+      energy: { nodes: { order: ['solar', 'vehicle', 'powerwall', 'grid', 'home', 'wall_connector'] } },
+    } as unknown as TeslaCardConfig);
+    await el.updateComplete;
+    const cap = captureEmit(el);
+
+    // solar is at row 0; move it down → swaps back with vehicle → canonical.
+    moveButtons(el, 0).down.click();
+    const emitted = cap.get() as unknown as TeslaCardConfig & { energy?: EnergyShape };
+    expect('energy' in emitted).toBe(false); // canonical order → key + energy pruned
+    el.remove();
+  });
+
+  test('partial order reflects in the displayed list (listed ++ canonical remainder)', async () => {
+    const el = makeEditor();
+    el.setConfig({
+      type: 'custom:tesla-card',
+      energy: { nodes: { order: ['home'] } },
+    } as unknown as TeslaCardConfig);
+    await el.updateComplete;
+    // home leads, the rest follow in canonical ROLES order.
+    expect(orderLabels(el)[0]).toBe(STRINGS.energy.nodes.home);
+    expect(orderLabels(el)).toEqual([
+      STRINGS.energy.nodes.home,
+      STRINGS.editor.nodeVehicle,
+      STRINGS.energy.nodes.solar,
+      STRINGS.energy.nodes.powerwall,
+      STRINGS.energy.nodes.grid,
+      STRINGS.energy.nodes.wall_connector,
+    ]);
+    el.remove();
+  });
+
+  test('move-up is disabled on the first row, move-down on the last (no-op edges)', async () => {
+    const el = makeEditor();
+    el.setConfig({ type: 'custom:tesla-card' } as TeslaCardConfig);
+    await el.updateComplete;
+    expect(moveButtons(el, 0).up.disabled).toBe(true);
+    expect(moveButtons(el, 5).down.disabled).toBe(true);
+    expect(moveButtons(el, 0).down.disabled).toBe(false);
+    el.remove();
+  });
+});
+
+describe('Story 9.4 AC3 — forward-compat: a node edit never drops an unknown top-level key', () => {
+  test('toggling a node hidden preserves an unknown future key', async () => {
+    const el = makeEditor();
+    el.setConfig({
+      type: 'custom:tesla-card',
+      some_future_key: 42,
+    } as unknown as TeslaCardConfig);
+    await el.updateComplete;
+    const cap = captureEmit(el);
+
+    const checks = nodeChecks(el);
+    checks[ROLES.indexOf('grid')].checked = false;
+    checks[ROLES.indexOf('grid')].dispatchEvent(new Event('change'));
+
+    const emitted = cap.get() as unknown as TeslaCardConfig & {
+      energy?: EnergyShape;
+      some_future_key?: number;
+    };
+    expect(emitted.some_future_key).toBe(42); // unknown key survives
+    expect(emitted.energy?.nodes?.hide).toEqual(['grid']);
+    el.remove();
+  });
+
+  test('un-hiding the last node preserves an unknown energy.nodes sub-key (sub-key forward-compat)', async () => {
+    const el = makeEditor();
+    // Only `hide:[solar]` + an unknown future `nodes` sub-key. Un-hiding solar
+    // empties `hide`; the unknown sub-key must keep `nodes`/`energy` alive rather
+    // than being dropped by an enumerated prune.
+    el.setConfig({
+      type: 'custom:tesla-card',
+      energy: { nodes: { hide: ['solar'], future_node_key: 7 } },
+    } as unknown as TeslaCardConfig);
+    await el.updateComplete;
+    const cap = captureEmit(el);
+
+    const checks = nodeChecks(el);
+    checks[ROLES.indexOf('solar')].checked = true; // show solar → hide becomes []
+    checks[ROLES.indexOf('solar')].dispatchEvent(new Event('change'));
+
+    const emitted = cap.get() as unknown as TeslaCardConfig & {
+      energy?: EnergyShape & { future_node_key?: unknown };
+    };
+    expect(emitted.energy?.nodes?.hide).toBeUndefined(); // emptied hide pruned...
+    expect((emitted.energy?.nodes as { future_node_key?: number })?.future_node_key).toBe(7); // ...unknown sub-key kept
+    el.remove();
+  });
+});
+
+// ── QA-added coverage (qa-generate-e2e-tests, Story 9.4) ───────────────────────
+// The cases above pin move-DOWN, the disabled edges, reflect, prune, and forward-
+// compat. These close the gaps a reviewer would flag:
+//   • move-UP (`_moveNode(role, -1)`) is never driven through an ENABLED button —
+//     only `up.disabled` is asserted, so half the order control's swap logic and
+//     its canonical-restore prune are untested.
+//   • `orderedRoles` SANITIZES the displayed order (dedup + drop unknown), the
+//     Story 9.3 stable-partition mirror named in AC1 — both branches untested.
+//   • the editor writes INTENT, not precedence (Dev Notes): a node may live in
+//     BOTH `hide` and `order` at once — the editor must not strip one for the other.
+//   • the prune is exercised on a single node; a full six-node hide→show sweep
+//     proves the maximal `hide` list still prunes back to a byte-identical default.
+
+describe('Story 9.4 AC1/AC4 — move-UP swaps with the previous node (the dir:-1 path)', () => {
+  test('move-up on a middle row emits the full six-node order with that pair swapped', async () => {
+    const el = makeEditor();
+    el.setConfig({ type: 'custom:tesla-card' } as TeslaCardConfig);
+    await el.updateComplete;
+    const cap = captureEmit(el);
+
+    // powerwall is at row 2 (vehicle, solar, powerwall, …); move it up → swaps with solar.
+    moveButtons(el, 2).up.click();
+    const emitted = cap.get() as unknown as TeslaCardConfig & { energy?: EnergyShape };
+    expect(emitted.energy?.nodes?.order).toEqual([
+      'vehicle',
+      'powerwall',
+      'solar',
+      'grid',
+      'home',
+      'wall_connector',
+    ]);
+    el.remove();
+  });
+
+  test('move-up restoring canonical order DELETES energy.nodes.order (zero-diff, parity with move-down)', async () => {
+    const el = makeEditor();
+    el.setConfig({
+      type: 'custom:tesla-card',
+      energy: { nodes: { order: ['solar', 'vehicle', 'powerwall', 'grid', 'home', 'wall_connector'] } },
+    } as unknown as TeslaCardConfig);
+    await el.updateComplete;
+    const cap = captureEmit(el);
+
+    // vehicle is at row 1; move it UP → swaps back with solar → canonical order.
+    moveButtons(el, 1).up.click();
+    const emitted = cap.get() as unknown as TeslaCardConfig & { energy?: EnergyShape };
+    expect('energy' in emitted).toBe(false); // canonical → order + energy pruned
+    el.remove();
+  });
+});
+
+describe('Story 9.4 AC1 — orderedRoles sanitizes the displayed order (Story 9.3 mirror)', () => {
+  test('duplicate + unknown entries in energy.nodes.order are de-duped/dropped in the displayed list', async () => {
+    const el = makeEditor();
+    el.setConfig({
+      type: 'custom:tesla-card',
+      // home twice (dedup to one), a bogus role (dropped), then solar.
+      energy: { nodes: { order: ['home', 'home', 'bogus_role', 'solar'] } },
+    } as unknown as TeslaCardConfig);
+    await el.updateComplete;
+    // listed-valid-deduped [home, solar] ++ canonical remainder.
+    expect(orderLabels(el)).toEqual([
+      STRINGS.energy.nodes.home,
+      STRINGS.energy.nodes.solar,
+      STRINGS.editor.nodeVehicle,
+      STRINGS.energy.nodes.powerwall,
+      STRINGS.energy.nodes.grid,
+      STRINGS.energy.nodes.wall_connector,
+    ]);
+    expect(orderLabels(el).length).toBe(6); // never fewer/more than the six nodes
+    el.remove();
+  });
+});
+
+describe('Story 9.4 — the editor writes intent, not precedence (Dev Notes)', () => {
+  test('a node can live in BOTH hide and order at once (the editor never strips one for the other)', async () => {
+    const el = makeEditor();
+    // A non-canonical order is present so it survives the prune.
+    el.setConfig({
+      type: 'custom:tesla-card',
+      energy: { nodes: { order: ['home', 'vehicle', 'solar', 'powerwall', 'grid', 'wall_connector'] } },
+    } as unknown as TeslaCardConfig);
+    await el.updateComplete;
+    const cap = captureEmit(el);
+
+    // Hide "home" — which is also first in the custom order.
+    const checks = nodeChecks(el);
+    checks[ROLES.indexOf('home')].checked = false;
+    checks[ROLES.indexOf('home')].dispatchEvent(new Event('change'));
+
+    const emitted = cap.get() as unknown as TeslaCardConfig & { energy?: EnergyShape };
+    expect(emitted.energy?.nodes?.hide).toEqual(['home']); // intent written...
+    // ...and the order is untouched — home stays in it (precedence is downstream).
+    expect(emitted.energy?.nodes?.order).toEqual([
+      'home',
+      'vehicle',
+      'solar',
+      'powerwall',
+      'grid',
+      'wall_connector',
+    ]);
+    el.remove();
+  });
+});
+
+describe('Story 9.4 AC3 — full hide→show sweep prunes back to a byte-identical default', () => {
+  test('hiding all six nodes then showing all six leaves no energy key (zero-diff)', async () => {
+    const el = makeEditor();
+    el.setConfig({ type: 'custom:tesla-card' } as TeslaCardConfig);
+    await el.updateComplete;
+    const cap = captureEmit(el);
+
+    // Hide every node, re-setConfig between toggles so each edit builds on the last.
+    for (const role of ROLES) {
+      const checks = nodeChecks(el);
+      const idx = ROLES.indexOf(role);
+      checks[idx].checked = false;
+      checks[idx].dispatchEvent(new Event('change'));
+      el.setConfig(cap.get() as unknown as TeslaCardConfig);
+      await el.updateComplete;
+    }
+    // The maximal hide list is the full canonical ROLES order.
+    expect(
+      (cap.get() as unknown as TeslaCardConfig & { energy?: EnergyShape }).energy?.nodes?.hide
+    ).toEqual([...ROLES]);
+
+    // Now show every node again.
+    for (const role of ROLES) {
+      const checks = nodeChecks(el);
+      const idx = ROLES.indexOf(role);
+      checks[idx].checked = true;
+      checks[idx].dispatchEvent(new Event('change'));
+      el.setConfig(cap.get() as unknown as TeslaCardConfig);
+      await el.updateComplete;
+    }
+    // Fully un-hidden ⇒ no empty hide/nodes/energy survives (SM-C4 zero-diff).
+    expect('energy' in (cap.get() as object)).toBe(false);
+    el.remove();
+  });
+});
+
+describe('Story 9.4 AC5 — controls are accessible + state-free (AR-1)', () => {
+  test('move buttons are real <button>s with aria-labels and an inline svg icon', async () => {
+    const el = makeEditor();
+    el.setConfig({ type: 'custom:tesla-card' } as TeslaCardConfig);
+    await el.updateComplete;
+    const { up, down } = moveButtons(el, 1);
+    expect(up.tagName.toLowerCase()).toBe('button');
+    expect(up.getAttribute('aria-label')).toContain(STRINGS.editor.moveNodeUp);
+    expect(down.getAttribute('aria-label')).toContain(STRINGS.editor.moveNodeDown);
+    expect(up.querySelector('svg path')).toBeTruthy(); // mdi path, no raster
+    el.remove();
+  });
+
+  test('renders with hass absent/partial — the node controls read no hass.states (AR-1)', async () => {
+    const el = makeEditor();
+    el.hass = undefined;
+    el.setConfig({
+      type: 'custom:tesla-card',
+      energy: { nodes: { hide: ['solar'], order: ['home'] } },
+    } as unknown as TeslaCardConfig);
+    await expect(el.updateComplete).resolves.toBeDefined();
+    expect(nodeChecks(el).length).toBe(6); // toggles rendered without any hass
+    expect(orderLabels(el).length).toBe(6);
     el.remove();
   });
 });
