@@ -68,6 +68,11 @@ export interface RoleInstance {
   title?: string;
   /** Per-instance entity overrides, or `undefined` when not an object (graceful). */
   entities?: Partial<EnergyEntities>;
+  /**
+   * Per-instance embedded-card config override (Story 9.8) — consumed ONLY for the
+   * `vehicle` role (the per-car `tesla-card` override). `undefined` when not an object.
+   */
+  config?: Partial<TeslaCardConfig>;
 }
 
 /**
@@ -86,5 +91,11 @@ export function roleInstances(config: TeslaCardConfig, role: Role): RoleInstance
     count,
     title: typeof spec.title === 'string' ? spec.title : undefined,
     entities: spec.entities && typeof spec.entities === 'object' ? spec.entities : undefined,
+    // Story 9.8: the per-car embedded-card override (vehicle role only); object-gated
+    // exactly like `entities` so a garbage `config` value degrades to "no override".
+    config:
+      spec.config && typeof spec.config === 'object' && !Array.isArray(spec.config)
+        ? spec.config
+        : undefined,
   }));
 }

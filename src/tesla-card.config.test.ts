@@ -215,6 +215,44 @@ describe('Story 9.1 — energy.nodes is additive/optional/tolerated (no consumpt
     el.remove();
   });
 
+  test('Story 9.8 — a vehicle instance LIST with per-car config round-trips + tolerates garbage (R9)', async () => {
+    // 9.8 consumes `instances.vehicle`: each spec's `config` is the per-car embedded
+    // `tesla-card` override (distinct device / name / paint). The spread must round-trip
+    // the new `config` field intact for the Scene to merge it per car.
+    const el = makeCard();
+    const instances = {
+      vehicle: [
+        { title: 'Model Y' },
+        { title: 'Model 3', config: { device: 'model_3', name: 'Model 3', paint: '#b00' } },
+      ],
+    };
+    const cfg = {
+      type: 'custom:tesla-card',
+      energy: { nodes: { instances } },
+    } as unknown as TeslaCardConfig;
+    expect(() => el.setConfig(cfg)).not.toThrow();
+    el.hass = fullHass();
+    await expect(el.updateComplete).resolves.toBeDefined();
+    expect(hasRoot(el)).toBe(true);
+    const energy = el._config?.energy as { nodes?: Record<string, unknown> } | undefined;
+    expect(energy?.nodes).toEqual({ instances }); // the per-car `config` survives the spread
+    el.remove();
+
+    // A stale count-shaped / garbage vehicle value degrades to "no instances" (single car)
+    // and NEVER throws (the consumer reads it via `roleInstances`, which tolerates non-arrays).
+    const garbage = makeCard();
+    expect(() =>
+      garbage.setConfig({
+        type: 'custom:tesla-card',
+        energy: { nodes: { instances: { vehicle: 2 } } },
+      } as unknown as TeslaCardConfig)
+    ).not.toThrow();
+    garbage.hass = fullHass();
+    await expect(garbage.updateComplete).resolves.toBeDefined();
+    expect(hasRoot(garbage)).toBe(true);
+    garbage.remove();
+  });
+
   test('OMITTED nodes (and omitted energy) renders identically — absence is the default (SM-C4)', async () => {
     const withNodes = makeCard();
     withNodes.setConfig({

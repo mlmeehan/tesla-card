@@ -1409,3 +1409,163 @@ test.describe('tc-my-home Scene — Story 9.7: multi-instance wrap overflow (AC5
     expect(Math.abs(overflowLeft - primaryLeft)).toBeLessThanOrEqual(2);
   });
 });
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Story 9.8 — multi-vehicle overflow hardening (the LIVE-LAYOUT tier). Two cars wrap
+// the load row exactly as 9.7's energy wrap does (a vehicle in the overflow position
+// routes correctly); and the AC8 defensive ≈0-kW clamp hides ONLY dead excess cards
+// behind an honest "Show all" toggle — never a card carrying live kW (the phantom
+// INV-1 forbids). Both bare cars resolve the SAME battery (geometry under test, not
+// distinct values). Under the auto console-error guard.
+// ═══════════════════════════════════════════════════════════════════════════
+test.describe('tc-my-home Scene — Story 9.8: multi-vehicle wrap + ≈0-kW clamp guard', () => {
+  test.beforeEach(async ({ demo }) => {
+    await demo.open(AWAKE.open);
+  });
+
+  const twoCarCfg = { energy: { nodes: { instances: { vehicle: [{ title: 'Model Y' }, { title: 'Garage' }] } } } };
+
+  test('AC4 — home + WC + 2 cars (4 load cards) WRAPS; a vehicle rides the overflow sub-row', async ({
+    page,
+  }) => {
+    await mountScene(page, { width: 1400, config: twoCarCfg });
+    await waitForTrunk(page);
+
+    const band = scene(page).locator('.load-row');
+    await expect(band).toHaveClass(/wrapped/);
+    // Two veh-cells with distinct per-instance data-node ids.
+    await expect(scene(page).locator('.scene-cell.veh-cell')).toHaveCount(2);
+    await expect(scene(page).locator('.scene-cell[data-node="vehicle:1"]')).toHaveCount(1);
+    await expect(scene(page).locator('.scene-cell[data-node="vehicle:2"]')).toHaveCount(1);
+    // A car lands in the overflow sub-row (the 4th cell after home·wc·car1).
+    const overflowVeh = scene(page).locator('.subrow.overflow .scene-cell.veh-cell');
+    await expect(overflowVeh).toHaveCount(1);
+    // It keeps the standalone track (never shrunk below ~360px) and never overflows the host.
+    const box = await overflowVeh.first().evaluate((c) => {
+      const r = c.getBoundingClientRect();
+      return { width: r.width, right: r.right };
+    });
+    expect(box.width).toBeGreaterThanOrEqual(360);
+    const hostRight = await page.locator('#scene-host').evaluate((h) => h.getBoundingClientRect().right);
+    expect(box.right).toBeLessThanOrEqual(hostRight + 1); // no horizontal overflow
+
+    // The NORMAL 2-car wrap shows NO clamp notice (within the 2-sub-row safe capacity).
+    await expect(scene(page).locator('.clamp-note')).toHaveCount(0);
+  });
+
+  test('AC5/AC4 — each car owns its OWN live-anchored WC→Vehicle overlay edge; the overflow car\'s edge tracks it to the 2nd sub-row', async ({
+    page,
+  }) => {
+    await mountScene(page, { width: 1400, config: twoCarCfg });
+    await waitForTrunk(page);
+
+    // One WC→Vehicle overlay leg PER car, each keyed by its per-instance id (AC5). The
+    // single shared WC feeds both (single-WC fallback), but each car gets its OWN edge —
+    // the co-located jsdom suite proves the two legs EXIST (`data-role` vehicle:1 / :2);
+    // only a real layout proves they were drawn at two DISTINCT live anchor positions
+    // (jsdom collapses every rect to 0, so both legs would coincide at the origin there).
+    const veh1 = scene(page).locator('.scene-bus .gw-leg[data-role="vehicle:1"]');
+    const veh2 = scene(page).locator('.scene-bus .gw-leg[data-role="vehicle:2"]');
+    await expect(veh1).toHaveCount(1);
+    await expect(veh2).toHaveCount(1);
+
+    const baseOf = (leg: ReturnType<typeof scene>) =>
+      leg.locator('.gw-leg-base').evaluate((l) => {
+        const x1 = Number(l.getAttribute('x1'));
+        const y1 = Number(l.getAttribute('y1'));
+        const x2 = Number(l.getAttribute('x2'));
+        const y2 = Number(l.getAttribute('y2'));
+        return { x1, y1, x2, y2, len: Math.hypot(x2 - x1, y2 - y1), midX: (x1 + x2) / 2 };
+      });
+    const b1 = await baseOf(veh1);
+    const b2 = await baseOf(veh2);
+
+    // Each leg is a REAL, non-zero run (live geometry ran — jsdom would collapse to 0).
+    expect(b1.len).toBeGreaterThan(10);
+    expect(b2.len).toBeGreaterThan(10);
+
+    // The overflow car (vehicle:2, the 4th load cell) wraps into the 2nd sub-row offset
+    // ~230px into the channels (AC4: "only its WC→Vehicle overlay edge follows it to the
+    // sub-row"). Its overlay edge therefore tracks that displacement — vehicle:2's leg
+    // sits at a clearly different horizontal position than vehicle:1's, NOT a duplicate of
+    // the same shared leg. The overflow car must actually be on the 2nd sub-row.
+    await expect(scene(page).locator('.subrow.overflow .scene-cell[data-node="vehicle:2"]')).toHaveCount(1);
+    expect(Math.abs(b2.midX - b1.midX)).toBeGreaterThan(50);
+  });
+
+  test('AC2/AC4 — a vehicle (even duplicated) draws NO bus tap: its WC→Vehicle overlay never reaches the trunk', async ({
+    page,
+  }) => {
+    await mountScene(page, { width: 1400, config: twoCarCfg });
+    await waitForTrunk(page);
+
+    const t = await trunkLine(page); // horizontal desktop trunk ⇒ constant y
+    const trunkY = t.y1;
+
+    // The Vehicle is a PRESENTATION cell, not a flow node (no Role / no BUS_ORIENTATION /
+    // no sixth FlowNode) — so a vehicle NEVER becomes a bus tap, the load-bearing
+    // invariant the whole story rides. Its only edge is the horizontal WC→Vehicle overlay,
+    // which touches NO trunk. NEITHER duplicated car's leg (vehicle:1 / vehicle:2) may
+    // have an endpoint sitting ON the trunk line.
+    for (const id of ['vehicle:1', 'vehicle:2']) {
+      const b = await scene(page)
+        .locator(`.scene-bus .gw-leg[data-role="${id}"] .gw-leg-base`)
+        .evaluate((l) => ({ y1: Number(l.getAttribute('y1')), y2: Number(l.getAttribute('y2')) }));
+      const nearestToTrunk = Math.min(Math.abs(b.y1 - trunkY), Math.abs(b.y2 - trunkY));
+      expect(nearestToTrunk, `${id} must NOT tap the trunk`).toBeGreaterThan(2);
+    }
+
+    // Calibration: an ENERGY load leg (home) DOES tap the trunk — one endpoint sits ON
+    // trunkY (≤2px). This proves the "no tap" metric above is meaningful, not vacuous: a
+    // real tap lands on the trunk; the vehicle overlays deliberately do not.
+    const homeLeg = await scene(page)
+      .locator('.scene-bus .gw-leg[data-role="home"] .gw-leg-base')
+      .evaluate((l) => ({ y1: Number(l.getAttribute('y1')), y2: Number(l.getAttribute('y2')) }));
+    expect(Math.min(Math.abs(homeLeg.y1 - trunkY), Math.abs(homeLeg.y2 - trunkY))).toBeLessThanOrEqual(2);
+  });
+
+  test('AC8 — a band beyond the safe capacity (home + 6 dead cars, no WC) clamps a dead card behind "Show all"', async ({
+    page,
+  }) => {
+    // Six bare cars (all resolve the same battery ⇒ all present) + the WC DROPPED (its
+    // power entity carries the `total_power` signature — see KEY_SIGNATURES.wc_power) ⇒
+    // each car reads NO live charge (≈0 kW = dead). Load band = home + 6 cars = 7 > SAFE (6).
+    const sixDeadCars = {
+      energy: { nodes: { instances: { vehicle: [{}, {}, {}, {}, {}, {}] } } },
+    };
+    await mountScene(page, { width: 1400, config: sixDeadCars, dropSlug: 'total_power' });
+    await waitForTrunk(page);
+
+    // The honest notice appears (only ≈0-kW cards were hidden), default calm-clamped.
+    const note = scene(page).locator('.clamp-note');
+    await expect(note).toHaveCount(1);
+    await expect(note).toContainText(/\d+ cards? hidden/); // singular ("1 card") or plural
+    const clampedVeh = await scene(page).locator('.scene-cell.veh-cell').count();
+    expect(clampedVeh).toBeLessThan(6); // at least one dead car hidden
+
+    // "Show all" reveals every card; the toggle is a ≥44px control and flips to "Show fewer".
+    const toggle = scene(page).locator('.clamp-note-toggle');
+    const tBox = await toggle.evaluate((b) => {
+      const r = b.getBoundingClientRect();
+      return { w: r.width, h: r.height };
+    });
+    expect(tBox.w).toBeGreaterThanOrEqual(44);
+    expect(tBox.h).toBeGreaterThanOrEqual(44);
+    await toggle.click();
+    await expect(scene(page).locator('.scene-cell.veh-cell')).toHaveCount(6); // all shown
+    await expect(scene(page).locator('.clamp-note-toggle')).toHaveText(/fewer/i);
+  });
+
+  test('AC8 — a LIVE card is NEVER clamped: home (live) survives an over-capacity dead-car band', async ({
+    page,
+  }) => {
+    const sixDeadCars = {
+      energy: { nodes: { instances: { vehicle: [{}, {}, {}, {}, {}, {}] } } },
+    };
+    await mountScene(page, { width: 1400, config: sixDeadCars, dropSlug: 'total_power' });
+    await waitForTrunk(page);
+    // Home is a live load — it must remain rendered (clamping a live source fabricates a
+    // phantom, INV-1; the guard hides only dead cards).
+    await expect(scene(page).locator('.scene-cell[data-node="home"]')).toHaveCount(1);
+  });
+});

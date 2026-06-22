@@ -685,8 +685,12 @@ function batteryId(s: Record<string, HassEntity>): string {
 let lastEmbedConfig: (TeslaCardConfig & { variant?: string }) | undefined;
 class TeslaCardEmbedStub extends HTMLElement {
   hass?: unknown;
+  // Story 9.8: record EACH instance's own setConfig calls so a per-id Map-cache test can
+  // assert two cars own two distinct configs AND that a state tick does not re-`setConfig`.
+  configs: (TeslaCardConfig & { variant?: string })[] = [];
   setConfig(config: TeslaCardConfig & { variant?: string }): void {
     lastEmbedConfig = { ...config };
+    this.configs.push({ ...config });
   }
 }
 if (!customElements.get('tesla-card')) {
@@ -838,6 +842,188 @@ describe('Story 8.5 — AC4: arbitrary-topology + the full-union slice-gate', ()
     // would thrash the whole composition on irrelevant churn).
     expect(ids.has(e.lock)).toBe(false);
     expect(ids.has(e.inside_temp)).toBe(false);
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Story 9.8 — multi-vehicle: N present vehicle cells (each an independent embedded
+// `tesla-card`, INV-12 "1 card : 1 vehicle"), keyed by a per-instance id (bare
+// `vehicle` for a single car = FR-33 zero-diff; `vehicle:1`/`vehicle:2` for duplicates),
+// each owning its own Map-cached embed `setConfig`'d with its per-car override.
+// jsdom returns zero rects ⇒ pin the CELL ROSTER + ids + embed-config identity here;
+// pixel geometry (the 230px wrap offset, per-car WC routing, no-cross) is e2e (Task 7).
+// ═══════════════════════════════════════════════════════════════════════════
+const vehCells = (el: Scene): Element[] => [...sr(el).querySelectorAll('.scene-cell.veh-cell')];
+// Car #2's distinct battery id — DERIVED from car #1's resolved id (never a literal id,
+// the [card] no-hard-coded-ids rule), so it is a valid, distinct entity for the 2nd car.
+const CAR2_BATTERY = batteryId(states(awakeFx)) + '_2';
+/** A 2-vehicle config: a bare car #1 + a car #2 with its own battery override. */
+const TWO_CARS: TeslaCardConfig = {
+  type: 'tc-my-home',
+  energy: {
+    nodes: {
+      instances: {
+        vehicle: [{ title: 'Model Y' }, { title: 'Garage', config: { entities: { battery_level: CAR2_BATTERY } } }],
+      },
+    },
+  },
+} as unknown as TeslaCardConfig;
+/** awake states + a present battery for car #2 (so both cars present-gate true). */
+function twoCarHass(): HomeAssistant {
+  const s = states(awakeFx);
+  s[CAR2_BATTERY] = { state: '64', last_updated: '2026-06-15T15:30:00Z', attributes: {} } as unknown as HassEntity;
+  return makeHass(s);
+}
+
+describe('Story 9.8 — N present vehicle cells with unique data-node + Map-keyed embed cache', () => {
+  beforeEach(() => {
+    lastEmbedConfig = undefined;
+  });
+
+  test('single vehicle (no instances) stays data-node="vehicle" — one embed, zero-diff', async () => {
+    const el = await mount(makeHass(states(awakeFx)));
+    const cells = vehCells(el);
+    expect(cells).toHaveLength(1);
+    expect(cells[0].getAttribute('data-node')).toBe('vehicle');
+    expect(sr(el).querySelectorAll('.veh-cell tesla-card')).toHaveLength(1);
+  });
+
+  test('two cars render TWO veh-cells with data-node vehicle:1 / vehicle:2', async () => {
+    const el = await mount(twoCarHass(), TWO_CARS);
+    const cells = vehCells(el);
+    expect(cells.map((c) => c.getAttribute('data-node'))).toEqual(['vehicle:1', 'vehicle:2']);
+    // Two DISTINCT embedded tesla-card elements (INV-12: N independent cards, not a switcher).
+    const embeds = [...sr(el).querySelectorAll('.veh-cell tesla-card')];
+    expect(embeds).toHaveLength(2);
+    expect(embeds[0]).not.toBe(embeds[1]);
+  });
+
+  test('each car embed is setConfig\'d with its OWN merged { ...config, variant:compact }', async () => {
+    const el = await mount(twoCarHass(), TWO_CARS);
+    const embeds = [...sr(el).querySelectorAll('.veh-cell tesla-card')] as unknown as TeslaCardEmbedStub[];
+    // Car #1 (bare): no battery override; car #2: its own battery override merged in.
+    expect(embeds[0].configs.at(-1)?.variant).toBe('compact');
+    expect(embeds[1].configs.at(-1)?.variant).toBe('compact');
+    expect(embeds[0].configs.at(-1)?.entities?.battery_level).toBeUndefined();
+    expect(embeds[1].configs.at(-1)?.entities?.battery_level).toBe(CAR2_BATTERY);
+  });
+
+  test('a state tick does NOT re-setConfig either car (per-entry guard preserves open panels)', async () => {
+    const el = await mount(twoCarHass(), TWO_CARS);
+    const embeds = [...sr(el).querySelectorAll('.veh-cell tesla-card')] as unknown as TeslaCardEmbedStub[];
+    const before = embeds.map((e) => e.configs.length);
+    // A pure state tick (new hass object, same _config) — must not re-setConfig any embed.
+    const s = states(awakeFx);
+    s[CAR2_BATTERY] = { state: '65', last_updated: FUTURE, attributes: {} } as unknown as HassEntity;
+    const bId = batteryId(s);
+    s[bId].state = '50';
+    s[bId].last_updated = FUTURE;
+    el.hass = makeHass(s);
+    await el.updateComplete;
+    expect(embeds.map((e) => e.configs.length)).toEqual(before); // no re-setConfig on tick
+  });
+
+  test('a 2-spec config where only #1 resolves ⇒ exactly ONE present vehicle cell (per-instance gate)', async () => {
+    // Car #2's own battery sensor is absent ⇒ it present-gates false; car #1 (bare) resolves.
+    const el = await mount(makeHass(states(awakeFx)), TWO_CARS);
+    const cells = vehCells(el);
+    expect(cells).toHaveLength(1);
+    expect(cells[0].getAttribute('data-node')).toBe('vehicle:1');
+  });
+
+  test('a duplicated car carries its TITLE badge + accessible name (never a :n badge)', async () => {
+    const el = await mount(twoCarHass(), TWO_CARS);
+    const cells = vehCells(el);
+    expect(cells[1].getAttribute('aria-label')).toContain('Garage');
+    expect(cells[1].querySelector('.uc-title')?.textContent).toBe('Garage');
+    // The internal :n id never leaks into the visible badge.
+    expect(cells[1].querySelector('.uc-title')?.textContent).not.toContain(':');
+  });
+
+  test('the load band WRAPS when home + wc + two cars exceed 3 (.subrow.overflow carries a car)', async () => {
+    const el = await mount(twoCarHass(), TWO_CARS);
+    // home + wall_connector + vehicle:1 + vehicle:2 = 4 > WRAP_MAX_PER_ROW(3) ⇒ wrap.
+    const loadRow = sr(el).querySelector('.load-row.wrapped');
+    expect(loadRow).not.toBeNull();
+    expect(sr(el).querySelector('.load-row .subrow.overflow')).not.toBeNull();
+    // The 4th cell (vehicle:2) lands in the overflow sub-row.
+    const overflow = [...sr(el).querySelectorAll('.load-row .subrow.overflow .scene-cell')];
+    expect(overflow.map((c) => c.getAttribute('data-node'))).toContain('vehicle:2');
+  });
+
+  test('two cars draw TWO WC→Vehicle edges, one per car (data-role vehicle:1 / vehicle:2)', async () => {
+    const el = await mount(twoCarHass(), TWO_CARS);
+    recompute(el);
+    await el.updateComplete;
+    expect(sr(el).querySelector('.scene-bus [data-role="vehicle:1"]')).not.toBeNull();
+    expect(sr(el).querySelector('.scene-bus [data-role="vehicle:2"]')).not.toBeNull();
+  });
+
+  test('focusing a car lights itself + its feeding WC, NOT its sibling car (per-car coupling)', async () => {
+    const el = await mount(twoCarHass(), TWO_CARS);
+    (el as unknown as { _focus(id: string): void })._focus('vehicle:2');
+    await el.updateComplete;
+    const cell = (id: string) => sr(el).querySelector(`.scene-cell[data-node="${id}"]`)!;
+    expect(cell('vehicle:2').classList.contains('lit')).toBe(true);
+    expect(cell('vehicle:1').classList.contains('lit')).toBe(false); // sibling car stays dim
+    expect(cell('wall_connector').classList.contains('lit')).toBe(true); // its feeding WC
+  });
+
+  test('focusing the WC lights it + the car(s) it feeds (both, single shared WC)', async () => {
+    const el = await mount(twoCarHass(), TWO_CARS);
+    (el as unknown as { _focus(id: string): void })._focus('wall_connector');
+    await el.updateComplete;
+    const cell = (id: string) => sr(el).querySelector(`.scene-cell[data-node="${id}"]`)!;
+    expect(cell('vehicle:1').classList.contains('lit')).toBe(true);
+    expect(cell('vehicle:2').classList.contains('lit')).toBe(true);
+  });
+
+  // AC8 — the defensive ≈0-kW clamp. The pixel geometry (the >3rd-channel crossing it
+  // prevents) is e2e; here we pin the CLAMP LOGIC (which cards hide) on the roster, by
+  // injecting a model + calling `_clampBand` directly (jsdom rects are zero anyway).
+  type ClampResult = { visible: { id: string }[]; hidden: number };
+  const clampBand = (el: Scene, cells: { id: string; role: string }[]): ClampResult =>
+    (el as unknown as { _clampBand(c: unknown): ClampResult })._clampBand(cells);
+  const solarBand = (el: Scene, kWs: number[]): { id: string; role: string }[] => {
+    const inputs: FlowInput[] = kWs.map((kW, i) => ({ role: 'solar', id: `solar:${i + 1}`, kW, provenance: 'measured' }));
+    (el as unknown as { _model: FlowModel })._model = buildFlowModel(inputs);
+    return inputs.map((x) => ({ id: x.id!, role: 'solar' }));
+  };
+
+  test('AC8: a band over the safe capacity clamps DEAD (≈0-kW) cards but NEVER a live one', async () => {
+    const el = await mount(makeHass(states(awakeFx)));
+    // 7 cells (> SAFE_BAND_MAX 6): six dead (0 kW) + one live (the 4th, 5 kW).
+    const cells = solarBand(el, [0, 0, 0, 5, 0, 0, 0]);
+    const { visible, hidden } = clampBand(el, cells);
+    expect(hidden).toBe(1); // one dead card hidden to fit capacity
+    expect(visible).toHaveLength(6);
+    expect(visible.map((c) => c.id)).toContain('solar:4'); // the LIVE card is never clamped
+  });
+
+  test('AC8: an all-LIVE over-capacity band is NOT clamped (it wraps — never fabricate a phantom)', async () => {
+    const el = await mount(makeHass(states(awakeFx)));
+    const cells = solarBand(el, [5, 5, 5, 5, 5, 5, 5]); // 7 live cards
+    const { visible, hidden } = clampBand(el, cells);
+    expect(hidden).toBe(0); // clamping a live source would fabricate a phantom (INV-1) — refuse
+    expect(visible).toHaveLength(7);
+  });
+
+  test('AC8: a band within the safe capacity is never clamped (no notice — the normal path)', async () => {
+    const el = await mount(makeHass(states(awakeFx)));
+    const cells = solarBand(el, [0, 0, 0, 0]); // 4 dead cards but ≤ SAFE_BAND_MAX
+    expect(clampBand(el, cells).hidden).toBe(0);
+  });
+
+  test('dropping a car PRUNES its embed from the cache (no leak across reconfigure)', async () => {
+    const el = await mount(twoCarHass(), TWO_CARS);
+    expect((el as unknown as { _vehDetail: Map<string, unknown> })._vehDetail.size).toBe(2);
+    // Reconfigure to a single car (no instances) ⇒ the vehicle:1/vehicle:2 entries prune,
+    // a bare `vehicle` entry takes their place.
+    el.setConfig(CONFIG);
+    el.hass = makeHass(states(awakeFx));
+    await el.updateComplete;
+    const map = (el as unknown as { _vehDetail: Map<string, unknown> })._vehDetail;
+    expect([...map.keys()]).toEqual(['vehicle']);
   });
 });
 

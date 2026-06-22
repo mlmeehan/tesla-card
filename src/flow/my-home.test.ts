@@ -16,7 +16,10 @@ import {
   BUS_WIDTH_MAX,
   VEHICLE_NODE_ID,
   wcVehicleEdge,
+  wcVehicleEdgeFor,
+  wcEdgeForVehicle,
 } from './my-home';
+import { roleOfInstance } from './instances';
 import { ENERGY_ROLES, bindFlowModel } from './binding';
 import { BUS_NODE_ID, IDLE_KW, buildFlowModel, type FlowModel, type FlowInput } from './model';
 import { computeBalance } from './balance';
@@ -717,6 +720,42 @@ describe('wcVehicleEdge — the WC edge IS the car-charging edge (AC2 agree-by-c
   });
 });
 
+describe('wcVehicleEdgeFor / wcEdgeForVehicle — per-car positional WC pairing (Story 9.8, Task 5)', () => {
+  // Two WCs feeding two cars: WC:1 idle, WC:2 charging. Positional pairing means car #0
+  // reads WC:1 (idle) and car #1 reads WC:2 (charging) — NOT "the charging one for both".
+  const twoWc = (): FlowModel =>
+    modelOf([
+      { role: 'wall_connector', id: 'wall_connector:1', kW: 0, provenance: 'measured' }, // idle
+      { role: 'wall_connector', id: 'wall_connector:2', kW: 7.4, provenance: 'measured' }, // charging
+    ]);
+
+  test('2 WC + 2 cars: car i reads WC i (positional), NOT the shared active-preferred read', () => {
+    const model = twoWc();
+    expect(wcVehicleEdgeFor(model, 0, 2).active).toBe(false); // car #0 ↔ WC:1 (idle)
+    const car1 = wcVehicleEdgeFor(model, 1, 2); // car #1 ↔ WC:2 (charging)
+    expect(car1.active).toBe(true);
+    expect(car1.kW).toBeCloseTo(7.4, 6);
+    // The returned edge's `from` IS the paired WC node id (so the anchor follows it).
+    expect(wcEdgeForVehicle(model, 0, 2)?.from).toBe('wall_connector:1');
+    expect(wcEdgeForVehicle(model, 1, 2)?.from).toBe('wall_connector:2');
+  });
+
+  test('1 WC + 2 cars: BOTH cars fall back to the single shared WC (counts differ)', () => {
+    const model = modelOf([measured('wall_connector', 7.4)]); // one WC, charging
+    expect(wcEdgeForVehicle(model, 0, 2)?.from).toBe('wall_connector');
+    expect(wcEdgeForVehicle(model, 1, 2)?.from).toBe('wall_connector');
+    expect(wcVehicleEdgeFor(model, 0, 2).kW).toBeCloseTo(7.4, 6);
+    expect(wcVehicleEdgeFor(model, 1, 2).kW).toBeCloseTo(7.4, 6);
+  });
+
+  test('single-car/single-WC is a zero-diff: wcVehicleEdge === wcVehicleEdgeFor(_,0,1)', () => {
+    const model = modelOf([measured('wall_connector', 7.4)]);
+    expect(wcVehicleEdge(model)).toEqual(wcVehicleEdgeFor(model, 0, 1));
+    // …and 2 WC + 1 car keeps the 9.7 "prefer the charging WC" fallback.
+    expect(wcVehicleEdgeFor(twoWc(), 0, 1).kW).toBeCloseTo(7.4, 6);
+  });
+});
+
 describe('VEHICLE_NODE_ID is excluded from the trunk junction & axis math (Task 2, AC4)', () => {
   const base = { grid: r(0, 0), home: r(200, 0), wall_connector: r(400, 0) };
   // A vehicle anchor placed far off the tap line — if it leaked into the centroid
@@ -738,6 +777,53 @@ describe('VEHICLE_NODE_ID is excluded from the trunk junction & axis math (Task 
     const withTallVehicle = { ...taps, [VEHICLE_NODE_ID]: r(0, 5000) };
     expect(busAxis(taps)).toBe('x');
     expect(busAxis(withTallVehicle)).toBe('x'); // unchanged — vehicle excluded
+  });
+});
+
+describe('EVERY vehicle:n anchor is excluded from the trunk junction & axis math (Story 9.8, Task 2)', () => {
+  // Story 9.8: a DUPLICATED car gets a `vehicle:1`/`vehicle:2` anchor. The two filters
+  // generalize from the bare-id equality `k !== VEHICLE_NODE_ID` to the ROLE test
+  // `roleOfInstance(k) !== 'vehicle'`, so a 2nd car never leaks into the centroid / axis
+  // (the bug class 9.7 fixed for the `abs[role]` collision). The :n suffix appears only
+  // for genuine duplicates, so single-vehicle output is byte-identical (covered above).
+  const base = { grid: r(0, 0), home: r(200, 0), wall_connector: r(400, 0) };
+  // Two cars placed far off the tap line — if EITHER leaked it would move the junction.
+  const withTwoCars = { ...base, 'vehicle:1': r(600, 500), 'vehicle:2': r(800, 700) };
+
+  test('roleOfInstance recovers `vehicle` from a duplicated car id', () => {
+    expect(roleOfInstance('vehicle')).toBe('vehicle');
+    expect(roleOfInstance('vehicle:1')).toBe('vehicle');
+    expect(roleOfInstance('vehicle:2')).toBe('vehicle');
+  });
+
+  test('deriveBusAnchor is identical with vs without TWO present vehicle anchors', () => {
+    expect(deriveBusAnchor(withTwoCars)).toEqual(deriveBusAnchor(base));
+  });
+
+  test('busAxis is identical with vs without TWO present vehicle anchors', () => {
+    // Both cars carry a huge off-axis spread — neither may flip the axis.
+    const taps = { grid: r(0, 0), home: r(400, 0) };
+    const withTallCars = { ...taps, 'vehicle:1': r(0, 5000), 'vehicle:2': r(0, 9000) };
+    expect(busAxis(taps)).toBe('x');
+    expect(busAxis(withTallCars)).toBe('x');
+  });
+
+  test('busAnchorBetweenRows ignores both cars (gap line driven by the taps only)', () => {
+    const twoRowTwoCars = {
+      grid: r(0, 0, 100, 80),
+      home: r(0, 300, 100, 80),
+      wall_connector: r(150, 300, 100, 80),
+      'vehicle:1': r(300, 300, 100, 80),
+      'vehicle:2': r(450, 300, 100, 80),
+    };
+    const noCars = { grid: r(0, 0, 100, 80), home: r(0, 300, 100, 80), wall_connector: r(150, 300, 100, 80) };
+    const SRC = ['grid'];
+    const LOAD = ['home', 'wall_connector'];
+    // The gap line's `top` (the inter-row channel) must match the no-cars layout exactly;
+    // the cars sit in the load row but are NOT bus taps, so they never enter the math.
+    expect(busAnchorBetweenRows(twoRowTwoCars, SRC, LOAD)?.top).toBe(
+      busAnchorBetweenRows(noCars, SRC, LOAD)?.top
+    );
   });
 });
 
@@ -945,5 +1031,23 @@ describe('ribbonTiles — Story 9.7 FOLDS instances by role (INV-9, AC6)', () =>
       expect(t.count).toBe(1);
       expect(t.signed).toBeCloseTo(net[t.role], 6);
     }
+  });
+
+  // Story 9.8 (AC6) — the ribbon's "Car" tile IS the wall_connector tile, so TWO cars fed
+  // by TWO WCs already aggregate through 9.7's same-role WC fold: no new vehicle tile, no
+  // second engine. This PROVES the whole-home net does not under-report multiple cars.
+  test('Story 9.8: two charging WCs (two cars) FOLD to ONE Car tile = the SUM, no under-report', () => {
+    const model = modelOf([
+      inst('wall_connector', 'wall_connector:1', 7.4), // car #1 drawing
+      inst('wall_connector', 'wall_connector:2', 3.6), // car #2 drawing
+      measured('home', 2.0),
+    ]);
+    const tiles = ribbonTiles(model);
+    const car = tiles.filter((t) => t.role === 'wall_connector');
+    expect(car).toHaveLength(1); // ONE "Car" tile (the WC tile), never one-per-car
+    expect(car[0].kW).toBeCloseTo(11.0, 6); // 7.4 + 3.6 — BOTH cars counted (no under-report)
+    expect(car[0].count).toBe(2);
+    // No vehicle node ever enters the ribbon (the Vehicle is not a flow node / role).
+    expect(tiles.some((t) => (t.role as string) === 'vehicle')).toBe(false);
   });
 });

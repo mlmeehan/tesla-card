@@ -404,6 +404,24 @@ export const STRINGS = {
        *  for two arrays announces "Solar, 2, 3.2 kW total" so the sum is never silent. */
       total: 'total',
     },
+    /**
+     * Story 9.8 (AC8) — the defensive overflow notice. Shown ONLY when a band exceeds the
+     * safe wrap capacity (2 sub-rows) AND the excess cards carry NO live flow (|net| ≈ 0):
+     * those dead cards are hidden behind an honest "N cards hidden · Show all" toggle to
+     * keep overflow legs off the primary cards. A card with ANY live kW is NEVER hidden
+     * (clamping a live source would fabricate a phantom — INV-1); the normal ≤2-sub-row
+     * wrap shows no notice.
+     */
+    overflow: {
+      /** `"2 cards hidden"` — the count (>1) of dead cards clamped from this band. */
+      hidden: 'cards hidden',
+      /** The singular form — `"1 card hidden"` (exactly one dead card clamped). */
+      hiddenOne: 'card hidden',
+      /** The reveal toggle (un-clamps and shows every card). */
+      showAll: 'Show all',
+      /** The re-clamp toggle (back to the calm hidden state). */
+      showFewer: 'Show fewer',
+    },
   },
 
   editor: {

@@ -112,6 +112,16 @@ export interface InstanceSpec {
    * keys it sets; unset keys still auto-resolve.
    */
   entities?: Partial<EnergyEntities>;
+  /**
+   * Per-instance embedded-card config override (Story 9.8) — CONSUMED ONLY for the
+   * `vehicle` role. A 2nd/3rd car's identity is its own `tesla-card` config (distinct
+   * vehicle `device`/`entities`/`name`/`paint`/panels) — a surface `entities:
+   * Partial<EnergyEntities>` (the five ENERGY roles' sensor sets) cannot express. It
+   * is merged per car into the embedded card as `{ ...baseConfig, ...config, variant:
+   * 'compact' }`. Additive + forward-compatible (R9): the energy roles IGNORE it (they
+   * resolve via `entities`); omit ⇒ today's single auto-detected Vehicle, byte-identical.
+   */
+  config?: Partial<TeslaCardConfig>;
 }
 
 export interface NodeCustomization {
@@ -126,7 +136,8 @@ export interface NodeCustomization {
    * a stale count-shaped value (the 9.1 placeholder `Partial<Record<Role, number>>`)
    * or any garbage is TOLERATED — only a valid non-empty array is consumed; anything
    * else degrades to "no instances declared" = today's single auto-resolved node
-   * (graceful, FR-24 / R9). A `vehicle` entry is tolerated-but-DEFERRED to Story 9.8.
+   * (graceful, FR-24 / R9). A `vehicle` entry is CONSUMED (Story 9.8): each spec's
+   * {@link InstanceSpec.config} is the per-car embedded-`tesla-card` override.
    */
   instances?: Partial<Record<Role, InstanceSpec[]>>;
 }

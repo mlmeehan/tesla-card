@@ -181,6 +181,17 @@ describe('Story 9.1 — energy.nodes is an ADDITIVE, optional, Role-keyed delta'
     expectTypeOf<Record<string, never>>().toMatchTypeOf<InstanceSpec>();
   });
 
+  test('InstanceSpec carries an optional per-instance embedded-card config override (9.8)', () => {
+    // Story 9.8 (AC1): the per-vehicle identity (distinct vehicle entity / name / paint /
+    // panels) is NOT expressible by `entities: Partial<EnergyEntities>` — a car's identity
+    // is its `tesla-card` config, a different surface from the five energy roles' sensor
+    // sets. The minimal additive home is `config?: Partial<TeslaCardConfig>`, merged per
+    // car into the embed; consumed ONLY for the `vehicle` role (energy roles ignore it).
+    expectTypeOf<InstanceSpec['config']>().toEqualTypeOf<Partial<TeslaCardConfig> | undefined>();
+    // Still optional ⇒ a bare `{}` stays a valid instance (zero-diff single-Vehicle).
+    expectTypeOf<Record<string, never>>().toMatchTypeOf<InstanceSpec>();
+  });
+
   test('all three sub-keys are OPTIONAL (omit ⇒ today, SM-C4)', () => {
     // `{}` satisfies NodeCustomization — every field is optional.
     expectTypeOf<Record<string, never>>().toMatchTypeOf<NodeCustomization>();

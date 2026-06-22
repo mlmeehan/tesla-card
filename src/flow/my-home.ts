@@ -1,7 +1,7 @@
 import type { EnergyRole } from '../data/registry';
 import { ENERGY_ROLES } from './binding';
 import { roleOfInstance } from './instances';
-import { BUS_NODE_ID, IDLE_KW, type Direction, type FlowModel } from './model';
+import { BUS_NODE_ID, IDLE_KW, type Direction, type FlowEdge, type FlowModel } from './model';
 import { computeBalance, type Balance } from './balance';
 import { edgeVisual } from './renderer';
 import type { RectLike } from './scene-bus';
@@ -63,18 +63,50 @@ export const VEHICLE_NODE_ID = 'vehicle';
  * iff the edge exists and `direction !== 'none'`; an absent/idle WC ⇒ inactive
  * (the cell then falls back to the discrete `charging_status` for plugged/parked).
  */
-export function wcVehicleEdge(model: FlowModel): { active: boolean; kW: number; direction: Direction } {
-  // Story 9.7: match the WC edge by ROLE (not a bare `'wall_connector'` id), so a
-  // multi-WC config still finds the charging WC. PREFER an ACTIVE WC edge (the one
-  // actually feeding the single, 9.8-deferred car) over an idle sibling — a
-  // first-but-idle WC must not mask a charging second one (else the car edge reads
-  // "not charging" while the halo reads charging: a halo-vs-edge mismatch). Fall back
-  // to the first WC edge when none is active (an idle/plugged read). Single-WC is a
-  // zero-diff ("first active else first" === "the one edge").
-  const wcEdges = model.edges.filter((x) => roleOfInstance(x.from) === 'wall_connector');
-  const e = wcEdges.find((x) => x.direction !== 'none') ?? wcEdges[0];
+/** The car-charging read derived from ONE WC edge — `Math.abs(kW)` (the charge RATE,
+ *  sign already encodes the bus direction), `active` iff the edge exists and is not
+ *  `'none'`. The shared primitive both {@link wcVehicleEdge} and the per-car
+ *  {@link wcVehicleEdgeFor} return, so a car's badge and its drawn edge agree. */
+export function chargeOfEdge(e: FlowEdge | undefined): { active: boolean; kW: number; direction: Direction } {
   if (!e || e.direction === 'none') return { active: false, kW: 0, direction: 'none' };
   return { active: true, kW: Math.abs(e.kW), direction: e.direction };
+}
+
+/**
+ * Story 9.8 — the WC edge feeding the i-th car, by POSITIONAL pairing: when the present
+ * WC count equals the car count, the i-th WC instance feeds the i-th car (one WC per car).
+ * Otherwise (counts differ — the common "one WC charges the household's cars in turn", or
+ * no car-WC bijection) every car falls back to the SINGLE shared read: prefer an ACTIVE WC
+ * edge over an idle sibling (a first-but-idle WC must not mask a charging one — the
+ * halo-vs-edge mismatch), else the first WC edge. The returned edge's `from` IS the paired
+ * WC node id, so the element anchors the leg to the SAME WC its charge is read from (edge,
+ * anchor and badge agree by construction). Single-car/single-WC is a zero-diff.
+ */
+export function wcEdgeForVehicle(model: FlowModel, index: number, count: number): FlowEdge | undefined {
+  const wcEdges = model.edges.filter((x) => roleOfInstance(x.from) === 'wall_connector');
+  const paired = wcEdges.length === count ? wcEdges[index] : undefined;
+  return paired ?? wcEdges.find((x) => x.direction !== 'none') ?? wcEdges[0];
+}
+
+/** The car-charging read for the i-th car (Story 9.8) — {@link chargeOfEdge} of its
+ *  positionally-paired {@link wcEdgeForVehicle}. The single source the i-th cell's badge
+ *  AND its drawn WC→Vehicle edge consume (AC5 agree-by-construction, per car). */
+export function wcVehicleEdgeFor(
+  model: FlowModel,
+  index: number,
+  count: number
+): { active: boolean; kW: number; direction: Direction } {
+  return chargeOfEdge(wcEdgeForVehicle(model, index, count));
+}
+
+/**
+ * The single-car WC→Vehicle charge read (Story 8.5) — now the `index 0 / count 1` case
+ * of {@link wcVehicleEdgeFor}: single-WC pairs 1:1 (the one edge); a multi-WC single-car
+ * config falls back to "first active else first" (the 9.7 charging-WC-preference). A pure
+ * VIEW of the UNCHANGED Epic-4 model's WC edge — never a second balance / sign / sixth node.
+ */
+export function wcVehicleEdge(model: FlowModel): { active: boolean; kW: number; direction: Direction } {
+  return wcVehicleEdgeFor(model, 0, 1);
 }
 
 /**
@@ -117,11 +149,14 @@ export function relativeAnchors(
 export function deriveBusAnchor(
   anchors: Readonly<Record<string, RectLike>>
 ): RectLike | undefined {
-  // Exclude both non-tap anchors: the bus junction (idempotency) and the vehicle
-  // presentation cell (Story 8.5 — it has a data-node but is NOT a bus tap, so it
-  // must not move the trunk junction / flip the axis).
+  // Exclude both non-tap anchors: the bus junction (idempotency) and EVERY vehicle
+  // presentation cell (Story 8.5 — it has a data-node but is NOT a bus tap, so it must
+  // not move the trunk junction / flip the axis). Story 9.8: a DUPLICATED car is
+  // `vehicle:1`/`vehicle:2`, so exclude by ROLE (`roleOfInstance(k) !== 'vehicle'`), not
+  // the bare-id equality — `roleOfInstance('vehicle')==='vehicle'`, so single-car is a
+  // zero-diff while a 2nd car is filtered out too (never leaks into the centroid).
   const rects = Object.keys(anchors)
-    .filter((k) => k !== BUS_NODE_ID && k !== VEHICLE_NODE_ID)
+    .filter((k) => k !== BUS_NODE_ID && roleOfInstance(k) !== 'vehicle')
     .map((k) => anchors[k]);
   if (!rects.length) return undefined;
   const n = rects.length;
@@ -304,11 +339,11 @@ function centreAlong(r: RectLike, axis: BusAxis): number {
  * re-runs this (the 6.5 `ResizeObserver` → recompute), never a `hass` tick.
  */
 export function busAxis(anchors: Readonly<Record<string, RectLike>>): BusAxis {
-  // Exclude the bus junction AND the vehicle presentation cell (Story 8.5) — the
-  // spread that picks the axis must be the BUS TAPS' spread, not perturbed by the
-  // non-tap vehicle anchor.
+  // Exclude the bus junction AND EVERY vehicle presentation cell (Story 8.5/9.8) — the
+  // spread that picks the axis must be the BUS TAPS' spread, not perturbed by a non-tap
+  // vehicle anchor. Excluded by ROLE so a duplicated `vehicle:n` is filtered too.
   const rects = Object.keys(anchors)
-    .filter((k) => k !== BUS_NODE_ID && k !== VEHICLE_NODE_ID)
+    .filter((k) => k !== BUS_NODE_ID && roleOfInstance(k) !== 'vehicle')
     .map((k) => anchors[k]);
   if (rects.length < 2) return 'x';
   const xs = rects.map((r) => r.left + r.width / 2);

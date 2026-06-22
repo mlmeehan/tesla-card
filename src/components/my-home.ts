@@ -31,15 +31,15 @@ import {
   ribbonTiles,
   coupledRoles,
   axisForWidth,
-  wcVehicleEdge,
-  VEHICLE_NODE_ID,
+  chargeOfEdge,
+  wcEdgeForVehicle,
   BUS_WIDTH_MAX,
   BUS_TRUNK_PAD,
   type BusAxis,
   type GatewaySegment,
   type RibbonTile,
 } from '../flow/my-home';
-import { roleInstances } from '../flow/instances';
+import { roleInstances, roleOfInstance } from '../flow/instances';
 import type { EnergyRole, Role } from '../data/registry';
 import type { HomeAssistant, LovelaceCard, TeslaCardConfig } from '../types';
 
@@ -141,6 +141,12 @@ const NODE_TAG: Readonly<Record<EnergyRole, string>> = {
  *  literal so the ≤540px phone reset can override it (an inline style could not). */
 const WRAP_MAX_PER_ROW = 3;
 
+/** Story 9.8 (AC8) — the SAFE wrap capacity: two sub-rows of {@link WRAP_MAX_PER_ROW}.
+ *  Beyond it the overflow sub-row's legs reach past the 3rd bus channel and cross the
+ *  primary cards (the 9.7-deferred ">6 cards in a band degrades" item). A band over this
+ *  triggers the defensive ≈0-kW clamp — hiding ONLY dead (no-live-flow) excess cards. */
+const SAFE_BAND_MAX = 2 * WRAP_MAX_PER_ROW;
+
 /**
  * One rendered Scene cell (Story 9.7) — a present INSTANCE of a role, or the
  * synthetic vehicle cell. The render packs these; `id` is the per-instance
@@ -154,6 +160,9 @@ interface SceneCell {
   title?: string;
   entities?: Partial<EnergyEntities>;
   vehicle?: boolean;
+  /** Story 9.8: a vehicle cell's per-instance embedded-`tesla-card` config override
+   *  (the 2nd car's distinct device / name / paint), merged into the embed. */
+  config?: Partial<TeslaCardConfig>;
 }
 
 /**
@@ -196,12 +205,19 @@ export class TcMyHome extends LitElement implements LovelaceCard {
    *  `hass.devices` reads inside `data/`, never bare in this element). */
   private _resolveCache?: { hass: unknown; config: TeslaCardConfig };
 
-  /** The embedded detailed vehicle card (`tesla-card`), created once and reused
-   *  across renders — the vehicle's analogue of the five embedded energy cards. */
-  private _vehDetail?: HTMLElement & { setConfig?(config: TeslaCardConfig): void; hass?: HomeAssistant };
-  /** RAW `_config` identity the embedded card was last `setConfig`'d with (NOT the
-   *  per-tick resolved cfg — see {@link _vehicleDetailCard}). */
-  private _vehDetailCfg?: TeslaCardConfig;
+  /**
+   * Story 9.8 — the embedded detailed vehicle cards (`tesla-card`), keyed by the
+   * per-instance id (the config identity). Each present vehicle cell owns its OWN
+   * embed, created once and reused across renders — the vehicle's analogue of the five
+   * embedded energy cards. `cfg` is the RAW `_config` identity the embed was last
+   * `setConfig`'d with (NOT the per-tick resolved cfg — see {@link _vehicleDetailCard}),
+   * stored PER ENTRY so a state tick / a sibling car's update never resets another car's
+   * open panel. Single-vehicle is one entry keyed by the bare `vehicle` id (zero-diff).
+   */
+  private readonly _vehDetail = new Map<
+    string,
+    { el: HTMLElement & { setConfig?(config: TeslaCardConfig): void; hass?: HomeAssistant }; cfg: TeslaCardConfig }
+  >();
 
   // ── live-geometry lifecycle machinery (AR-8; no precedent in the codebase) ──
   private readonly _coalescer = new RafCoalescer();
@@ -224,12 +240,19 @@ export class TcMyHome extends LitElement implements LovelaceCard {
    *  energy-ROLE-only; the per-instance expansion is computed in {@link _coupledLit}. */
   @state() private _focused?: string;
 
+  /** Story 9.8 (AC8): when `true`, the defensive ≈0-kW overflow clamp is lifted and every
+   *  card in an over-capacity band shows (the user tapped "Show all"). Default calm-clamped. */
+  @state() private _showAllOverflow = false;
+
   // ── LovelaceCard contract (AC4) ────────────────────────────────────────────
 
   public setConfig(config: TeslaCardConfig): void {
     // Forward-compatible (R9): tolerate unknown keys, reject only a falsy config.
     if (!config) throw new Error('Invalid configuration');
     this._config = { ...config };
+    // A genuine reconfigure starts CALM-clamped: a stale "Show all" from a prior config's
+    // overflow must not auto-expand a new config's band (Story 9.8, AC8).
+    this._showAllOverflow = false;
   }
 
   public getCardSize(): number {
@@ -379,10 +402,17 @@ export class TcMyHome extends LitElement implements LovelaceCard {
     // Story 9.7: the key is the per-INSTANCE id sequence, so a count change (solar →
     // solar:1,solar:2) flips it (one reflow), while a value-only tick (same roster)
     // leaves it unchanged (zero reflow) — AC8.
+    // Story 9.8: each present vehicle id is already in the load-cell sequence (the
+    // expander emits `vehicle`/`vehicle:1`/…), so adding/removing a car flips the key
+    // and reflows ONCE — no separate vehicle key. Prune the embed Map to the present
+    // vehicle ids so a dropped car's cached `tesla-card` is released (no leak).
     const cfg = this._resolvedConfig ?? this._config;
     const { source, load } = cfg ? this._orderedRows(cfg) : { source: [], load: [] };
+    this._pruneVehicleCache(new Set(load.filter((c) => c.vehicle).map((c) => c.id)));
+    // Story 9.8: key off the VISIBLE (post-clamp) roster — so toggling "Show all" (which
+    // reveals clamped cards / new anchors) flips the key and reflows the overlay ONCE.
     const ids = (cells: SceneCell[]): string => cells.map((c) => c.id).join(',');
-    const key = `${ids(source)}|${ids(load)}`;
+    const key = `${ids(this._clampBand(source).visible)}|${ids(this._clampBand(load).visible)}`;
     if (key !== this._presentKey) {
       this._presentKey = key;
       this._scheduleGeometry();
@@ -469,12 +499,13 @@ export class TcMyHome extends LitElement implements LovelaceCard {
   protected override render(): TemplateResult | typeof nothing {
     if (!this._config) return nothing;
     const cfg = this._resolvedConfig ?? this._config;
-    // Story 8.5: the vehicle is a present-gated PRESENTATION cell (not a flow node).
-    const vehiclePresent = this._vehiclePresent(cfg);
-    // The focus coupling (AC3, Story 9.7): a hovered/focused cell lights itself + every
-    // INSTANCE the shared bus couples it to (a source lights all loads, and converse);
-    // the rest dim. Per-instance ids — never a hard-coded map (see {@link _coupledLit}).
-    const lit = this._coupledLit(vehiclePresent);
+    // Story 8.5/9.8: the vehicle(s) are present-gated PRESENTATION cells (not flow nodes).
+    const vehicleCells = this._vehicleInstanceCells(cfg);
+    // The focus coupling (AC3, Story 9.7/9.8): a hovered/focused cell lights itself + every
+    // INSTANCE the shared bus couples it to (a source lights all loads, and converse); a
+    // focused car lights its FEEDING WC (per-car), a focused WC lights the car(s) it feeds.
+    // The rest dim. Per-instance ids — never a hard-coded map (see {@link _coupledLit}).
+    const lit = this._coupledLit(vehicleCells);
 
     // Story 6.7 — PACK each row: render only present cards (no ghost cell). Story 9.3 —
     // WITHIN-ROW order follows `energy.nodes.order`. Story 9.7 — each present role
@@ -513,6 +544,11 @@ export class TcMyHome extends LitElement implements LovelaceCard {
    * offset + the visual top-placement of the overflow row are CSS-only and MUST NOT
    * reorder the DOM (the bus walk = taps-by-x and the focus walk = reading order are
    * two independent orders). An empty band renders nothing (no channel-eating row).
+   *
+   * Story 9.8 (AC8): a band over the SAFE wrap capacity ({@link SAFE_BAND_MAX}) defensively
+   * CLAMPS its dead (≈0-kW) excess via {@link _clampBand} and surfaces an honest "N cards
+   * hidden · Show all" notice. A card with ANY live kW is never clamped (it wraps — clamping
+   * a live source fabricates a phantom, INV-1). The ≤2-sub-row wrap shows no notice.
    */
   private _renderBand(
     cells: SceneCell[],
@@ -521,18 +557,62 @@ export class TcMyHome extends LitElement implements LovelaceCard {
     cfg: TeslaCardConfig
   ): TemplateResult | typeof nothing {
     if (!cells.length) return nothing;
+    const { visible, hidden } = this._clampBand(cells);
     const draw = (c: SceneCell): TemplateResult =>
-      c.vehicle ? this._vehicleCell(lit) : this._cell(c, lit, cfg);
-    if (cells.length <= WRAP_MAX_PER_ROW) {
-      return html`<div class="${bandClass}">${cells.map(draw)}</div>`;
+      c.vehicle ? this._vehicleCell(c, lit) : this._cell(c, lit, cfg);
+    const notice = hidden > 0 ? this._overflowNotice(hidden) : nothing;
+    const body =
+      visible.length <= WRAP_MAX_PER_ROW
+        ? html`<div class="${bandClass}">${visible.map(draw)}</div>`
+        : html`<div class="${bandClass} wrapped">
+            <div class="subrow primary">${visible.slice(0, WRAP_MAX_PER_ROW).map(draw)}</div>
+            <div class="subrow overflow">${visible.slice(WRAP_MAX_PER_ROW).map(draw)}</div>
+          </div>`;
+    return html`${body}${notice}`;
+  }
+
+  /**
+   * Story 9.8 (AC8) — the defensive ≈0-kW clamp. A band within the safe wrap capacity is
+   * returned untouched (no clamp, no notice — the common path, FR-33 zero-diff). Beyond it,
+   * DEAD cards (measured `|net| < IDLE_KW` — an accidental/duplicate cell carrying no live
+   * flow) are dropped from the END until the band fits, but a card with ANY live kW is
+   * NEVER dropped (it wraps — hiding a live source would fabricate a phantom, INV-1). The
+   * gate is the MEASURED magnitude (the shared `FlowModel` net / the per-car WC charge),
+   * never a config flag. When the user lifts the clamp (`_showAllOverflow`), every card
+   * shows but `hidden` still reports the count (so the notice toggles to "Show fewer").
+   */
+  private _clampBand(cells: SceneCell[]): { visible: SceneCell[]; hidden: number } {
+    if (cells.length <= SAFE_BAND_MAX) return { visible: cells, hidden: 0 };
+    const net = computeBalance(this._model).net;
+    const vehCells = cells.filter((c) => c.vehicle);
+    const liveKw = (c: SceneCell): number => {
+      if (!c.vehicle) return Math.abs(net[c.id] ?? 0);
+      if (isAsleep(this.hass, this._vehicleResolvedConfig(c.config))) return 0;
+      return chargeOfEdge(wcEdgeForVehicle(this._model, vehCells.indexOf(c), vehCells.length)).kW;
+    };
+    const clamped = [...cells];
+    for (let i = clamped.length - 1; i >= 0 && clamped.length > SAFE_BAND_MAX; i--) {
+      if (liveKw(clamped[i]) < IDLE_KW) clamped.splice(i, 1); // drop a dead excess card
     }
-    const primary = cells.slice(0, WRAP_MAX_PER_ROW);
-    const overflow = cells.slice(WRAP_MAX_PER_ROW);
-    return html`<div class="${bandClass} wrapped">
-      <div class="subrow primary">${primary.map(draw)}</div>
-      <div class="subrow overflow">${overflow.map(draw)}</div>
+    const hidden = cells.length - clamped.length;
+    return { visible: this._showAllOverflow ? cells : clamped, hidden };
+  }
+
+  /** The honest "N cards hidden · Show all/fewer" overflow notice (Story 9.8, AC8). The
+   *  `.clamp-note` class is the one the 9.7 wrap e2e already forward-references (asserting
+   *  the NORMAL wrap shows none). */
+  private _overflowNotice(hidden: number): TemplateResult {
+    const o = STRINGS.scene.overflow;
+    return html`<div class="clamp-note">
+      <span class="clamp-note-count">${hidden} ${hidden === 1 ? o.hiddenOne : o.hidden}</span>
+      <button type="button" class="clamp-note-toggle" @click=${this._toggleShowAll}>
+        ${this._showAllOverflow ? o.showFewer : o.showAll}
+      </button>
     </div>`;
   }
+  private _toggleShowAll = (): void => {
+    this._showAllOverflow = !this._showAllOverflow;
+  };
 
   /**
    * One energy-instance cell — keyboard-focusable, carrying its unique per-instance
@@ -578,24 +658,54 @@ export class TcMyHome extends LitElement implements LovelaceCard {
     this._focused = undefined;
   };
 
-  // ── the vehicle node (Story 8.5) ────────────────────────────────────────────
+  // ── the vehicle node(s) (Story 8.5 / 9.8) ───────────────────────────────────
 
   /**
-   * The vehicle cell is present iff its battery entity EXISTS in `hass.states`
-   * (`rawState` is `undefined` ONLY when the entity is genuinely absent — an asleep
-   * car's `battery_level` reads the string `'unavailable'`, which IS present). The
-   * read routes through `rawState` (helpers → resolve → stateObj inside `data/`), so
-   * no bare `hass.states` reaches this `components/` module.
+   * Story 9.8 — expand the `vehicle` role into its PRESENT per-instance {@link SceneCell}s
+   * (mirrors {@link _instanceCells} for energy roles, but the Vehicle is NOT a `_model`
+   * node, so it is present-gated against `hass.states` directly via {@link
+   * _vehiclePresentAt} — `_instanceCells` filters by present MODEL nodes and CANNOT be
+   * reused here). Honors the single 9.2 hide gate (hiding `vehicle` drops every car). A
+   * config with no `instances.vehicle` ⇒ ONE bare-`vehicle` cell (FR-33 zero-diff): the
+   * id, present-gate read and embed config are byte-identical to Story 8.10.
    */
-  private _vehiclePresent(cfg: TeslaCardConfig): boolean {
-    // Story 9.2: the Vehicle is NOT a flow node — it cannot drop at the binding
-    // seam, so its hide is honored HERE, the single gate for both the presentation
-    // cell (render line 412) and, transitively, the WC→Vehicle overlay edge (drawn
-    // only when the vehicle anchor exists, i.e. only when the cell renders — see
-    // `_vehicleEdge`). Hiding the Vehicle does NOT touch the Wall-Connector energy
-    // node: the WC keeps feeding the bus, just without the car leg (AC2).
-    if (this._hiddenRoles(cfg).includes('vehicle')) return false;
-    return rawState(this.hass, cfg, 'battery_level') !== undefined;
+  private _vehicleInstanceCells(cfg: TeslaCardConfig): SceneCell[] {
+    if (this._hiddenRoles(cfg).includes('vehicle')) return [];
+    return roleInstances(cfg, 'vehicle')
+      .filter((inst) => this._vehiclePresentAt(inst.config))
+      .map((inst) => ({
+        id: inst.id,
+        role: 'vehicle' as Role,
+        vehicle: true,
+        title: inst.title,
+        config: inst.config,
+      }));
+  }
+
+  /**
+   * One vehicle instance is present iff its battery entity EXISTS in `hass.states`
+   * (`rawState` is `undefined` ONLY when the entity is genuinely absent — an asleep
+   * car's `battery_level` reads `'unavailable'`, which IS present). A bare instance
+   * (no per-car `config`) reads the already-resolved base config — byte-identical to
+   * Story 8.10's single-car gate (zero-diff). A 2nd car declared by its own
+   * `device`/`prefix`/`entities` re-resolves through `data/` (`resolveEntities`) so it
+   * gates on ITS OWN battery sensor, not car #1's. No bare `hass.states` read here.
+   */
+  private _vehiclePresentAt(override?: Partial<TeslaCardConfig>): boolean {
+    return rawState(this.hass, this._vehicleResolvedConfig(override), 'battery_level') !== undefined;
+  }
+
+  /**
+   * The fully-resolved config for ONE vehicle instance: the per-car override merged
+   * shallow over the RAW base config (the same merge the embed `setConfig` uses), then
+   * entities auto-resolved through `data/` so a 2nd car declared by `device`/`prefix`
+   * resolves its own sensors. A bare instance returns the already-resolved base (the
+   * Story 8.10 path — zero-diff).
+   */
+  private _vehicleResolvedConfig(override?: Partial<TeslaCardConfig>): TeslaCardConfig {
+    if (!override) return this._resolvedConfig ?? this._config;
+    const merged = { ...this._config, ...override };
+    return { ...merged, entities: resolveEntities(this.hass, merged) };
   }
 
   /**
@@ -643,11 +753,12 @@ export class TcMyHome extends LitElement implements LovelaceCard {
       this._instanceCells(cfg, role)
     );
     const loadPresent = new Set<Role>(LOAD_ROW.filter((role) => present.has(role)));
-    if (this._vehiclePresent(cfg)) loadPresent.add('vehicle');
+    // Story 9.8: N present vehicle cells (was a single hardcoded cell). The vehicle slot
+    // is present iff at least one car resolves; its cells expand in instance order.
+    const vehicleCells = this._vehicleInstanceCells(cfg);
+    if (vehicleCells.length) loadPresent.add('vehicle');
     const load = orderRow(LOAD_ROW_WITH_VEHICLE, loadPresent, order).flatMap((role) =>
-      role === 'vehicle'
-        ? [{ id: VEHICLE_NODE_ID, role: 'vehicle' as Role, vehicle: true }]
-        : this._instanceCells(cfg, role)
+      role === 'vehicle' ? vehicleCells : this._instanceCells(cfg, role)
     );
     return { source, load };
   }
@@ -668,38 +779,51 @@ export class TcMyHome extends LitElement implements LovelaceCard {
   }
 
   /**
-   * The car-charging read both the cell badge AND the WC→Vehicle overlay edge
-   * consume (AC2 agree-by-construction) — a single gated call to {@link
-   * wcVehicleEdge}. An ASLEEP car is forced inactive (mirrors the Hero, which
-   * suppresses the charge cue when asleep): an asleep car's telemetry is
-   * unavailable, so the card never asserts a live charge — the WC→Vehicle edge then
-   * degrades to its calm base line (quiescent), never a false "Charging" (AC3).
+   * The car-charging read for the i-th car's WC→Vehicle overlay edge (Story 9.8) — the
+   * {@link chargeOfEdge} of its positionally-paired WC edge ({@link wcEdgeForVehicle}),
+   * so the i-th car's drawn edge agrees by construction with the i-th WC it feeds from
+   * (AC5). An ASLEEP car is forced inactive (mirrors the Hero, which suppresses the charge
+   * cue when asleep), gated on THIS car's own merged config: an asleep car's telemetry is
+   * unavailable, so the edge degrades to its calm base line, never a false "Charging"
+   * (AC3). Single-car/single-WC (`index 0 / count 1`) is byte-identical to Story 8.5.
    */
-  private _vehicleCharge(cfg: TeslaCardConfig): { active: boolean; kW: number; direction: Direction } {
-    if (isAsleep(this.hass, cfg)) return { active: false, kW: 0, direction: 'none' };
-    return wcVehicleEdge(this._model);
+  private _vehicleChargeFor(
+    cell: SceneCell,
+    index: number,
+    count: number
+  ): { active: boolean; kW: number; direction: Direction } {
+    if (isAsleep(this.hass, this._vehicleResolvedConfig(cell.config)))
+      return { active: false, kW: 0, direction: 'none' };
+    return chargeOfEdge(wcEdgeForVehicle(this._model, index, count));
   }
 
   /**
-   * The focus-coupling set, as per-INSTANCE node ids (Story 9.7). `coupledRoles`
+   * The focus-coupling set, as per-INSTANCE node ids (Story 9.7/9.8). `coupledRoles`
    * stays ENERGY-ROLE-only (no engine edit) — it returns the coupled ROLES; this
-   * wrapper expands them to the present instance ids and adds the vehicle coupling:
-   *   • focusing the VEHICLE lights `{vehicle} + every present WC instance` (its feed);
-   *   • focusing an energy instance lights THAT instance + every present instance of
-   *     the OTHER coupled roles (so focusing one array lights it + all loads, NEVER
-   *     its same-role sibling — D15 "hover lights that tap, not a same-role aggregate")
-   *     + the vehicle when a WC is coupled.
+   * wrapper expands them to the present instance ids and adds the per-car vehicle coupling:
+   *   • focusing a CAR (`vehicle`/`vehicle:i`) lights `{that car} + its feeding WC instance`
+   *     (positional pairing — never a sibling car, never every WC);
+   *   • focusing an energy instance lights THAT instance + every present instance of the
+   *     OTHER coupled roles (so focusing one array lights it + all loads, NEVER its
+   *     same-role sibling — D15 "hover lights that tap, not a same-role aggregate"). When a
+   *     WC couples: a focused WC lights ONLY the car(s) IT feeds (positional); a focused
+   *     SOURCE lights every present car (all are downstream car-loads).
    * Single-instance ⇒ the ids ARE the roles (zero-diff). Presentation-local — the
    * engine never learns about the vehicle node.
    */
-  private _coupledLit(vehiclePresent: boolean): Set<string> | undefined {
+  private _coupledLit(vehicleCells: SceneCell[]): Set<string> | undefined {
     const focused = this._focused;
     if (!focused) return undefined;
     const nodes = this._model.nodes;
-    if (focused === VEHICLE_NODE_ID) {
-      if (!vehiclePresent) return undefined; // vehicle vanished under focus ⇒ no stale dim
-      const lit = new Set<string>([VEHICLE_NODE_ID]);
-      for (const n of nodes) if (n.present && n.role === 'wall_connector') lit.add(n.id);
+    const vehicleIds = vehicleCells.map((c) => c.id);
+
+    // Focusing a CAR: light that car + its positionally-paired feeding WC instance.
+    if (roleOfInstance(focused) === 'vehicle') {
+      const idx = vehicleIds.indexOf(focused);
+      if (idx < 0) return undefined; // car vanished under focus ⇒ no stale dim
+      const lit = new Set<string>([focused]);
+      const wcId = wcEdgeForVehicle(this._model, idx, vehicleCells.length)?.from;
+      if (wcId) lit.add(wcId);
       return lit;
     }
     // Story 9.7: a per-instance focus id can VANISH under reconfigure (e.g. `solar:2`
@@ -716,7 +840,16 @@ export class TcMyHome extends LitElement implements LovelaceCard {
       // the focused instance (already added) — its siblings stay dim.
       if (n.role !== focusedRole && coupled.has(n.role)) lit.add(n.id);
     }
-    if (vehiclePresent && coupled.has('wall_connector')) lit.add(VEHICLE_NODE_ID);
+    if (coupled.has('wall_connector')) {
+      if (focusedRole === 'wall_connector') {
+        // A focused WC lights only the car(s) IT feeds (its positionally-paired cars).
+        vehicleCells.forEach((cell, i) => {
+          if (wcEdgeForVehicle(this._model, i, vehicleCells.length)?.from === focused) lit.add(cell.id);
+        });
+      } else {
+        for (const id of vehicleIds) lit.add(id); // a source focus lights every present car
+      }
+    }
     return lit;
   }
 
@@ -728,60 +861,94 @@ export class TcMyHome extends LitElement implements LovelaceCard {
    * charge/asleep degradation, so the in-Scene render agrees with the standalone card
    * for free. The wrapper is unchanged from the energy cells: a keyboard-focusable
    * `scene-cell` carrying `data-node="vehicle"`, whose live rect drives the existing
-   * WC→Vehicle edge anchor + focus highlight.
+   * WC→Vehicle edge anchor + focus highlight. Story 9.8: the cell carries its
+   * per-INSTANCE id (bare `vehicle` for a single car — zero-diff) and, when duplicated,
+   * its disambiguating TITLE badge + accessible name (mirrors {@link _cell}, never a
+   * `:n` badge); the embed is looked up / created PER id.
    */
-  private _vehicleCell(lit?: Set<string>): TemplateResult {
+  private _vehicleCell(c: SceneCell, lit?: Set<string>): TemplateResult {
+    // Story 9.8 (AC9): a duplicated car carries a title badge + accessible name folding
+    // the title in ("Car, Garage"); single-car ⇒ no badge / no aria override / no
+    // `has-title` class, so the cell DOM is byte-identical to Story 8.10 (FR-33 zero-diff).
+    const title = c.title;
+    // The accessible name announces the cell as a CAR (the user-facing label, matching the
+    // ribbon "Car" tile), NOT "Wall connector" — a vehicle cell is the car, and "Car, Garage"
+    // disambiguates it from the sibling WC energy cell. The title folds in (AC9).
+    const aria = title ? `${STRINGS.scene.ribbon.tile.wall_connector}, ${title}` : nothing;
     return html`
       <div
-        class="scene-cell veh-cell ${lit?.has('vehicle') ? 'lit' : ''}"
-        data-node=${VEHICLE_NODE_ID}
+        class="scene-cell veh-cell ${lit?.has(c.id) ? 'lit' : ''} ${title ? 'has-title' : ''}"
+        data-node=${c.id}
         tabindex="0"
-        @mouseenter=${() => this._focus('vehicle')}
+        aria-label=${aria}
+        @mouseenter=${() => this._focus(c.id)}
         @mouseleave=${this._blur}
-        @focusin=${() => this._focus('vehicle')}
+        @focusin=${() => this._focus(c.id)}
         @focusout=${this._blur}
       >
-        ${this._vehicleDetailCard()}
+        ${title
+          ? html`<span class="uc-title" style="color:${NODE_COLOR.wall_connector}">${title}</span>`
+          : nothing}
+        ${this._vehicleDetailCard(c)}
       </div>
     `;
   }
 
   /**
-   * The embedded `tesla-card` instance — created ONCE and reused across renders. It is
-   * built imperatively (not a static import): `tesla-card.ts` already imports this
-   * module, so importing it back would be an import cycle, and `tesla-card` exposes no
-   * public `config` property (config goes in via the Lovelace `setConfig`). `setConfig`
-   * runs only when the RAW `_config` identity changes (a genuine YAML edit) — NEVER the
-   * per-tick resolved cfg, which HA replaces on every state change (re-`setConfig` each
-   * tick would reset the embedded card's open panel). `hass` is refreshed every render,
-   * so the card resolves its own entities and stays live exactly as a standalone card.
+   * The embedded `tesla-card` instance for ONE vehicle cell — created ONCE per instance
+   * id and reused across renders, held in the {@link _vehDetail} Map keyed by `cell.id`
+   * (the config identity). It is built imperatively (not a static import): `tesla-card.ts`
+   * already imports this module, so importing it back would be an import cycle, and
+   * `tesla-card` exposes no public `config` property (config goes in via the Lovelace
+   * `setConfig`). `setConfig` runs only when the RAW `_config` identity changes (a genuine
+   * YAML edit) — NEVER the per-tick resolved cfg, which HA replaces on every state change
+   * (re-`setConfig` each tick would reset the embedded card's open panel). The guard is
+   * PER ENTRY, so a state tick or a SIBLING car's update never resets another car's open
+   * panel. `hass` is refreshed every render, so each card resolves its own entities and
+   * stays live exactly as a standalone card. Story 9.8: the per-car `cell.config` override
+   * (a 2nd car's device / name / paint) is merged in — `{ ...this._config, ...cell.config,
+   * variant:'compact' }`; a bare car (no override) is byte-identical to Story 8.10.
    */
-  private _vehicleDetailCard(): HTMLElement {
-    let el = this._vehDetail;
-    if (!el) {
-      el = this._vehDetail = document.createElement('tesla-card') as HTMLElement & {
+  private _vehicleDetailCard(c: SceneCell): HTMLElement {
+    let entry = this._vehDetail.get(c.id);
+    if (!entry) {
+      const el = document.createElement('tesla-card') as HTMLElement & {
         setConfig?(config: TeslaCardConfig): void;
         hass?: HomeAssistant;
       };
+      entry = { el, cfg: undefined as unknown as TeslaCardConfig };
+      this._vehDetail.set(c.id, entry);
     }
+    const el = entry.el;
     // `tesla-card` is defined by the bundle entry, so at render time the element is
     // upgraded and `setConfig` is present. The guard keeps the Scene robust if it is
     // ever loaded in isolation (a harness importing `my-home` alone, no `tesla-card`):
     // the cell degrades to an empty element instead of throwing. `setConfig` runs only
     // on a raw `_config` change — NOT the per-tick resolved cfg, which HA replaces on
     // every state change (re-`setConfig` each tick would reset the card's open panel).
-    // Story 8.10: the embed renders `variant: 'compact'` (hero + status only) so it
-    // fits the 380px load-row track; a standalone `tesla-card` stays full. The guard
-    // KEY stays the raw `_config` identity — the spread object is NOT stored as the key
-    // (storing it would mismatch every tick and re-`setConfig`, resetting the embed).
-    if (typeof el.setConfig === 'function' && this._vehDetailCfg !== this._config) {
-      el.setConfig({ ...this._config, variant: 'compact' });
-      this._vehDetailCfg = this._config;
+    // Story 8.10: the embed renders `variant: 'compact'` (hero + status only) so it fits
+    // the 380px load-row track; a standalone `tesla-card` stays full. The guard KEY stays
+    // the raw `_config` identity — the spread object is NOT stored as the key (storing it
+    // would mismatch every tick and re-`setConfig`, resetting the embed).
+    if (typeof el.setConfig === 'function' && entry.cfg !== this._config) {
+      el.setConfig({ ...this._config, ...c.config, variant: 'compact' });
+      entry.cfg = this._config;
     }
     // `hass` refreshes every render so the card stays live (a plain property set —
     // safe even on an unupgraded element).
     el.hass = this.hass;
     return el;
+  }
+
+  /**
+   * Prune {@link _vehDetail} Map entries whose id is no longer a present vehicle cell
+   * (a reconfigure dropped a car) — keeps the embed cache from leaking across reconfigures.
+   * Called from {@link updated}, AFTER the present cell roster is known.
+   */
+  private _pruneVehicleCache(presentIds: ReadonlySet<string>): void {
+    for (const id of [...this._vehDetail.keys()]) {
+      if (!presentIds.has(id)) this._vehDetail.delete(id);
+    }
   }
 
   // ── the summary ribbon (AC1b) ───────────────────────────────────────────────
@@ -907,10 +1074,13 @@ export class TcMyHome extends LitElement implements LovelaceCard {
     const anchors = this._anchors;
     if (!anchors) return svg``;
     const segs = gatewaySegments(this._model, anchors, { axis: this._axis });
-    // Story 8.5: the WC→Vehicle leg is drawn alongside the trunk + node legs, from
-    // the SAME `wcVehicleEdge` view the cell badge consumes (AC2 agree-by-construction).
-    const ch = this._vehicleCharge(this._resolvedConfig ?? this._config);
-    return svg`${this._trunk(segs)}${this._legs(anchors, lit)}${this._vehicleEdge(anchors, ch, lit)}`;
+    // Story 9.8: ONE WC→Vehicle leg per PRESENT car, each from its positionally-paired WC
+    // anchor to its own `vehicle:i` anchor — drawn from the SAME per-car edge view the
+    // car's badge consumes (AC5 agree-by-construction). Single-car is a zero-diff (one
+    // leg, `data-role="vehicle"`, from the single WC).
+    const cells = this._vehicleInstanceCells(this._resolvedConfig ?? this._config);
+    const vehEdges = cells.map((cell, i) => this._vehicleEdge(anchors, cell, i, cells.length, lit));
+    return svg`${this._trunk(segs)}${this._legs(anchors, lit)}${vehEdges}`;
   }
 
   /**
@@ -941,15 +1111,20 @@ export class TcMyHome extends LitElement implements LovelaceCard {
    */
   private _vehicleEdge(
     anchors: Readonly<Record<string, RectLike>>,
-    ch: { active: boolean; kW: number; direction: Direction },
+    cell: SceneCell,
+    index: number,
+    count: number,
     lit?: Set<string>
   ): SVGTemplateResult {
-    // Story 9.7: the WC→Vehicle leg anchors to the FIRST present WC instance (matching
-    // `wcVehicleEdge`, which reads the first WC edge), so a multi-WC config still draws
-    // the car leg. Single-WC ⇒ `wall_connector` (zero-diff).
-    const wcId = this._model.nodes.find((n) => n.present && n.role === 'wall_connector')?.id;
+    // Story 9.8: the i-th car's leg anchors to ITS positionally-paired WC instance — the
+    // `from` of the same edge its charge is read from ({@link wcEdgeForVehicle}), so the
+    // edge, the anchor and the badge all agree by construction. Single-car/single-WC ⇒ the
+    // one WC edge from `wall_connector` (zero-diff). The charge view is per-car (asleep gate
+    // on this car's own config). `data-role` carries the per-instance id (`vehicle` single).
+    const ch = this._vehicleChargeFor(cell, index, count);
+    const wcId = wcEdgeForVehicle(this._model, index, count)?.from;
     const wc = wcId ? anchors[wcId] : undefined;
-    const veh = anchors[VEHICLE_NODE_ID];
+    const veh = anchors[cell.id];
     if (!wc || !veh) return svg``; // both anchors required (WC + vehicle present)
     // Axis-aware leg (see the doc comment): HORIZONTAL across the inter-card gap when the
     // cards sit side-by-side (desktop), VERTICAL down the collapsed gap when they stack
@@ -999,7 +1174,7 @@ export class TcMyHome extends LitElement implements LovelaceCard {
     // spilling into the stacked cards.
     const mid = { x: (start.x + end.x) / 2, y: (start.y + end.y) / 2 };
     return svg`
-      <g class="gw-leg ${lit?.has('vehicle') ? 'on' : ''}" data-role=${VEHICLE_NODE_ID}>
+      <g class="gw-leg ${lit?.has(cell.id) ? 'on' : ''}" data-role=${cell.id}>
         <line class="gw-leg-base" style="stroke:${color}" x1=${start.x} y1=${start.y} x2=${end.x} y2=${end.y}></line>
         ${flow}
         <g class="gw-veh-dec">
@@ -1444,6 +1619,33 @@ export class TcMyHome extends LitElement implements LovelaceCard {
         white-space: nowrap;
         overflow: hidden;
         text-overflow: ellipsis;
+      }
+
+      /* ── Story 9.8 (AC8) — the defensive ≈0-kW overflow notice. Shown only when a band
+         exceeds the safe wrap capacity AND dead (no-live-flow) cards were clamped: an honest
+         "N cards hidden · Show all" toggle, NOT a silent truncation. Calm, low-emphasis. */
+      .clamp-note {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 8px;
+        margin-top: 8px;
+        font-size: var(--tc-fs-label, 11.5px);
+        color: var(--tc-text-dim, #9aa7b8);
+      }
+      .clamp-note-toggle {
+        min-height: 44px;
+        min-width: 44px;
+        padding: 0 12px;
+        border: 1px solid var(--tc-border, rgba(255, 255, 255, 0.09));
+        border-radius: var(--tc-radius-sm, 12px);
+        background: transparent;
+        color: var(--tc-text, #f1f5f9);
+        font: inherit;
+        cursor: pointer;
+      }
+      .clamp-note-toggle:hover {
+        background: color-mix(in srgb, var(--tc-text, #f1f5f9) 10%, transparent);
       }
 
       /* ── Story 9.7 — WRAP overflow (AC5 / D15). A band over WRAP_MAX_PER_ROW (3)
