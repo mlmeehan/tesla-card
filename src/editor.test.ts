@@ -435,13 +435,13 @@ function moveButtons(el: EditorEl, i: number): { up: HTMLButtonElement; down: HT
 
 type EnergyShape = { nodes?: { hide?: string[]; order?: string[]; instances?: unknown } };
 
-describe('Story 9.4 AC1/AC2 — six per-node show toggles render + reflect', () => {
-  test('all six ROLES render a show checkbox, checked by default (nothing hidden)', async () => {
+describe('Story 9.4 AC1/AC2 — seven per-node show toggles render + reflect', () => {
+  test('all seven ROLES render a show checkbox, checked by default (nothing hidden)', async () => {
     const el = makeEditor();
     el.setConfig({ type: 'custom:tesla-card' } as TeslaCardConfig);
     await el.updateComplete;
     const checks = nodeChecks(el);
-    expect(checks.length).toBe(6);
+    expect(checks.length).toBe(7); // Story 9.14 — the generator joins the node list for free
     expect(checks.every((c) => c.checked)).toBe(true); // show = visible by default
     el.remove();
   });
@@ -545,11 +545,12 @@ describe('Story 9.4 AC1/AC4 — order control writes energy.nodes.order + prunes
       STRINGS.energy.nodes.grid,
       STRINGS.energy.nodes.home,
       STRINGS.energy.nodes.wall_connector,
+      STRINGS.energy.nodes.generator,
     ]);
     el.remove();
   });
 
-  test('move-down on the first node emits the full six-node order with the swap', async () => {
+  test('move-down on the first node emits the full seven-node order with the swap', async () => {
     const el = makeEditor();
     el.setConfig({ type: 'custom:tesla-card' } as TeslaCardConfig);
     await el.updateComplete;
@@ -564,6 +565,7 @@ describe('Story 9.4 AC1/AC4 — order control writes energy.nodes.order + prunes
       'grid',
       'home',
       'wall_connector',
+      'generator',
     ]);
     el.remove();
   });
@@ -600,6 +602,7 @@ describe('Story 9.4 AC1/AC4 — order control writes energy.nodes.order + prunes
       STRINGS.energy.nodes.powerwall,
       STRINGS.energy.nodes.grid,
       STRINGS.energy.nodes.wall_connector,
+      STRINGS.energy.nodes.generator,
     ]);
     el.remove();
   });
@@ -609,7 +612,7 @@ describe('Story 9.4 AC1/AC4 — order control writes energy.nodes.order + prunes
     el.setConfig({ type: 'custom:tesla-card' } as TeslaCardConfig);
     await el.updateComplete;
     expect(moveButtons(el, 0).up.disabled).toBe(true);
-    expect(moveButtons(el, 5).down.disabled).toBe(true);
+    expect(moveButtons(el, 6).down.disabled).toBe(true); // last row is now the generator (index 6)
     expect(moveButtons(el, 0).down.disabled).toBe(false);
     el.remove();
   });
@@ -693,6 +696,7 @@ describe('Story 9.4 AC1/AC4 — move-UP swaps with the previous node (the dir:-1
       'grid',
       'home',
       'wall_connector',
+      'generator',
     ]);
     el.remove();
   });
@@ -731,8 +735,9 @@ describe('Story 9.4 AC1 — orderedRoles sanitizes the displayed order (Story 9.
       STRINGS.energy.nodes.powerwall,
       STRINGS.energy.nodes.grid,
       STRINGS.energy.nodes.wall_connector,
+      STRINGS.energy.nodes.generator,
     ]);
-    expect(orderLabels(el).length).toBe(6); // never fewer/more than the six nodes
+    expect(orderLabels(el).length).toBe(7); // never fewer/more than the seven nodes
     el.remove();
   });
 });
@@ -825,8 +830,8 @@ describe('Story 9.4 AC5 — controls are accessible + state-free (AR-1)', () => 
       energy: { nodes: { hide: ['solar'], order: ['home'] } },
     } as unknown as TeslaCardConfig);
     await expect(el.updateComplete).resolves.toBeDefined();
-    expect(nodeChecks(el).length).toBe(6); // toggles rendered without any hass
-    expect(orderLabels(el).length).toBe(6);
+    expect(nodeChecks(el).length).toBe(7); // toggles rendered without any hass
+    expect(orderLabels(el).length).toBe(7);
     el.remove();
   });
 });

@@ -4,6 +4,7 @@ import {
   mdiTransmissionTower,
   mdiHomeLightningBolt,
   mdiEvStation,
+  mdiGeneratorStationary,
 } from '@mdi/js';
 import type { EnergyRole } from '../data/registry';
 import type { Direction, FlowEdge, FlowModel } from './model';
@@ -117,6 +118,7 @@ export const NODE_COLOR: Readonly<Record<EnergyRole, string>> = {
   powerwall: 'var(--tc-green, #34d399)',
   home: 'var(--tc-blue, #38bdf8)',
   wall_connector: 'var(--tc-teal, #2dd4bf)',
+  generator: 'var(--tc-copper, #c2855b)', // Story 9.14 — the 8th accent (generator / fuel)
 } as const;
 
 /**
@@ -129,4 +131,5 @@ export const NODE_ICON: Readonly<Record<EnergyRole, string>> = {
   powerwall: mdiHomeBattery,
   home: mdiHomeLightningBolt,
   wall_connector: mdiEvStation,
+  generator: mdiGeneratorStationary,
 } as const;

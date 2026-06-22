@@ -96,13 +96,13 @@ const ACCENT_HEXES = Object.values(ACCENT_SEMANTICS).map((a) => a.hex.toLowerCas
 describe('Semantic accent contract (Story 2.2 AC1)', () => {
   const css = (tokens as unknown as { cssText: string }).cssText;
 
-  test('all 7 accents define their canonical hex token', () => {
+  test('all 8 accents define their canonical hex token', () => {
     for (const [name, { hex }] of Object.entries(ACCENT_SEMANTICS)) {
       expect(css, `missing --tc-${name}: ${hex}`).toContain(`--tc-${name}: ${hex};`);
     }
-    // Exactly these 7 — teal is the lone reserve accent; no new accents added.
+    // Exactly these 8 — copper (Story 9.14) is the generator source accent.
     expect(Object.keys(ACCENT_SEMANTICS)).toEqual([
-      'blue', 'green', 'amber', 'red', 'purple', 'orange', 'teal',
+      'blue', 'green', 'amber', 'red', 'purple', 'orange', 'teal', 'copper',
     ]);
   });
 
@@ -119,6 +119,7 @@ describe('Semantic accent contract (Story 2.2 AC1)', () => {
     expect(ACCENT_SEMANTICS.purple.meaning).toBe('media');
     expect(ACCENT_SEMANTICS.orange.meaning).toBe('climate / heat');
     expect(ACCENT_SEMANTICS.teal.meaning).toBe('secondary / ecosystem');
+    expect(ACCENT_SEMANTICS.copper.meaning).toBe('generator / fuel');
   });
 
   test('the human-readable meaning comment sits beside each accent declaration', () => {

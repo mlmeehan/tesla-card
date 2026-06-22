@@ -15,6 +15,7 @@ export const ACCENT_SEMANTICS = {
   purple: { hex: '#a78bfa', meaning: 'media' },
   orange: { hex: '#fb923c', meaning: 'climate / heat' },
   teal: { hex: '#2dd4bf', meaning: 'secondary / ecosystem' },
+  copper: { hex: '#c2855b', meaning: 'generator / fuel' },
 } as const;
 
 /**
@@ -203,6 +204,7 @@ export const tokens = css`
     --tc-purple: #a78bfa; /* media (isolated so it never competes with energy) */
     --tc-orange: #fb923c; /* climate / heat */
     --tc-teal: #2dd4bf; /* secondary / ecosystem (lone reserve accent) */
+    --tc-copper: #c2855b; /* generator / fuel */
 
     --tc-radius-xl: 28px;
     --tc-radius-lg: 22px;

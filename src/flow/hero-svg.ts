@@ -55,6 +55,10 @@ export const NODE_XY: Readonly<Record<EnergyRole, Point>> = {
   powerwall: { x: 874, y: 232 },
   home: { x: 512, y: 612 },
   wall_connector: { x: 196, y: 556 },
+  // Story 9.14 — a source-band coordinate (upper region) that does not overlap solar
+  // (512,78)/grid (150,232)/powerwall (874,232). Presentation metadata only — no math
+  // impact (every edge is still role → BUS_XY); a generator is absent unless resolved.
+  generator: { x: 330, y: 150 },
 } as const;
 
 /** The implicit electrical junction (role-less, no chip) every edge anchors to. */

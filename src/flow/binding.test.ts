@@ -32,13 +32,22 @@ function cfg(over: Partial<TeslaCardConfig> = {}): TeslaCardConfig {
 // fresh (the documented hermetic-staleness requirement of the fixture).
 const ASLEEP_NOW = Date.parse(asleep.provenance.reference_now as string);
 
+// Story 9.14 — the energy engine now carries SIX roles, but the generator is opt-in
+// and ABSENT from the awake/asleep/flow fixtures (no `generator_power` sensor). So
+// every "all roles resolve" assertion is over the RESOLVABLE set (every energy role
+// except the generator); the generator still binds as a present:false node (it just
+// adds no edge), which is exactly the FR-33 zero-diff opt-in contract.
+const RESOLVABLE_ROLES = ENERGY_ROLES.filter((r) => r !== 'generator');
+const RESOLVABLE = RESOLVABLE_ROLES.length;
+
 describe('binding — auto-detect measured edges (AC1, AC3)', () => {
   test('awake corpus → present `measured` edges with canonical signs', () => {
     const model = bindFlowModel(makeHass(awake.states as Record<string, unknown>), cfg());
-    // Every energy role resolves on the awake corpus → 5 present nodes + 5 edges.
+    // Every RESOLVABLE energy role resolves on the awake corpus → 5 present nodes + 5
+    // edges; the generator binds as a present:false node (opt-in, no sensor → no edge).
     expect(model.nodes.length).toBe(ENERGY_ROLES.length);
-    expect(model.nodes.every((n) => n.present)).toBe(true);
-    expect(model.edges.length).toBe(ENERGY_ROLES.length);
+    expect(model.nodes.filter((n) => n.present).length).toBe(RESOLVABLE);
+    expect(model.edges.length).toBe(RESOLVABLE);
     // Fresh + above the deadband ⇒ measured (a sign-flip is normalization, not
     // inference — never `inferred`), and a live direction (not 'none').
     expect(model.edges.every((e) => e.provenance === 'measured')).toBe(true);
@@ -62,8 +71,8 @@ describe('binding — freshness → quiescent coupling (AC2)', () => {
       now: ASLEEP_NOW,
     });
     // Quiescent still CARRIES a value (last-known echo) → the edge is present, not
-    // dropped — present-and-calm, never blank.
-    expect(model.edges.length).toBe(ENERGY_ROLES.length);
+    // dropped — present-and-calm, never blank. (Generator absent on this corpus.)
+    expect(model.edges.length).toBe(RESOLVABLE);
     expect(model.edges.every((e) => e.provenance === 'quiescent')).toBe(true);
     expect(model.edges.every((e) => e.direction === 'none')).toBe(true);
   });
@@ -124,10 +133,10 @@ describe('binding — config.energy.entities override wins (AC1)', () => {
 });
 
 describe('binding — shared role→power-key map (no fork)', () => {
-  test('POWER_KEY covers exactly the five energy roles', () => {
+  test('POWER_KEY covers exactly the six energy roles', () => {
     const roles = Object.keys(POWER_KEY) as EnergyRole[];
-    expect(roles.sort()).toEqual(['grid', 'home', 'powerwall', 'solar', 'wall_connector']);
-    expect(ENERGY_ROLES.length).toBe(5);
+    expect(roles.sort()).toEqual(['generator', 'grid', 'home', 'powerwall', 'solar', 'wall_connector']);
+    expect(ENERGY_ROLES.length).toBe(6);
   });
 });
 
@@ -272,14 +281,15 @@ describe('binding — Story 9.2: a hidden energy role drops at the model seam (A
     expect(model.nodes.find((n) => n.role === 'solar')?.present).toBe(false);
     expect(model.edges.find((e) => e.from === 'solar')).toBeUndefined();
     // exactly one fewer present node + edge than the un-hidden baseline (precise drop)
-    expect(model.nodes.filter((n) => n.present).length).toBe(ENERGY_ROLES.length - 1);
-    expect(model.edges.length).toBe(ENERGY_ROLES.length - 1);
+    expect(model.nodes.filter((n) => n.present).length).toBe(RESOLVABLE - 1);
+    expect(model.edges.length).toBe(RESOLVABLE - 1);
   });
 
   test('only the named role drops — every other role still binds its live reading', () => {
     const inputs = flowInputsFrom(makeHass(awakeStates), cfg(), {}, ['solar']);
     expect(inputs.find((i) => i.role === 'solar')?.kW).toBeUndefined();
-    for (const role of ENERGY_ROLES.filter((r) => r !== 'solar')) {
+    // Iterate the RESOLVABLE roles (the generator carries no reading on this corpus).
+    for (const role of RESOLVABLE_ROLES.filter((r) => r !== 'solar')) {
       expect(inputs.find((i) => i.role === role)?.kW, `${role} unaffected`).toBeDefined();
     }
   });
@@ -294,18 +304,19 @@ describe('binding — Story 9.2: a hidden energy role drops at the model seam (A
     const build = () =>
       bindFlowModel(makeHass(awakeStates), cfg(), {}, ['not_a_node'] as unknown as readonly Role[]);
     expect(build).not.toThrow();
-    expect(build().nodes.filter((n) => n.present).length).toBe(ENERGY_ROLES.length); // full roster intact
+    expect(build().nodes.filter((n) => n.present).length).toBe(RESOLVABLE); // full resolvable roster intact
   });
 
   test("hiding 'vehicle' is inert at the binding seam (it is not an energy/flow node — AC2 owns it)", () => {
     const model = bindFlowModel(makeHass(awakeStates), cfg(), {}, ['vehicle']);
-    expect(model.nodes.filter((n) => n.present).length).toBe(ENERGY_ROLES.length);
+    expect(model.nodes.filter((n) => n.present).length).toBe(RESOLVABLE);
   });
 
   test('the Hero zero-arg bindFlowModel is UNCHANGED — no hide applied without the param (zero-diff guard)', () => {
     const heroModel = bindFlowModel(makeHass(awakeStates), cfg()); // EXACTLY the Hero's call (hero.ts:261)
-    expect(heroModel.nodes.every((n) => n.present)).toBe(true);
-    expect(heroModel.edges.length).toBe(ENERGY_ROLES.length);
+    // The resolvable roles are present; the opt-in generator is the lone absent node.
+    expect(heroModel.nodes.filter((n) => n.present).length).toBe(RESOLVABLE);
+    expect(heroModel.edges.length).toBe(RESOLVABLE);
   });
 });
 

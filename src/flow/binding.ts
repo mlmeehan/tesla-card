@@ -35,9 +35,10 @@ export const POWER_KEY: Readonly<Record<EnergyRole, keyof EnergyEntities>> = {
   grid: 'grid_power',
   home: 'load_power',
   wall_connector: 'wc_power',
+  generator: 'generator_power',
 } as const;
 
-/** The five energy roles, in `POWER_KEY` order. Never the 6-role suite `ROLES` (no `vehicle` in the flow model). */
+/** The six energy roles, in `POWER_KEY` order. Never the 7-role suite `ROLES` (no `vehicle` in the flow model). */
 export const ENERGY_ROLES = Object.keys(POWER_KEY) as EnergyRole[];
 
 /**

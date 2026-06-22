@@ -45,6 +45,8 @@ import './components/powerwall';
 import './components/grid';
 import './components/home';
 import './components/wall-connector';
+// Story 9.14 — the Generator card (the first NEW node TYPE; copper source accent).
+import './components/generator';
 // Epic 6 centrepiece (Story 6.5) — the "My Home" Scene composes the five
 // ecosystem cards above into one live SceneBus-driven composition.
 import './components/my-home';

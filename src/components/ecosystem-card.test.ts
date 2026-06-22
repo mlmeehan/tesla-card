@@ -292,11 +292,11 @@ async function mountRaw(
 }
 const rawSurface = (el: RawEl) => el.shadowRoot!.querySelector<HTMLElement>('.surface')!;
 
-// ── AC1 (extended) — the WHOLE 7-accent vocabulary resolves, not just green ────
+// ── AC1 (extended) — the WHOLE 8-accent vocabulary resolves, not just green ────
 describe('AC1 (extended) — the full source-node accent vocabulary, not just one key', () => {
   test('accentVar composes var(--tc-<accent>, <contract hex>) for EVERY ACCENT_SEMANTICS key', () => {
     const keys = Object.keys(ACCENT_SEMANTICS) as Accent[];
-    expect(keys.length).toBe(7); // guards against a silent shrink of the contract
+    expect(keys.length).toBe(8); // guards against a silent shrink of the contract (copper = Story 9.14)
     for (const key of keys) {
       // The fallback hex is sourced from the ACCENT_SEMANTICS contract — never a
       // literal in the shell — so every accent stays a sanctioned var(--tc-*, hex).

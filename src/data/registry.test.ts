@@ -9,7 +9,7 @@ import { readdirSync, readFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, test } from 'vitest';
-import { ALL_KEYS, FUNCTION_KEYS, ROLES, roleOf } from './registry';
+import { ALL_KEYS, BUS_ORIENTATION, FUNCTION_KEYS, ROLES, roleOf } from './registry';
 
 const SRC_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 
@@ -41,13 +41,23 @@ describe('canonical function-key registry (Story 1.2)', () => {
     }
   });
 
-  test('(b) all six roles are present and non-empty', () => {
+  test('(b) all seven roles are present and non-empty', () => {
     expect([...ROLES].sort()).toEqual(
-      ['grid', 'home', 'powerwall', 'solar', 'vehicle', 'wall_connector']
+      ['generator', 'grid', 'home', 'powerwall', 'solar', 'vehicle', 'wall_connector']
     );
     for (const role of ROLES) {
       expect(FUNCTION_KEYS[role].length, `${role} must be non-empty`).toBeGreaterThan(0);
     }
+  });
+
+  // Story 9.14 — the generator is a SOURCE: a positive canonical reading injects
+  // into the bus (`+1`), the same polarity as solar/grid. This is the only
+  // role-dependent fact `flow/balance.ts` consults, so adding it here (registry
+  // metadata) is what keeps the compute engine role-generic — no balance edit.
+  test('(b2) BUS_ORIENTATION.generator is +1 — a source, same sign as solar/grid', () => {
+    expect(BUS_ORIENTATION.generator).toBe(1);
+    expect(BUS_ORIENTATION.generator).toBe(BUS_ORIENTATION.solar);
+    expect(BUS_ORIENTATION.generator).toBe(BUS_ORIENTATION.grid);
   });
 
   // (c) No function-key literal *re-declares the vocabulary outside the type system*.

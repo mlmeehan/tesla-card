@@ -254,6 +254,7 @@ export const STRINGS = {
       powerwall: 'Powerwall',
       home: 'Home',
       wall_connector: 'Wall connector',
+      generator: 'Generator',
     },
   },
 
@@ -361,6 +362,17 @@ export const STRINGS = {
       frequency: 'Frequency',
       temperature: 'Temperature',
     },
+    // Generator (Story 9.14 — the first new node TYPE). Card TITLE reuses
+    // `STRINGS.energy.nodes.generator` ("Generator"). `output` labels the lead
+    // power readout; `running`/`idle` are the card's two-state direction words
+    // (a generator either produces or is at rest — no import/export polarity).
+    generator: {
+      description: 'Standalone backup/standby generator output card.',
+      empty: 'No generator data reported yet.',
+      output: 'Output',
+      running: 'Running',
+      idle: 'Idle',
+    },
   },
 
   // "My Home" Scene (Story 6.5 — the suite centrepiece, `tc-my-home`). Picker
@@ -391,13 +403,14 @@ export const STRINGS = {
       in: 'in',
       out: 'out',
       /** Per-role tile labels: `powerwall`→"Battery", `wall_connector`→"Car" (the
-       *  WC-edge-is-car-charging authority — no sixth flow node). */
+       *  WC-edge-is-car-charging authority — the vehicle is never a flow node). */
       tile: {
         solar: 'Solar',
         powerwall: 'Battery',
         grid: 'Grid',
         home: 'Home',
         wall_connector: 'Car',
+        generator: 'Generator',
       },
       unit: 'kW',
       /** The folded-instance accessible-name tail (Story 9.7 / INV-9) — e.g. the tile

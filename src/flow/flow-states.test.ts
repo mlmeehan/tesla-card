@@ -205,7 +205,10 @@ describe('the seven states — FlowModel reads correctly (AC1, AC3, AC4)', () =>
     expect(model.edges.length).toBeGreaterThan(0);
     expect(model.edges.every((e) => e.provenance === 'quiescent')).toBe(true);
     expect(model.edges.every((e) => e.direction === 'none')).toBe(true);
-    expect(model.nodes.every((n) => n.present)).toBe(true); // all five present
+    // All five resolvable roles present; the Story 9.14 generator is opt-in and absent
+    // from the asleep corpus (no sensor → present:false node, no edge — FR-33 zero-diff).
+    expect(model.nodes.filter((n) => n.role !== 'generator').every((n) => n.present)).toBe(true);
+    expect(model.nodes.find((n) => n.role === 'generator')?.present).toBe(false);
   });
 });
 

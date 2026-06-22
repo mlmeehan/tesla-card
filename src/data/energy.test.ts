@@ -85,6 +85,7 @@ describe('Story 8.1 — flow-engine safety (FR-33): non-power keys do not pertur
       grid: 'grid_power',
       home: 'load_power',
       wall_connector: 'wc_power',
+      generator: 'generator_power', // Story 9.14 — the new source role
     });
   });
 
@@ -92,12 +93,41 @@ describe('Story 8.1 — flow-engine safety (FR-33): non-power keys do not pertur
     for (const k of Object.values(POWER_KEY)) expect(k.endsWith('_power')).toBe(true);
   });
 
-  test('the registry grew to 21 energy keys (12 original + 9 telemetry)', () => {
+  test('the registry holds 22 energy keys (21 + the Story 9.14 generator_power)', () => {
     const energyKeys = [
       ...FUNCTION_KEYS.solar, ...FUNCTION_KEYS.powerwall, ...FUNCTION_KEYS.grid,
-      ...FUNCTION_KEYS.home, ...FUNCTION_KEYS.wall_connector,
+      ...FUNCTION_KEYS.home, ...FUNCTION_KEYS.wall_connector, ...FUNCTION_KEYS.generator,
     ];
-    expect(energyKeys.length).toBe(21);
-    expect(new Set(energyKeys).size).toBe(21); // still unique
+    expect(energyKeys.length).toBe(22);
+    expect(new Set(energyKeys).size).toBe(22); // still unique
+  });
+});
+
+// ── Story 9.14 — the generator resolves by function-slug, decoy-scoped ─────────
+describe('Story 9.14 — generator_power resolves to the intended sensor, not a decoy', () => {
+  test('generator_power resolves to the generator output sensor (not a *_generator_load decoy)', () => {
+    const hass = makeHass({
+      states: {
+        'sensor.home_generator_power': { state: '3.4', attributes: { unit_of_measurement: 'kW' } },
+        // Decoy: a non-output generator sensor that must NOT win the *_power slot.
+        'sensor.home_backup_generator_load_power': { state: '1.1', attributes: {} },
+      } as unknown as Record<string, HassEntity>,
+    });
+    const e = resolveEnergyEntities(hass, CONFIG);
+    expect(e.generator_power).toBe('sensor.home_generator_power');
+  });
+
+  test('generator_power stays undefined when no generator sensor exists (the tile hides)', () => {
+    const e = resolveEnergyEntities(makeHass(allUnresolvedFx), CONFIG);
+    expect(e.generator_power).toBeUndefined();
+  });
+
+  test('an explicit energy.entities.generator_power override always wins', () => {
+    const cfg: TeslaCardConfig = {
+      type: 'custom:tesla-card',
+      energy: { entities: { generator_power: 'sensor.my_custom_generator' } },
+    };
+    const e = resolveEnergyEntities(makeHass(allUnresolvedFx), cfg);
+    expect(e.generator_power).toBe('sensor.my_custom_generator');
   });
 });

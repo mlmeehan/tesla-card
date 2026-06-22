@@ -1,0 +1,32 @@
+{
+  "provenance": {
+    "synthetic": true,
+    "scenario": "energy-generator",
+    "purpose": "Story 9.14 — a minimal energy site that includes a backup generator output sensor, for the tc-generator card + the present-generator Scene/bus tests. Includes a solar anchor (so freshness has a second stamp to derive `now` from) and a deliberate *_generator_load decoy that must NOT win the generator_power slot.",
+    "units": "kW",
+    "reference_now": "2026-06-15T14:41:00Z"
+  },
+  "states": {
+    "sensor.my_home_generator_power": {
+      "entity_id": "sensor.my_home_generator_power",
+      "state": "3.4",
+      "attributes": { "unit_of_measurement": "kW", "device_class": "power" },
+      "last_changed": "2026-06-15T14:41:00Z",
+      "last_updated": "2026-06-15T14:41:00Z"
+    },
+    "sensor.my_home_backup_generator_load_power": {
+      "entity_id": "sensor.my_home_backup_generator_load_power",
+      "state": "1.1",
+      "attributes": { "unit_of_measurement": "kW", "device_class": "power" },
+      "last_changed": "2026-06-15T14:41:00Z",
+      "last_updated": "2026-06-15T14:41:00Z"
+    },
+    "sensor.my_home_solar_power": {
+      "entity_id": "sensor.my_home_solar_power",
+      "state": "6.0",
+      "attributes": { "unit_of_measurement": "kW", "device_class": "power" },
+      "last_changed": "2026-06-15T14:41:00Z",
+      "last_updated": "2026-06-15T14:41:00Z"
+    }
+  }
+}

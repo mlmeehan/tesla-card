@@ -31,6 +31,7 @@ const NODE_LABELS: Record<Role, string> = {
   grid: STRINGS.energy.nodes.grid,
   home: STRINGS.energy.nodes.home,
   wall_connector: STRINGS.energy.nodes.wall_connector,
+  generator: STRINGS.energy.nodes.generator,
 };
 
 /** True iff `a` is the same roles in the same order as `b`. */

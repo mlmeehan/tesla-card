@@ -83,7 +83,7 @@ const LONG_LEG_PX = 160;
  * opposite corners of a three-column grid. Their concatenation IS `SCENE_NODES`
  * order, so `cellTags`/anchor walks are unchanged.
  */
-const SOURCE_ROW: readonly EnergyRole[] = ['solar', 'powerwall', 'grid'];
+const SOURCE_ROW: readonly EnergyRole[] = ['solar', 'powerwall', 'grid', 'generator'];
 const LOAD_ROW: readonly EnergyRole[] = ['home', 'wall_connector'];
 
 /**
@@ -133,6 +133,7 @@ const NODE_TAG: Readonly<Record<EnergyRole, string>> = {
   grid: 'tc-grid',
   home: 'tc-home',
   wall_connector: 'tc-wall-connector',
+  generator: 'tc-generator',
 } as const;
 
 /** Story 9.7 — the per-sub-row card cap (the "default, not a cap" 3-slot grid); beyond it, wrap.
@@ -854,7 +855,7 @@ export class TcMyHome extends LitElement implements LovelaceCard {
   }
 
   /**
-   * The vehicle cell — the SIXTH Scene card. Like the five energy cells (which embed
+   * The vehicle cell — the Scene's vehicle card, rendered after the energy cells. Like them (which embed
    * `tc-solar`/`tc-powerwall`/… via {@link _childCard}), it REUSES the real detailed
    * card: the registered `tesla-card` element (hero · quick actions · panels ·
    * commands — the full information-rich vehicle surface). The card owns its own
@@ -1402,6 +1403,8 @@ export class TcMyHome extends LitElement implements LovelaceCard {
         return html`<tc-grid .hass=${this.hass} .config=${childCfg}></tc-grid>`;
       case 'tc-home':
         return html`<tc-home .hass=${this.hass} .config=${childCfg}></tc-home>`;
+      case 'tc-generator':
+        return html`<tc-generator .hass=${this.hass} .config=${childCfg}></tc-generator>`;
       default:
         return html`<tc-wall-connector .hass=${this.hass} .config=${childCfg}></tc-wall-connector>`;
     }

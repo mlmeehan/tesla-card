@@ -116,7 +116,7 @@ export interface InstanceSpec {
    * Per-instance embedded-card config override (Story 9.8) — CONSUMED ONLY for the
    * `vehicle` role. A 2nd/3rd car's identity is its own `tesla-card` config (distinct
    * vehicle `device`/`entities`/`name`/`paint`/panels) — a surface `entities:
-   * Partial<EnergyEntities>` (the five ENERGY roles' sensor sets) cannot express. It
+   * Partial<EnergyEntities>` (the six ENERGY roles' sensor sets) cannot express. It
    * is merged per car into the embedded card as `{ ...baseConfig, ...config, variant:
    * 'compact' }`. Additive + forward-compatible (R9): the energy roles IGNORE it (they
    * resolve via `entities`); omit ⇒ today's single auto-detected Vehicle, byte-identical.

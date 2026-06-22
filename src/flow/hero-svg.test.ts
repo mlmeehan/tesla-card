@@ -12,6 +12,7 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import { html, render } from 'lit';
+import { mdiGeneratorStationary } from '@mdi/js';
 import { HeroSvgRenderer, NODE_XY, BUS_XY, flowOverlayStyles } from './hero-svg';
 import { edgeVisual, NODE_COLOR, NODE_ICON } from './renderer';
 import { bindFlowModel, ENERGY_ROLES } from './binding';
@@ -448,6 +449,20 @@ describe('role-keyed maps are complete over EnergyRole (AC1)', () => {
     expect(Object.keys(NODE_XY).sort()).toEqual(roles);
     expect(Object.keys(NODE_COLOR).sort()).toEqual(roles);
     expect(Object.keys(NODE_ICON).sort()).toEqual(roles);
+  });
+
+  // Story 9.14 — pin the generator's presentation metadata VALUES (the role-keyed
+  // maps proving completeness above can't catch a wrong-but-present entry). The
+  // copper accent MUST carry its DESIGN.md fallback (the styles.test.ts bare-var gate)
+  // AND the token must be a real `--tc-copper` decl (the Epic-8 gate blind-spot lesson;
+  // styles.test.ts enforces the decl exists). The icon is the verified `@mdi/js` path.
+  test('the generator role pins copper NODE_COLOR + the mdiGeneratorStationary icon', () => {
+    expect(NODE_COLOR.generator).toBe('var(--tc-copper, #c2855b)');
+    expect(NODE_ICON.generator).toBe(mdiGeneratorStationary);
+    // A source-band coordinate that does not collide with the other source nodes.
+    for (const role of ['solar', 'grid', 'powerwall'] as const) {
+      expect(NODE_XY.generator).not.toEqual(NODE_XY[role]);
+    }
   });
 });
 

@@ -377,13 +377,17 @@ describe('AC2 depth — staleness copy uses --tc-text-dim, NEVER --tc-text-mute 
 // The cell-kW ↔ edge-kW NUMERIC agreement is pinned per-story in my-home.test.ts
 // (Story 8.5 AC2); this pins the STRUCTURAL invariant that makes it true.
 // ─────────────────────────────────────────────────────────────────────────────
-describe('Depth invariant — the WC edge IS the car-charging edge (no 6th flow node, five roles)', () => {
-  test('the bound flow model carries NO vehicle node and exactly the five energy roles', async () => {
+describe('Depth invariant — the WC edge IS the car-charging edge (vehicle is never a flow node)', () => {
+  test('the bound flow model carries NO vehicle node and the vehicle is never an engine role', async () => {
     const el = await mount(makeHass(states(awakeFx)));
     const model = (el as unknown as { _model: FlowModel })._model;
     const roles = model.nodes.map((n) => n.role);
     expect(roles, 'no presentation vehicle node leaked into the flow engine').not.toContain('vehicle');
-    expect(ENERGY_ROLES, 'exactly five engine roles — no sixth was added').toHaveLength(5);
+    // Story 9.14 grew the engine to six energy roles (the sanctioned new generator
+    // SOURCE). The invariant that still holds is the REAL one this guard always
+    // protected: the vehicle is NOT a flow node (the WC edge IS the car-charging edge).
+    expect(ENERGY_ROLES, 'six engine roles after the generator source landed').toHaveLength(6);
+    expect(ENERGY_ROLES, 'the vehicle is still not a flow node').not.toContain('vehicle');
     for (const r of ENERGY_ROLES) expect(r).not.toBe('vehicle');
   });
 

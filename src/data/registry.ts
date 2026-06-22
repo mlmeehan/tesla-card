@@ -5,8 +5,10 @@
 // Pure module: no hass.states, no Lit/DOM, no upward imports (AR-1 boundary) — first
 // occupant of src/data/.
 
-/** The six suite roles every function-key is namespaced under. */
-export const ROLES = ['vehicle', 'solar', 'powerwall', 'grid', 'home', 'wall_connector'] as const;
+/** The seven suite roles every function-key is namespaced under (Story 9.14 added
+ *  `generator` — a new energy SOURCE node type, proving a node is a registry +
+ *  component edit, never a `flow/balance.ts` edit, AR-6). */
+export const ROLES = ['vehicle', 'solar', 'powerwall', 'grid', 'home', 'wall_connector', 'generator'] as const;
 export type Role = (typeof ROLES)[number];
 
 /** Every energy-site role (the suite minus the vehicle). */
@@ -48,13 +50,15 @@ export const FUNCTION_KEYS = {
   grid: ['grid_power', 'grid_status', 'grid_imported', 'grid_exported'],
   home: ['load_power'],
   wall_connector: ['wc_power', 'wc_session', 'wc_connected', 'wc_status', 'wc_voltage', 'wc_frequency', 'wc_temperature'],
+  // Story 9.14 — the generator's signed-power sensor (a ≥0 source like solar).
+  generator: ['generator_power'],
 } as const satisfies Record<Role, readonly string[]>;
 
 /** The vehicle function-keys (today's `EntityKey`). */
 export type VehicleKey = (typeof FUNCTION_KEYS)['vehicle'][number];
 /** The energy-site function-keys (today's `energy.ts` `Key`). */
 export type EnergyKey = (typeof FUNCTION_KEYS)[EnergyRole][number];
-/** Every function-key across all six roles. */
+/** Every function-key across all seven roles. */
 export type FunctionKey = (typeof FUNCTION_KEYS)[Role][number];
 
 /** Flat list of every function-key (suite-wide). */
@@ -98,4 +102,5 @@ export const BUS_ORIENTATION: Readonly<Record<EnergyRole, 1 | -1>> = {
   powerwall: -1, // canonical + = charging → power INTO the battery, OUT of the bus
   home: -1, // household load → always draws from the bus
   wall_connector: -1, // charging the car → draws from the bus
+  generator: 1, // generator output → injects into the bus (a source, same sign as solar/grid)
 } as const;

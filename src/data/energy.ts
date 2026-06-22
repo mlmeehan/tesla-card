@@ -87,6 +87,9 @@ export interface EnergyEntities {
   wc_frequency?: string;
   /** Wall Connector handle temperature (° — unit per install). */
   wc_temperature?: string;
+  // ── Story 9.14 generator ──────────────────────────────────────────────────
+  /** Backup/standby generator output, kW (≥0 source — same sign class as solar). */
+  generator_power?: string;
 }
 
 // `Key` is gated on the drift guard so the guard is load-bearing, not decorative:
@@ -141,6 +144,11 @@ const RULES: Record<Key, Rule> = {
   wc_voltage: { domain: 'sensor', has: ['wall_connector', 'grid_voltage'] },
   wc_frequency: { domain: 'sensor', has: ['wall_connector', 'frequency'] },
   wc_temperature: { domain: 'sensor', has: ['wall_connector', 'handle_temperature'] },
+  // ── Story 9.14 generator ──────────────────────────────────────────────────
+  //   generator_power → sensor.*_generator_power. Scoped to the `generator` slug so
+  //   it never false-matches another *_power source (e.g. a `backup_generator_load`
+  //   is excluded via `not`, the decoy energy.test.ts pins).
+  generator_power: { domain: 'sensor', has: ['generator_power'], not: ['load'] },
 };
 
 function objectId(entityId: string): string {

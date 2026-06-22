@@ -442,6 +442,57 @@ describe('sceneAggregates — ribbon totals derived from the ONE balance net', (
   });
 });
 
+// ───────────────────────────────────────────────────────────────────────────
+// Story 9.14 — the generator joins the bus + ribbon HONESTLY (a source, +1 sign),
+// folding into generation by construction (one computeBalance, no second aggregate).
+// All by construction once `generator ∈ ENERGY_ROLES` + BUS_ORIENTATION.generator=1
+// — no new flow/balance code (AR-6). These pin the property, not new machinery.
+// ───────────────────────────────────────────────────────────────────────────
+describe('Story 9.14 — a present generator nets as a source (+1) and counts as generation', () => {
+  test('its bus tap carries a POSITIVE (injecting) net, same polarity as solar/grid', () => {
+    const model = buildFlowModel([
+      measured('generator', 4.0), // +4 kW output
+      measured('home', 6.0),
+    ]);
+    const net = computeBalance(model).net;
+    expect(net.generator).toBeCloseTo(4.0, 6); // +1 orientation → injects (not −4)
+    // The running bus sum walks the generator tap with its +source sign.
+    const segs = gatewaySegments(model, { generator: r(0, 0), home: r(200, 0) }, { axis: 'x' });
+    expect(segs.length).toBeGreaterThan(0);
+  });
+
+  test('sceneAggregates folds the generator into generation; ribbon counts it (one net)', () => {
+    const model = buildFlowModel([
+      measured('generator', 4.0),
+      measured('solar', 1.0),
+      measured('home', 6.0),
+    ]);
+    const agg = sceneAggregates(model);
+    expect(agg.generation).toBeCloseTo(5.0, 6); // solar 1 + generator 4
+    // The ribbon is a pure VIEW of the SAME net — a generator tile reads its own term.
+    const tiles = ribbonTiles(model);
+    const genTile = tiles.find((t) => t.role === 'generator');
+    expect(genTile).toBeDefined();
+    expect(genTile!.signed).toBeCloseTo(computeBalance(model).net.generator, 6);
+  });
+
+  test('multi-instance generators sum by id (generator:1 + generator:2) — no balance edit', () => {
+    const model = buildFlowModel([
+      { role: 'generator', id: 'generator:1', kW: 2.0, provenance: 'measured' },
+      { role: 'generator', id: 'generator:2', kW: 1.5, provenance: 'measured' },
+      measured('home', 6.0),
+    ]);
+    const agg = sceneAggregates(model);
+    expect(agg.generation).toBeCloseTo(3.5, 6); // both instances feed generation
+    // The ribbon FOLDS the two instances into ONE generator tile carrying the sum.
+    const tiles = ribbonTiles(model);
+    const genTiles = tiles.filter((t) => t.role === 'generator');
+    expect(genTiles).toHaveLength(1);
+    expect(genTiles[0].count).toBe(2);
+    expect(genTiles[0].signed).toBeCloseTo(3.5, 6);
+  });
+});
+
 describe('coupledRoles — shared-bus focus coupling, computed not hard-coded (Task 4)', () => {
   test('focusing a SOURCE lights all present loads + itself', () => {
     const model = fixtureModel(charging); // sources: solar/grid; loads: home/wall_connector

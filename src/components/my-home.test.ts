@@ -46,6 +46,7 @@ import type { EnergyRole, Role } from '../data/registry';
 import { STRINGS } from '../strings';
 import awakeFx from '../fixtures/model-y-awake.json';
 import asleepFx from '../fixtures/model-y-asleep.json';
+import generatorFx from '../fixtures/energy-generator.json';
 import { wcVehicleEdge, selfPowered, ribbonTiles } from '../flow/my-home';
 import { computeBalance } from '../flow/balance';
 import { formatNumber } from '../helpers';
@@ -112,13 +113,17 @@ describe('AC1 — composite parent: one model, one renderer, the five Scene-unaw
     ]);
   });
 
-  test('holds exactly ONE SceneBusRenderer and binds ONE FlowModel (all five present)', async () => {
+  test('holds exactly ONE SceneBusRenderer and binds ONE FlowModel (five present + generator absent)', async () => {
     const el = await mount(makeHass(states(awakeFx)));
     const bus = (el as unknown as { _bus: unknown })._bus;
-    const model = (el as unknown as { _model: { nodes: { present: boolean }[] } })._model;
+    const model = (el as unknown as { _model: { nodes: { role: string; present: boolean }[] } })._model;
     expect(bus).toBeInstanceOf(SceneBusRenderer);
-    expect(model.nodes).toHaveLength(5);
-    expect(model.nodes.every((n) => n.present)).toBe(true);
+    // Story 9.14: the engine now carries six energy roles. The awake fixture has no
+    // generator sensor, so it binds as an ABSENT node (present:false, no edge — opt-in,
+    // FR-33 zero-diff): the five fixture roles are present, the generator is not.
+    expect(model.nodes).toHaveLength(6);
+    expect(model.nodes.filter((n) => n.present)).toHaveLength(5);
+    expect(model.nodes.find((n) => n.role === 'generator')?.present).toBe(false);
   });
 
   test('children receive the same shared hass', async () => {
@@ -466,14 +471,17 @@ const TAG: Readonly<Record<EnergyRole, string>> = {
   grid: 'tc-grid',
   home: 'tc-home',
   wall_connector: 'tc-wall-connector',
+  generator: 'tc-generator',
 };
-/** The five role → its `*_power` resolution key (drop it to make the node absent). */
+/** Each role → its `*_power` resolution key (drop it to make the node absent). The
+ *  generator stays absent in these 5-role topology fixtures (ALL_ROLES, below). */
 const POWER_KEY_OF: Readonly<Record<EnergyRole, keyof ReturnType<typeof energyIds>>> = {
   solar: 'solar_power',
   powerwall: 'battery_power',
   grid: 'grid_power',
   home: 'load_power',
   wall_connector: 'wc_power',
+  generator: 'generator_power',
 };
 const ALL_ROLES: readonly EnergyRole[] = ['solar', 'powerwall', 'grid', 'home', 'wall_connector'];
 const SOURCES: readonly EnergyRole[] = ['solar', 'powerwall', 'grid'];
@@ -2244,5 +2252,71 @@ describe('Story 9.7 — reflow-once + slice covers per-instance overrides (AC8)'
       (el as unknown as { _sliceIds(): (string | undefined)[] })._sliceIds(),
     );
     expect(sliceIds.has(ids.garage)).toBe(true); // the override sensor is gated on
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Story 9.14 — the Generator as a Scene node TYPE: it packs in the SOURCE row,
+// embeds the `tc-generator` child, composes with 9.7 multi-instance/wrap, and is
+// byte-identical-absent when no generator resolves (FR-33 zero-diff).
+// ═══════════════════════════════════════════════════════════════════════════
+
+/** awake states + a present generator output sensor (merged from the generator fixture). */
+function withGenerator(): { s: Record<string, HassEntity>; genId: string } {
+  const s = states(awakeFx);
+  const g = states(generatorFx);
+  const genId = Object.keys(g).find((k) => k.includes('generator_power') && !k.includes('load'))!;
+  s[genId] = g[genId];
+  return { s, genId };
+}
+
+describe('Story 9.14 — a present generator packs into the source row + embeds tc-generator', () => {
+  test('a generator cell renders in the SOURCE row with data-node="generator"', async () => {
+    const { s } = withGenerator();
+    const el = await mount(makeHass(s));
+    const cell = sr(el).querySelector('.source-row .scene-cell[data-node="generator"]');
+    expect(cell).not.toBeNull();
+    expect(cell!.querySelector('tc-generator')).not.toBeNull();
+  });
+
+  test('the generator joins the present roster (one extra source cell over the baseline five)', async () => {
+    const { s } = withGenerator();
+    const withGen = energyCells(await mount(makeHass(s))).length;
+    const baseline = energyCells(await mount(makeHass(states(awakeFx)))).length;
+    expect(withGen).toBe(baseline + 1);
+  });
+});
+
+describe('Story 9.14 — FR-33 zero-diff: no generator ⇒ today’s Scene exactly', () => {
+  test('absent generator renders NO cell, NO tap, and leaves the running sum unchanged', async () => {
+    const el = await mount(makeHass(states(awakeFx)));
+    // No generator cell at all (opt-in — it only appears when its sensor resolves).
+    expect(sr(el).querySelector('.scene-cell[data-node="generator"]')).toBeNull();
+    // The model carries the generator as an ABSENT node (no edge), so balance.net has
+    // no generator term — the bus running sum is identical to the pre-9.14 five-role sum.
+    const model = (el as unknown as { _model: FlowModel })._model;
+    const net = computeBalance(model).net;
+    expect(net.generator).toBeUndefined();
+    expect(model.edges.some((e) => e.from === 'generator')).toBe(false);
+  });
+});
+
+describe('Story 9.14 — composes with the 9.7 multi-instance machinery (no new code)', () => {
+  test('instances.generator:[{},{…}] → generator:1 + generator:2 source cells', async () => {
+    const { s, genId } = withGenerator();
+    const second = `${genId}_2`; // a derived sibling = the 2nd generator's sensor
+    s[second] = { ...s[genId], state: '1.5' };
+    const cfg: TeslaCardConfig = {
+      type: 'tc-my-home',
+      energy: {
+        entities: { generator_power: genId }, // pin instance #1's base resolution
+        nodes: { instances: { generator: [{}, { entities: { generator_power: second } }] } },
+      },
+    };
+    const el = await mount(makeHass(s), cfg);
+    expect(sr(el).querySelector('.scene-cell[data-node="generator:1"]')).not.toBeNull();
+    expect(sr(el).querySelector('.scene-cell[data-node="generator:2"]')).not.toBeNull();
+    // Both are tc-generator children (the same child renders every instance).
+    expect(sr(el).querySelectorAll('.scene-cell[data-node^="generator"] tc-generator')).toHaveLength(2);
   });
 });

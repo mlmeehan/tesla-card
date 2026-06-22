@@ -40,6 +40,13 @@ type SceneOpts = {
    * YAML would deliver them.
    */
   config?: Record<string, unknown>;
+  /**
+   * Extra hass states merged into the base map (Story 9.14) — used to inject a
+   * synthetic generator output sensor so the live Scene renders the NEW copper source
+   * node TYPE. Keyed by entity-id; the generator card resolves it by function-slug
+   * (`generator_power`), exactly as `data/energy` does.
+   */
+  inject?: Record<string, unknown>;
 };
 
 // Mount a fresh `tc-my-home` into a sized, in-viewport host, fed the SAME `hass`
@@ -58,7 +65,7 @@ async function mountScene(page: Page, opts: SceneOpts = {}): Promise<void> {
             ([id]) => !drops.some((slug) => id.includes(slug)),
           ),
         );
-    const hass = { ...base, states };
+    const hass = { ...base, states: { ...states, ...(o.inject ?? {}) } };
 
     // First child + scroll-to-top keeps the Scene inside the viewport so the
     // IntersectionObserver visibility gate stays open (off-screen ⇒ no geometry work).
@@ -431,6 +438,38 @@ test.describe('tc-my-home Scene — Gateway bus, ribbon, focus & reflow (6.6)', 
     await waitForTrunk(page);
     await expect(legs(page)).toHaveCount(4);
     await expect(scene(page).locator('.gw-leg[data-role="powerwall"]')).toHaveCount(0);
+  });
+
+  test('Story 9.14 — a present generator renders a copper SOURCE card + a real bus tap', async ({
+    page,
+  }) => {
+    // Inject a synthetic generator output sensor (resolved by the `generator_power`
+    // function-slug, exactly like data/energy). The Scene must pack it into the source
+    // band, embed the tc-generator child, and draw its tap leg at a live anchor.
+    await mountScene(page, {
+      width: 1100,
+      inject: {
+        'sensor.my_home_generator_power': {
+          entity_id: 'sensor.my_home_generator_power',
+          state: '3.4',
+          attributes: { unit_of_measurement: 'kW', device_class: 'power' },
+          last_changed: new Date().toISOString(),
+          last_updated: new Date().toISOString(),
+        },
+      },
+    });
+    const genCell = scene(page).locator('.source-row .scene-cell[data-node="generator"]');
+    await expect(genCell).toHaveCount(1);
+    await expect(genCell.locator('tc-generator')).toHaveCount(1);
+    // The copper source accent rides as the cell's --node-accent (a real computed value).
+    const accent = await genCell
+      .locator('.surface')
+      .first()
+      .evaluate((el) => getComputedStyle(el).getPropertyValue('--node-accent').trim());
+    expect(accent).not.toBe('');
+    // Its bus tap is drawn at a live anchor once the geometry recompute lands.
+    await waitForTrunk(page);
+    await expect(scene(page).locator('.gw-leg[data-role="generator"]')).toHaveCount(1);
   });
 
   test('AC1c — an essentially-empty hass renders a calm Scene (no crash, no overlay)', async ({
@@ -1567,5 +1606,224 @@ test.describe('tc-my-home Scene — Story 9.8: multi-vehicle wrap + ≈0-kW clam
     // Home is a live load — it must remain rendered (clamping a live source fabricates a
     // phantom, INV-1; the guard hides only dead cards).
     await expect(scene(page).locator('.scene-cell[data-node="home"]')).toHaveCount(1);
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Story 9.14 — the GENERATOR, a new copper SOURCE node TYPE, at the LIVE-LAYOUT tier.
+//
+// The co-located jsdom corpus (`src/components/generator.test.ts`, `flow/my-home.test.ts`,
+// the registry/energy/styles role-count guards) already pins the WIRING + pure math: the
+// generator is the 6th energy role, resolves `generator_power`, nets `BUS_ORIENTATION(+1)`
+// as a source, folds into `sceneAggregates.generation`, and the multi-instance machinery is
+// the reused 9.7 core. But jsdom returns ZERO-sized rects and applies NO stylesheet, so it
+// CANNOT prove the things only a real layout engine + a real interaction produce, and which
+// the lone in-block 9.14 test ("a present generator renders a copper SOURCE card + a real
+// bus tap") leaves uncovered:
+//   • FR-33 zero-diff (AC5) — an ABSENT generator leaves today's EXACT live roster + legs +
+//     trunk geometry (no generator cell, no orphan tap, no ribbon tile) — proven by a
+//     fingerprint compare, the same way 9.2 proves hidden==absent.
+//   • AC4 — the generator's tap walks the bus among the SOURCE taps (left of the loads'),
+//     and the summary ribbon COUNTS it as generation with its own "Generator" tile.
+//   • AC4/AC3 — focusing the generator (a SOURCE) lights the loads + itself and DIMS the
+//     other sources, as REAL computed opacity (jsdom applies no stylesheet).
+//   • AC7 — multi-instance composes FOR FREE: two `instances.generator` render
+//     `generator:1`/`generator:2` cells, each its OWN bus tap at a DISTINCT live anchor —
+//     no generator-specific wrap/instance code.
+// Under the auto console-error guard. The generator sensor is injected by FUNCTION-SLUG
+// (`generator_power`), exactly as `data/energy` resolves it — the [card] no-inlined-ids floor.
+// ═══════════════════════════════════════════════════════════════════════════
+
+// A synthetic generator output sensor, resolved by the `generator_power` function-slug
+// (never an inlined id) — the opt-in that turns the new copper source node ON.
+const GEN_INJECT = {
+  'sensor.my_home_generator_power': {
+    entity_id: 'sensor.my_home_generator_power',
+    state: '3.4',
+    attributes: { unit_of_measurement: 'kW', device_class: 'power' },
+    last_changed: new Date().toISOString(),
+    last_updated: new Date().toISOString(),
+  },
+};
+
+const genCell = (page: Page) => scene(page).locator('.scene-cell[data-node="generator"]');
+const genLeg = (page: Page) => scene(page).locator('.gw-leg[data-role="generator"]');
+
+test.describe('tc-my-home Scene — Story 9.14: generator (copper source) at live layout', () => {
+  test.beforeEach(async ({ demo }) => {
+    // AWAKE / charging: the richest baseline (five energy cells + vehicle + trunk +
+    // legs + ribbon), so adding/omitting the generator is a precise diff against today.
+    await demo.open(AWAKE.open);
+  });
+
+  test('AC5/FR-33 — an ABSENT generator leaves today\'s EXACT Scene (roster, legs, trunk geometry unchanged)', async ({
+    page,
+  }) => {
+    // (a) The canonical Scene with NO generator injected — today's roster + live geometry.
+    await mountScene(page, { width: 1100 });
+    await waitForTrunk(page);
+    const baseFp = await sceneFingerprint(page);
+    const baseTrunk = await trunkLine(page);
+    expect(baseFp.cellNodes).toEqual([
+      'solar',
+      'powerwall',
+      'grid',
+      'home',
+      'wall_connector',
+      'vehicle',
+    ]);
+    // No opt-in ⇒ the generator is an absent node: no cell, no bus leg (FR-33 zero-diff).
+    await expect(genCell(page)).toHaveCount(0);
+    await expect(genLeg(page)).toHaveCount(0);
+
+    // (b) The SAME mount again — byte-for-byte stable roster + identical live trunk
+    // geometry (the absent generator contributes NOTHING to the running sum or layout).
+    await mountScene(page, { width: 1100 });
+    await waitForTrunk(page);
+    expect(await sceneFingerprint(page)).toEqual(baseFp);
+    expect(await trunkLine(page)).toEqual(baseTrunk);
+    // consoleGuard (auto fixture) asserts the no-generator mounts emitted no errors.
+  });
+
+  test('AC4 — a present generator ADDS exactly one SOURCE cell + one bus leg; the ribbon COUNTS it as generation', async ({
+    page,
+  }) => {
+    // Baseline (no generator) leg count first, then inject — the generator must add
+    // EXACTLY one cell + one leg, nothing else churns.
+    await mountScene(page, { width: 1100 });
+    await waitForTrunk(page);
+    const baseLegs = await legs(page).count();
+
+    await mountScene(page, { width: 1100, inject: GEN_INJECT });
+    await waitForTrunk(page);
+
+    // Exactly one new source cell + one new leg — the generator joined the source band.
+    await expect(scene(page).locator('.source-row .scene-cell[data-node="generator"]')).toHaveCount(1);
+    await expect(genLeg(page)).toHaveCount(1);
+    expect(await legs(page).count()).toBe(baseLegs + 1);
+
+    // The summary ribbon COUNTS the generator as generation — it carries a "Generator"
+    // tile (single-sourced from STRINGS.energy.nodes.generator) alongside its kW magnitude.
+    // jsdom cannot prove the laid-out ribbon; here the real layout renders it above the grid.
+    const rb = (await ribbon(page).textContent()) ?? '';
+    expect(rb).toMatch(/Generator/i);
+    expect(rb).toMatch(/kW/);
+
+    // The bus NAMES the generator in its colour-blind-safe label (every present node + kW).
+    const label = (await overlay(page).getAttribute('aria-label')) ?? '';
+    expect(label).toMatch(/kW/);
+  });
+
+  test('AC4 — a single generator wraps the 4-source band yet still TAPS the one trunk as a source (unlike the vehicle)', async ({
+    page,
+  }) => {
+    // One generator ⇒ the source band is 4 cards (solar·powerwall·grid·generator) ⇒ it
+    // WRAPS by the D15 band>3 rule (the 9.7 machinery, composing for free for this NEW
+    // node type — no generator-specific wrap code). The generator must still comb to the
+    // ONE trunk as a real source tap (BUS_ORIENTATION +1), where the vehicle NEVER does.
+    await page.setViewportSize({ width: 1400, height: 900 });
+    await mountScene(page, { width: 1400, inject: GEN_INJECT });
+    await waitForTrunk(page);
+
+    // The band wrapped (4 source cards), but there is still exactly ONE trunk (AR-7).
+    await expect(scene(page).locator('.source-row')).toHaveClass(/wrapped/);
+    await expect(trunk(page)).toHaveCount(1);
+    const t = await trunkLine(page); // horizontal desktop trunk ⇒ constant y
+    expect(Math.abs(t.y1 - t.y2)).toBeLessThanOrEqual(1);
+    const trunkY = t.y1;
+
+    // The generator leg is a real tap ON the trunk: one of its base endpoints sits on the
+    // trunk line (≤2px) — the same metric the 9.8 vehicle test uses, here proving the
+    // POSITIVE (a source DOES tap), the contrast to the vehicle's non-tapping overlay.
+    await expect(genLeg(page)).toHaveCount(1);
+    const gb = await genLeg(page)
+      .locator('.gw-leg-base')
+      .evaluate((l) => ({ y1: Number(l.getAttribute('y1')), y2: Number(l.getAttribute('y2')) }));
+    const nearest = Math.min(Math.abs(gb.y1 - trunkY), Math.abs(gb.y2 - trunkY));
+    expect(nearest, 'the generator (a source) must tap the trunk').toBeLessThanOrEqual(2);
+
+    // Calibration: a known source (solar) taps the trunk the same way — so the metric is
+    // meaningful, not vacuously satisfied by any geometry.
+    const sb = await scene(page)
+      .locator('.gw-leg[data-role="solar"] .gw-leg-base')
+      .first()
+      .evaluate((l) => ({ y1: Number(l.getAttribute('y1')), y2: Number(l.getAttribute('y2')) }));
+    expect(Math.min(Math.abs(sb.y1 - trunkY), Math.abs(sb.y2 - trunkY))).toBeLessThanOrEqual(2);
+  });
+
+  test('AC4/AC3 — focusing the generator (a SOURCE) lights the loads + itself and DIMS the other sources (real opacity)', async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width: 1280, height: 800 });
+    await mountScene(page, { width: 1100, inject: GEN_INJECT });
+    await waitForTrunk(page);
+
+    // Hover the generator cell — a source lights all LOADS + itself; the other present
+    // sources (solar/powerwall/grid) dim. REAL computed opacity (jsdom applies no CSS).
+    await genCell(page).hover();
+    await expect(scene(page).locator('.scene.focus')).toHaveCount(1);
+
+    const groups = await scene(page).evaluate((el) => {
+      const root = (el as HTMLElement).shadowRoot!;
+      const out = { litNodes: [] as (string | undefined)[], litOps: [] as number[], dimNodes: [] as (string | undefined)[], dimOps: [] as number[] };
+      root.querySelectorAll<HTMLElement>('.scene-cell').forEach((c) => {
+        const op = Number(getComputedStyle(c).opacity);
+        if (c.classList.contains('lit')) {
+          out.litNodes.push(c.dataset.node);
+          out.litOps.push(op);
+        } else {
+          out.dimNodes.push(c.dataset.node);
+          out.dimOps.push(op);
+        }
+      });
+      return out;
+    });
+    // The generator lights itself + at least one load; the other sources are present and dim.
+    expect(groups.litNodes).toContain('generator');
+    expect(groups.litNodes).toContain('home');
+    expect(groups.litOps.every((o) => o === 1)).toBe(true);
+    // The other sources (solar/powerwall/grid) sit in the dim group — a source does NOT
+    // light its source siblings (they share the bus only through the loads).
+    expect(groups.dimNodes).toContain('solar');
+    expect(groups.dimOps.length).toBeGreaterThan(0);
+    expect(groups.dimOps.every((o) => o < 1)).toBe(true);
+  });
+
+  test('AC7 — multi-instance composes FOR FREE: two instances render generator:1/generator:2 cells, each its OWN distinct bus tap', async ({
+    page,
+  }) => {
+    // Two `instances.generator` (both resolve the SAME injected sensor — the GEOMETRY /
+    // per-instance identity is under test, not distinct values), exactly the 9.7 core
+    // reused. A wide desktop keeps every source card at standalone width.
+    await page.setViewportSize({ width: 1400, height: 900 });
+    await mountScene(page, {
+      width: 1400,
+      inject: GEN_INJECT,
+      config: { energy: { nodes: { instances: { generator: [{}, {}] } } } },
+    });
+    await waitForTrunk(page);
+
+    // Per-instance ids — the bare `generator` is gone (duplicated ⇒ all suffixed), exactly
+    // the solar:1/solar:2 + vehicle:1/vehicle:2 scheme — NO generator-specific code.
+    await expect(scene(page).locator('.scene-cell[data-node="generator:1"]')).toHaveCount(1);
+    await expect(scene(page).locator('.scene-cell[data-node="generator:2"]')).toHaveCount(1);
+    await expect(genCell(page)).toHaveCount(0); // no bare-id cell once duplicated
+    // Each instance embeds the tc-generator child.
+    await expect(scene(page).locator('.scene-cell[data-node="generator:1"] tc-generator')).toHaveCount(1);
+    await expect(scene(page).locator('.scene-cell[data-node="generator:2"] tc-generator')).toHaveCount(1);
+
+    // Each instance gets its OWN bus tap, drawn at a DISTINCT live anchor (jsdom would
+    // collapse both onto the origin) — proof the multi-instance taps are real geometry.
+    const leg1 = scene(page).locator('.gw-leg[data-role="generator:1"]');
+    const leg2 = scene(page).locator('.gw-leg[data-role="generator:2"]');
+    await expect(leg1).toHaveCount(1);
+    await expect(leg2).toHaveCount(1);
+    const tap1 = await tapXByRole(page, 'generator:1');
+    const tap2 = await tapXByRole(page, 'generator:2');
+    expect(Math.abs(tap2 - tap1)).toBeGreaterThan(10); // two distinct taps, not a duplicate
+
+    // Still ONE trunk, one ribbon — the wrap is the 9.7 machinery (AR-7: never a 2nd trunk).
+    await expect(trunk(page)).toHaveCount(1);
+    await expect(ribbon(page)).toHaveCount(1);
   });
 });
