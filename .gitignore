@@ -85,3 +85,4 @@ src/__no_cycle_probe_b__.ts
 # NFR-1 FPS profiler run artifacts (fps-results.json + scene screenshot) — the
 # harness (scripts/profiler/) IS tracked; its per-run output is regenerated.
 /scripts/profiler/out/
+.claude/.story-automator-active

@@ -32,6 +32,14 @@ type SceneOpts = {
   empty?: boolean;
   /** Host width in px — used to size the mount (and to fit a narrowed viewport). */
   width?: number;
+  /**
+   * Extra config keys merged into `setConfig({ type: 'tc-my-home', ... })`. Used by
+   * the Story 9.1 block to mount the live Scene WITH an `energy.nodes` block (well-
+   * formed or garbage) and prove the additive schema is inert at the real-layout tier.
+   * Cast through `unknown` so garbage shapes can be exercised the way a stale/future
+   * YAML would deliver them.
+   */
+  config?: Record<string, unknown>;
 };
 
 // Mount a fresh `tc-my-home` into a sized, in-viewport host, fed the SAME `hass`
@@ -64,7 +72,7 @@ async function mountScene(page: Page, opts: SceneOpts = {}): Promise<void> {
       setConfig(c: unknown): void;
       hass: unknown;
     };
-    scene.setConfig({ type: 'tc-my-home' });
+    scene.setConfig({ type: 'tc-my-home', ...(o.config ?? {}) });
     scene.hass = hass;
     host.appendChild(scene as unknown as HTMLElement);
   }, opts);
@@ -941,5 +949,158 @@ test.describe('tc-my-home Scene — Story 8.12: gw-term anchors at the card visi
     await mountScene(page, { width: 460 });
     await waitForTrunk(page);
     await expect(scene(page).locator('.gw-leg-base.long')).toHaveCount(0);
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Story 9.1 — `energy.nodes` is an ADDITIVE schema hook that is INERT at the live
+// Scene tier (zero consumption until 9.2/9.3/9.7).
+//
+// The co-located jsdom corpus (`src/tesla-card.config.test.ts`) already pins the
+// four runtime guarantees (tolerated / preserved / garbage-degrades / omitted-is-
+// default) and `types.test.ts` pins the static shape. But jsdom returns ZERO-sized
+// rects and applies NO stylesheet, so it CANNOT prove the load-bearing SM-C4 / AC2
+// claim at the layer that actually matters: that a real user adding `energy.nodes`
+// to their YAML sees a My-Home Scene whose LIVE LAYOUT is byte-for-byte today's —
+// the same packed cells in the same canonical order, the same Gateway trunk + legs,
+// drawn at genuine non-zero geometry — and that even GARBAGE in the new keys leaves
+// the real browser console clean (FR-24). This spec is that proof — the seam at which
+// `tc-my-home.setConfig` stores `{ ...config }` and feeds `bindFlowModel` is EXACTLY
+// where 9.2/9.3 will later consume these keys, so an unchanged Scene here is the
+// regression guard that 9.1 shipped the schema with NO behavior. Under the auto
+// console-error guard. The well-formed config deliberately names `hide:['solar']`
+// and `order:['grid','home']` — keys that WOULD drop/reorder cells if consumed — so
+// an identical cell roster is a precise "not consumed in 9.1" assertion, not a vague
+// "still renders".
+// ═══════════════════════════════════════════════════════════════════════════
+
+// The canonical Scene fingerprint a real layout produces with no customization:
+// the five energy cells in source-then-load order + the trailing vehicle cell.
+const sceneFingerprint = (page: Page) =>
+  scene(page).evaluate((el) => {
+    const root = (el as HTMLElement).shadowRoot!;
+    const cellNodes = [...root.querySelectorAll<HTMLElement>('.scene-cell')].map(
+      (c) => c.dataset.node,
+    );
+    return {
+      cellNodes, // ordered, INCLUDING the vehicle cell
+      legCount: root.querySelectorAll('.gw-leg').length,
+      hasRibbon: root.querySelector('.ribbon') != null,
+      hasTrunk: root.querySelector('.gw-trunk-base') != null,
+    };
+  });
+
+test.describe('tc-my-home Scene — Story 9.1: energy.nodes is inert at the live layout tier', () => {
+  test.beforeEach(async ({ demo }) => {
+    // AWAKE / charging: a live energy site + a present vehicle, so the full Scene
+    // (five energy cells + vehicle cell + trunk + legs + ribbon) renders — the
+    // richest baseline to prove the additive keys change nothing.
+    await demo.open(AWAKE.open);
+  });
+
+  test('AC2/SM-C4 — a well-formed energy.nodes leaves the live Scene IDENTICAL to the no-config baseline (zero consumption)', async ({
+    page,
+  }) => {
+    // Baseline: today's Scene with no customization at all.
+    await mountScene(page);
+    await waitForTrunk(page);
+    const baseline = await sceneFingerprint(page);
+    // Sanity: the baseline is the full five-energy + vehicle roster (so the
+    // equivalence below is comparing against a real, populated Scene, not an empty one).
+    expect(baseline.cellNodes).toEqual([
+      'solar',
+      'powerwall',
+      'grid',
+      'home',
+      'wall_connector',
+      'vehicle',
+    ]);
+
+    // The SAME data, now WITH an `energy.nodes` block whose keys — if they were
+    // consumed — would visibly mutate this roster: `hide:['solar']` would drop the
+    // Solar cell + leg, `order:['grid','home']` would re-pack the row. 9.1 ships zero
+    // consumption, so the live Scene must be unchanged.
+    await mountScene(page, {
+      config: {
+        energy: {
+          nodes: {
+            hide: ['solar'],
+            order: ['grid', 'home'],
+            instances: { home: 2 },
+          },
+        },
+      },
+    });
+    await waitForTrunk(page);
+    const withNodes = await sceneFingerprint(page);
+
+    // Byte-for-byte the same roster, leg count, trunk + ribbon — proof the additive
+    // keys are inert at the layer 9.2/9.3 will later consume them (SM-C4 "exactly today").
+    expect(withNodes).toEqual(baseline);
+    // Specifically: Solar is NOT hidden (hide unconsumed) and the cells keep their
+    // canonical order (order unconsumed) — the two precise "not in 9.1" assertions.
+    expect(withNodes.cellNodes).toContain('solar');
+    expect(withNodes.cellNodes).toEqual(baseline.cellNodes);
+
+    // And the trunk is still drawn at live geometry — a real horizontal rail, not a
+    // collapsed jsdom-style zero line.
+    const t = await trunkLine(page);
+    expect(Math.abs(t.y1 - t.y2)).toBeLessThanOrEqual(1);
+    expect(Math.abs(t.x2 - t.x1)).toBeGreaterThan(50);
+    // consoleGuard (auto fixture) asserts the with-nodes mount emitted no errors.
+  });
+
+  test('AC3/FR-24 — GARBAGE in energy.nodes still renders the full Scene at live geometry, console-clean', async ({
+    page,
+  }) => {
+    // The stale/future-YAML shape: wrong-typed and unknown values in every new key,
+    // delivered the way a real config would (cast through unknown by the helper).
+    await mountScene(page, {
+      config: {
+        energy: {
+          nodes: { hide: ['not_a_node', 42], order: 'nope', instances: { vehicle: 'two' } },
+        },
+      },
+    });
+    await waitForTrunk(page);
+
+    // Garbage in the unconsumed keys degrades to "exactly today" — the full roster
+    // still renders (auto-detect owns the Scene; the new keys are never validated-and-
+    // thrown in 9.1), with real non-zero cell boxes a real layout engine produced.
+    const fp = await sceneFingerprint(page);
+    expect(fp.cellNodes).toEqual([
+      'solar',
+      'powerwall',
+      'grid',
+      'home',
+      'wall_connector',
+      'vehicle',
+    ]);
+    expect(fp.hasTrunk).toBe(true);
+    expect(fp.hasRibbon).toBe(true);
+    const firstBox = await cells(page).first().boundingBox();
+    expect(firstBox).not.toBeNull();
+    expect(firstBox!.width).toBeGreaterThan(0);
+    expect(firstBox!.height).toBeGreaterThan(0);
+    // consoleGuard (auto fixture) is the machine-checked "never crash" assertion for
+    // the garbage mount — FR-24 degradation proven in a real browser, not jsdom.
+  });
+
+  test('AC5/R9 — energy.nodes survives a real render+update cycle on the live element (round-trip preserved)', async ({
+    page,
+  }) => {
+    // The story's explicit worry: a round-trip through the editor's `config-changed`
+    // must not DROP the new keys before 9.2/9.3 read them. jsdom pins the spread on
+    // `_config`; here we prove it survives a genuine Lit render + reactive update in a
+    // real browser (a different engine than the jsdom corpus runs on).
+    const nodes = { hide: ['vehicle'], order: ['solar'], instances: { home: 2 } };
+    await mountScene(page, { config: { energy: { nodes } } });
+    await waitForTrunk(page);
+
+    const stored = await scene(page).evaluate((el) => {
+      const cfg = (el as unknown as { _config?: { energy?: { nodes?: unknown } } })._config;
+      return cfg?.energy?.nodes ?? null;
+    });
+    expect(stored).toEqual(nodes);
   });
 });

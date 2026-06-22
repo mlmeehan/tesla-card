@@ -13,7 +13,15 @@ import { describe, expect, test, expectTypeOf } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
-import type { TeslaCardConfig, PanelId, EnergyConfig, TyresConfig, BodyLayers } from './types';
+import type {
+  TeslaCardConfig,
+  PanelId,
+  EnergyConfig,
+  TyresConfig,
+  BodyLayers,
+  NodeCustomization,
+} from './types';
+import type { Role } from './data/registry';
 // The relocated internal types must now resolve FROM THEIR OWNER modules. These
 // type-only imports compile only while the relocation holds (move them back and
 // `npm run typecheck` breaks) — the AC1 relocation pin at the type level.
@@ -43,6 +51,7 @@ describe('AC1 — types.ts is the PUBLIC TeslaCardConfig surface only (E9/AR-14)
         'HomeAssistant',
         'LovelaceCard',
         'LovelaceCardEditor',
+        'NodeCustomization',
         'PanelId',
         'TeslaCardConfig',
         'TyresConfig',
@@ -122,5 +131,63 @@ describe('AC2 — the D2/D3/D6 additions are one reviewed, coherent delta', () =
     // The contract a future epic's field relies on (R9) is stated in the JSDoc.
     expect(typesSrc()).toMatch(/forward-compat/i);
     expect(typesSrc()).toMatch(/unknown keys[\s*]+are TOLERATED/i);
+  });
+});
+
+describe('Story 9.1 — energy.nodes is an ADDITIVE, optional, Role-keyed delta', () => {
+  // Type-level surface pins for the Epic 9 node-customization hook. Coverage of
+  // the RUNTIME forward-compat behavior (tolerate/preserve/omit-is-default) lives
+  // in tesla-card.config.test.ts (the R9 corpus); these are the static-shape pins
+  // and live here — not contract.test.ts — because types.test.ts is the
+  // established home for `expectTypeOf` schema-surface assertions (contract.test.ts
+  // pins the bundle/registration contract, a different concern).
+
+  test('NodeCustomization hangs OPTIONALLY off EnergyConfig (energy.nodes?)', () => {
+    expectTypeOf<EnergyConfig>().toHaveProperty('nodes');
+    expectTypeOf<EnergyConfig['nodes']>().toEqualTypeOf<NodeCustomization | undefined>();
+    // …and stays reachable from the public config root (energy?.nodes?).
+    expectTypeOf<TeslaCardConfig['energy']>().toEqualTypeOf<EnergyConfig | undefined>();
+  });
+
+  test('the node-customization keyspace is `Role` (includes vehicle), NOT EnergyRole', () => {
+    // hide/order are Role[] — `Role` is the six suite nodes INCLUDING `vehicle`,
+    // exactly the "registry roles plus vehicle" AC1/AC4 require. Using EnergyRole
+    // here (which excludes the car) would fail this assertion.
+    expectTypeOf<NonNullable<NodeCustomization['hide']>>().toEqualTypeOf<Role[]>();
+    expectTypeOf<NonNullable<NodeCustomization['order']>>().toEqualTypeOf<Role[]>();
+    // `vehicle` is a valid member of the keyspace (the load-bearing AC1 point).
+    expectTypeOf<'vehicle'>().toMatchTypeOf<Role>();
+  });
+
+  test('instances is a forward-compat placeholder: Partial<Record<Role, number>>', () => {
+    expectTypeOf<NonNullable<NodeCustomization['instances']>>().toEqualTypeOf<
+      Partial<Record<Role, number>>
+    >();
+  });
+
+  test('all three sub-keys are OPTIONAL (omit ⇒ today, SM-C4)', () => {
+    // `{}` satisfies NodeCustomization — every field is optional.
+    expectTypeOf<Record<string, never>>().toMatchTypeOf<NodeCustomization>();
+    expectTypeOf<NodeCustomization['hide']>().toEqualTypeOf<Role[] | undefined>();
+    expectTypeOf<NodeCustomization['order']>().toEqualTypeOf<Role[] | undefined>();
+  });
+
+  test('the keyspace stays in snake_case (F4) and reuses the registry Role union', () => {
+    const src = typesSrc();
+    // The customization block reuses the registry vocabulary rather than inlining
+    // a parallel union that could drift (the AC1/AC4 anti-drift requirement).
+    expect(src).toMatch(/import type \{ Role \} from '\.\/data\/registry'/);
+    // No camelCased customization key snuck onto the surface.
+    for (const camel of ['nodeCustomization', 'hideNodes', 'nodeOrder']) {
+      expect(src.includes(camel), `customization key must be snake_case, not ${camel}`).toBe(false);
+    }
+  });
+
+  test('the additive/semver back-compat intent is JSDoc-pinned (9.1 is the contract)', () => {
+    const src = typesSrc();
+    expect(src).toMatch(/Semver back-compat/i);
+    expect(src).toMatch(/ADDITIVE \+ OPTIONAL/);
+    // Precedence (hide wins) is documented for the dependent stories to enforce.
+    expect(src).toMatch(/HIDDEN \(hide wins\)/);
   });
 });

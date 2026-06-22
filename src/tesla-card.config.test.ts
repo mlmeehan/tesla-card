@@ -137,6 +137,81 @@ describe('AC3 — card setConfig is forward-compatible (tolerates unknown keys)'
   });
 });
 
+describe('Story 9.1 — energy.nodes is additive/optional/tolerated (no consumption yet)', () => {
+  // 9.1 ships the SCHEMA ONLY for the Epic 9 node-customization hook. These cases
+  // pin the four runtime guarantees: tolerated, preserved, omitted-is-default,
+  // garbage-degrades. They deliberately assert NO hide/reorder BEHAVIOR — that is
+  // 9.2/9.3's job (consumed at the binding/model seam, not here).
+
+  test('a well-formed energy.nodes does NOT throw and the card still renders', async () => {
+    const el = makeCard();
+    const cfg = {
+      type: 'custom:tesla-card',
+      energy: { nodes: { hide: ['solar'], order: ['grid', 'home'] } },
+    } as unknown as TeslaCardConfig;
+    expect(() => el.setConfig(cfg)).not.toThrow();
+    el.hass = fullHass();
+    await expect(el.updateComplete).resolves.toBeDefined();
+    expect(hasRoot(el)).toBe(true); // renders the same Scene/card — no consumption in 9.1
+    el.remove();
+  });
+
+  test('energy.nodes is PRESERVED on the stored config (spread keeps it for 9.2/9.3)', async () => {
+    const el = makeCard();
+    const cfg = {
+      type: 'custom:tesla-card',
+      energy: { nodes: { hide: ['vehicle'], order: ['solar'], instances: { home: 2 } } },
+    } as unknown as TeslaCardConfig;
+    el.setConfig(cfg);
+    await expect(el.updateComplete).resolves.toBeDefined();
+    // The `{ ...config }` spread keeps energy.nodes on `_config`, so a round-trip
+    // through the editor's config-changed can't drop it before 9.2/9.3 read it.
+    const energy = el._config?.energy as { nodes?: Record<string, unknown> } | undefined;
+    expect(energy?.nodes).toEqual({ hide: ['vehicle'], order: ['solar'], instances: { home: 2 } });
+    el.remove();
+  });
+
+  test('GARBAGE in energy.nodes does not throw and still renders (FR-24 degradation)', async () => {
+    const el = makeCard();
+    const cfg = {
+      type: 'custom:tesla-card',
+      energy: {
+        nodes: { hide: ['not_a_node', 42], order: 'nope', instances: { vehicle: 'two' } },
+      },
+    } as unknown as TeslaCardConfig;
+    expect(() => el.setConfig(cfg)).not.toThrow();
+    el.hass = fullHass();
+    await expect(el.updateComplete).resolves.toBeDefined();
+    // Unknown node strings / wrong-typed values are tolerated (not validated-and-thrown
+    // in 9.1); auto-detect fills the gaps so the card renders, never blanks.
+    expect(hasRoot(el)).toBe(true);
+    el.remove();
+  });
+
+  test('OMITTED nodes (and omitted energy) renders identically — absence is the default (SM-C4)', async () => {
+    const withNodes = makeCard();
+    withNodes.setConfig({
+      type: 'custom:tesla-card',
+      energy: { nodes: {} },
+    } as unknown as TeslaCardConfig);
+    withNodes.hass = fullHass();
+    await expect(withNodes.updateComplete).resolves.toBeDefined();
+    const a = hasRoot(withNodes);
+
+    const omitted = makeCard();
+    omitted.setConfig({ type: 'custom:tesla-card' });
+    omitted.hass = fullHass();
+    await expect(omitted.updateComplete).resolves.toBeDefined();
+    const b = hasRoot(omitted);
+
+    // Both render — an empty/omitted nodes block is exactly today's Scene (no change).
+    expect(a).toBe(true);
+    expect(b).toBe(true);
+    withNodes.remove();
+    omitted.remove();
+  });
+});
+
 describe('AC3 — editor setConfig is equally tolerant', () => {
   test('unknown/future keys: editor setConfig does not throw and preserves them', async () => {
     const el = makeEditor();
