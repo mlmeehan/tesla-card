@@ -303,6 +303,17 @@ describe('AC4 — registration + honest degradation', () => {
 const recompute = (el: Scene): void =>
   (el as unknown as { _recomputeGeometry: () => void })._recomputeGeometry();
 
+/**
+ * Flush the mount's pending rAF-coalesced geometry pass (firstUpdated → _scheduleGeometry →
+ * RafCoalescer.schedule(requestAnimationFrame(_recomputeGeometry))) so a late fire cannot
+ * clobber fields injected afterwards. jsdom provides a real (timer-backed) rAF; the pending
+ * mount frame was scheduled first, so awaiting one frame drains it, and RafCoalescer fires
+ * once per schedule (it never re-arms) ⇒ nothing is left pending. Reusable by any test that
+ * injects `_anchors`/`_axis` after mount.
+ */
+const flushGeometry = (): Promise<void> =>
+  new Promise((resolve) => requestAnimationFrame(() => resolve()));
+
 describe('AC1 — the summary ribbon above the explicit two-row grid', () => {
   test('a .ribbon renders ABOVE the .scene-grid, leading with the self-powered cap + a tile label (Story 8.7)', async () => {
     const el = await mount(makeHass(states(awakeFx)));
@@ -1348,14 +1359,18 @@ describe('Story 8.12 — gw-term anchors at the card visible bottom (source-row 
     const el = await mount(makeHass(states(awakeFx)));
     recompute(el); // populate the bus so the overlay renders (jsdom: zero rects)
     await el.updateComplete;
+    // Drain the mount's pending rAF-coalesced geometry pass BEFORE injecting, so a late fire
+    // (jsdom width-0 ⇒ _axis='y', zeroed _anchors) cannot clobber the desktop fixture below.
+    await flushGeometry();
     const inst = el as unknown as { _anchors: Record<string, unknown>; _axis: string };
     // Desktop axis. Both source cards sit ABOVE the trunk (cy < cross => near = card BOTTOM,
     // the post-Task-1 visible-bottom anchor). Solar's bottom is FAR from the trunk (a long
-    // conduit); Powerwall's bottom is near it (a calm hairline) — well clear of the 160px
-    // threshold on either side, so this stays valid across any reasonable Task-7 tuning.
+    // conduit). Powerwall's bottom is a DELIBERATE realistic ~85px short hop (75-90px band):
+    // calm at the current LONG_LEG_PX=160, but a downward retune to ~80 makes 85>80 ⇒ `long`,
+    // tripping the `powerwall` assertion RED — the retune-sensitivity guard (Story 9.6 AC1).
     inst._anchors = {
       solar: { left: 0, top: 0, width: 100, height: 50 }, // bottom=50, len=|50-400|=350 (long)
-      powerwall: { left: 200, top: 280, width: 100, height: 50 }, // bottom=330, len=|330-400|=70 (short)
+      powerwall: { left: 200, top: 265, width: 100, height: 50 }, // bottom=315, len=|315-400|=85 (short)
       bus: { left: 0, top: 400, width: 0, height: 0 }, // trunk cross = 400
     };
     inst._axis = 'x';
@@ -1365,10 +1380,38 @@ describe('Story 8.12 — gw-term anchors at the card visible bottom (source-row 
     expect(baseClasses(el, 'powerwall').contains('long')).toBe(false); // short hop stays calm
   });
 
+  test('Story 9.6 (QA) — the threshold is STRICT-greater: len===LONG_LEG_PX stays short, len===LONG_LEG_PX+1 turns long', async () => {
+    const el = await mount(makeHass(states(awakeFx)));
+    recompute(el); // populate the bus so the overlay renders (jsdom: zero rects)
+    await el.updateComplete;
+    // Drain the mount's pending rAF-coalesced geometry pass BEFORE injecting (see Task 2/AC3).
+    await flushGeometry();
+    const inst = el as unknown as { _anchors: Record<string, unknown>; _axis: string };
+    // The boundary guard AC1 does NOT cover: AC1 makes the fixture sensitive to a retune of the
+    // LONG_LEG_PX *value*; this pins the *operator* — `len > LONG_LEG_PX` is STRICT (not `>=`).
+    // Desktop axis, both cards above the trunk (cy < cross => near = card BOTTOM), cross=400:
+    //   powerwall bottom=240 ⇒ len=|240-400|=160 === LONG_LEG_PX ⇒ short (strict `>` excludes ==)
+    //   solar     bottom=239 ⇒ len=|239-400|=161  >  LONG_LEG_PX ⇒ long
+    // Flip `>` to `>=` and the powerwall (len===160) assertion turns RED — the off-by-one guard.
+    inst._anchors = {
+      solar: { left: 0, top: 189, width: 100, height: 50 }, // bottom=239, len=161 (long: just over)
+      powerwall: { left: 200, top: 190, width: 100, height: 50 }, // bottom=240, len=160 === threshold (short)
+      bus: { left: 0, top: 400, width: 0, height: 0 }, // trunk cross = 400
+    };
+    inst._axis = 'x';
+    (el as unknown as { requestUpdate(): void }).requestUpdate();
+    await el.updateComplete;
+    expect(baseClasses(el, 'solar').contains('long')).toBe(true); // len=161 > 160 ⇒ long
+    expect(baseClasses(el, 'powerwall').contains('long')).toBe(false); // len=160 NOT > 160 ⇒ short
+  });
+
   test('Task 6/AC4 — `long` is GATED to the horizontal (desktop) bus: a long VERTICAL phone-axis leg stays calm', async () => {
     const el = await mount(makeHass(states(awakeFx)));
     recompute(el);
     await el.updateComplete;
+    // Drain the pending mount rAF before injecting (see Task 2/AC3) so the phone-axis fixture
+    // below is not clobbered by a late zero-rect recompute.
+    await flushGeometry();
     const inst = el as unknown as { _anchors: Record<string, unknown>; _axis: string };
     // Phone axis (y): the trunk is vertical, legs run horizontally. A full-width stacked
     // card's near edge sits a LONG way from the bus x (len = |100 - 400| = 300 >> 160) —
