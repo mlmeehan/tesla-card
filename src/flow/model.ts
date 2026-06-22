@@ -67,9 +67,13 @@ export interface FlowEdge {
 
 /** One node in the flow graph. Internal shape — not part of `TeslaCardConfig`. */
 export interface FlowNode {
-  /** Stable node id (the canonical {@link EnergyRole}). */
+  /**
+   * Stable node id — the per-instance id (Story 9.7): the bare {@link EnergyRole}
+   * for a single instance (FR-33 zero-diff), `role:n` for a duplicated role. Balance
+   * keys net BY THIS id, so duplicated roles get independent taps.
+   */
   id: string;
-  /** The canonical registry role this node plays. */
+  /** The canonical registry role this node plays (drives `BUS_ORIENTATION`; balance stays role-generic). */
   role: EnergyRole;
   /** `true` when a live reading resolved for this node; `false` = absent. */
   present: boolean;
@@ -93,6 +97,14 @@ export interface FlowModel {
  */
 export interface FlowInput {
   role: EnergyRole;
+  /**
+   * Per-instance node id (Story 9.7). `undefined` ⇒ the node id IS the role (a
+   * single instance — FR-33 zero-diff); a duplicated role supplies `role:1`/`role:2`
+   * (see `flow/instances.ts` `instanceId`). Because {@link buildFlowModel} keys the
+   * `FlowNode.id`/`FlowEdge.from` off this and `balance.ts` aggregates net BY NODE
+   * ID, N same-role inputs become N independent bus taps with NO balance edit (AR-6).
+   */
+  id?: string;
   /** Canonical signed power, kW; `undefined` ⇒ absent node (no edge). */
   kW: number | undefined;
   provenance: Provenance;
@@ -131,12 +143,16 @@ export function buildFlowModel(inputs: readonly FlowInput[]): FlowModel {
   const edges: FlowEdge[] = [];
   for (const input of inputs) {
     const present = input.kW !== undefined;
-    nodes.push({ id: input.role, role: input.role, present });
+    // Story 9.7: the node id is the per-instance id when supplied, else the role
+    // (single instance ⇒ bare role ⇒ byte-identical to pre-9.7). `role` still drives
+    // BUS_ORIENTATION, so balance stays role-generic; only IDENTITY became per-instance.
+    const id = input.id ?? input.role;
+    nodes.push({ id, role: input.role, present });
     if (!present) continue;
     // Signed flow into the bus: +ve = this node injects, −ve = it draws.
     const kW = BUS_ORIENTATION[input.role] * (input.kW as number);
     edges.push({
-      from: input.role,
+      from: id,
       to: BUS_NODE_ID,
       kW,
       direction: senseOf(kW, input.provenance),

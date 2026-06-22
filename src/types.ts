@@ -88,17 +88,47 @@ export type PanelId =
  * `TeslaCardConfig`; default here follows the epic's proposed `energy.nodes?`
  * home. Non-blocking — the proposed shape ships as-is.
  */
+/**
+ * One instance of a duplicated Scene node (Story 9.7). The {@link
+ * NodeCustomization.instances} list is a per-instance DESCRIPTOR list — its array
+ * LENGTH is the instance count, and each entry carries that instance's
+ * disambiguating card `title` + its own per-instance `entities` overrides. Both
+ * fields are optional: an empty `{}` is a bare instance that auto-resolves exactly
+ * as today's single node does. The FIRST instance auto-resolves (today's single
+ * match); instance #2+ SHOULD supply at least the power sensor in `entities`, or it
+ * resolves the SAME entity as #1 (a duplicate reading — graceful, not a crash).
+ */
+export interface InstanceSpec {
+  /**
+   * Human card title that disambiguates this instance ("South Array") — surfaced
+   * as the card title + folded into the accessible name. NOT a numeric `:1`/`:2`
+   * badge (the internal instance id stays internal). Omit ⇒ the card shows its
+   * status line as today.
+   */
+  title?: string;
+  /**
+   * Per-instance entity overrides — the SAME shape `energy.entities` uses, resolved
+   * through the same registry-keyed path (AR-1). Wins over auto-resolution for the
+   * keys it sets; unset keys still auto-resolve.
+   */
+  entities?: Partial<EnergyEntities>;
+}
+
 export interface NodeCustomization {
   /** Nodes to remove from the Scene — each behaves EXACTLY as if absent (9.2 consumes). */
   hide?: Role[];
   /** Left-to-right node order WITHIN a row (sources stay over loads); unlisted nodes keep their order (9.3 consumes). */
   order?: Role[];
   /**
-   * Multi-instance / duplicate-role counts (9.7, GATED on product + UX). Typed as
-   * a forward-compatible placeholder so old/new YAML round-trips; the SEMANTICS
-   * are finalized in 9.7 — do NOT consume it in 9.1/9.2/9.3.
+   * Multi-instance / duplicate-role descriptor list (9.7). Keyed by {@link Role};
+   * each value is an {@link InstanceSpec}[] whose LENGTH is the instance count and
+   * whose entries carry per-instance title + entity overrides. Forward-compatible:
+   * a stale count-shaped value (the 9.1 placeholder `Partial<Record<Role, number>>`)
+   * or any garbage is TOLERATED — only a valid non-empty array is consumed; anything
+   * else degrades to "no instances declared" = today's single auto-resolved node
+   * (graceful, FR-24 / R9). A `vehicle` entry is tolerated-but-DEFERRED to Story 9.8.
    */
-  instances?: Partial<Record<Role, number>>;
+  instances?: Partial<Record<Role, InstanceSpec[]>>;
 }
 
 /** User-facing energy wiring: per-key overrides + an explicit hide switch. */

@@ -8,6 +8,7 @@ import { describe, expect, test } from 'vitest';
 import type { HomeAssistant, TeslaCardConfig } from '../types';
 import type { EnergyRole, Role } from '../data/registry';
 import { bindFlowModel, flowInputsFrom, POWER_KEY, ENERGY_ROLES, DEADBAND } from './binding';
+import { computeBalance } from './balance';
 import awake from '../fixtures/model-y-awake.json';
 import asleep from '../fixtures/model-y-asleep.json';
 import unresolved from '../fixtures/all-unresolved.json';
@@ -305,5 +306,107 @@ describe('binding — Story 9.2: a hidden energy role drops at the model seam (A
     const heroModel = bindFlowModel(makeHass(awakeStates), cfg()); // EXACTLY the Hero's call (hero.ts:261)
     expect(heroModel.nodes.every((n) => n.present)).toBe(true);
     expect(heroModel.edges.length).toBe(ENERGY_ROLES.length);
+  });
+});
+
+// ───────────────────────────────────────────────────────────────────────────
+// Story 9.7 — the multi-instance expansion (AC3). The MIRROR of 9.2's hide at the
+// SAME seam: instead of removing a role's input, expand it to N. Each instance
+// binds its OWN resolved entity set (instance override wins), carries its
+// instanceId, and produces an independent FlowInput → independent present node →
+// independent bus tap. Balance is keyed BY NODE ID, so N same-role taps sum
+// Kirchhoff-honestly with NO `flow/balance.ts` edit (INV-1 / AR-6).
+// ───────────────────────────────────────────────────────────────────────────
+describe('binding — Story 9.7: a role expands to N instances at the seam (AC3)', () => {
+  // Hermetic fresh stamp so the synthetic reads classify `measured` (not stale).
+  const NOW = '2026-01-01T00:00:00.000Z';
+  const nowMs = Date.parse(NOW);
+  const st = (v: string) => ({ state: v, last_changed: NOW, last_updated: NOW, attributes: {} });
+
+  // Two solar arrays, each on its OWN sensor; #1 base id pinned, #2 per-instance override.
+  const twoSolar = makeHass({
+    'sensor.solar_south_power': st('2.0'),
+    'sensor.solar_garage_power': st('1.2'),
+  });
+  const twoSolarCfg = cfg({
+    energy: {
+      entities: { solar_power: 'sensor.solar_south_power' }, // instance #1 base resolution
+      nodes: {
+        instances: {
+          solar: [{}, { entities: { solar_power: 'sensor.solar_garage_power' } }],
+        },
+      },
+    },
+  });
+
+  test('a 2-instance solar role → 2 FlowInputs with distinct instance ids (solar:1, solar:2)', () => {
+    const inputs = flowInputsFrom(twoSolar, twoSolarCfg, { now: nowMs });
+    const solar = inputs.filter((i) => i.role === 'solar');
+    expect(solar.map((i) => i.id)).toEqual(['solar:1', 'solar:2']);
+    // role stays `solar` on both (balance/orientation reads role, not id).
+    expect(solar.every((i) => i.role === 'solar')).toBe(true);
+  });
+
+  test('each instance reads its OWN power sensor — the per-instance override wins (AC3)', () => {
+    const inputs = flowInputsFrom(twoSolar, twoSolarCfg, { now: nowMs });
+    const byId = new Map(inputs.map((i) => [i.id, i]));
+    expect(byId.get('solar:1')?.kW).toBeCloseTo(2.0, 6); // base (auto-resolution)
+    expect(byId.get('solar:2')?.kW).toBeCloseTo(1.2, 6); // override
+    expect(byId.get('solar:1')?.provenance).toBe('measured');
+  });
+
+  test('the model carries 2 present solar nodes + 2 edges — one tap each (AC4)', () => {
+    const model = bindFlowModel(twoSolar, twoSolarCfg, { now: nowMs });
+    const solarNodes = model.nodes.filter((n) => n.role === 'solar' && n.present);
+    expect(solarNodes.map((n) => n.id)).toEqual(['solar:1', 'solar:2']);
+    expect(model.edges.filter((e) => e.from === 'solar:1' || e.from === 'solar:2')).toHaveLength(2);
+  });
+
+  test('a single-instance role with `[{}]` (or no instances) is a zero-diff bare-id input', () => {
+    // An explicit one-element list and an omitted instances key both yield the bare `solar` id.
+    const explicit = flowInputsFrom(twoSolar, cfg({
+      energy: { entities: { solar_power: 'sensor.solar_south_power' }, nodes: { instances: { solar: [{}] } } },
+    }), { now: nowMs });
+    const omitted = flowInputsFrom(twoSolar, cfg({
+      energy: { entities: { solar_power: 'sensor.solar_south_power' } },
+    }), { now: nowMs });
+    expect(explicit.filter((i) => i.role === 'solar').map((i) => i.id)).toEqual(['solar']);
+    expect(omitted.filter((i) => i.role === 'solar').map((i) => i.id)).toEqual(['solar']);
+  });
+
+  test('a hidden role drops ALL its instances (hide composes with instances)', () => {
+    const model = bindFlowModel(twoSolar, twoSolarCfg, { now: nowMs }, ['solar']);
+    expect(model.nodes.filter((n) => n.role === 'solar' && n.present)).toHaveLength(0);
+    expect(model.edges.filter((e) => e.from.startsWith('solar'))).toHaveLength(0);
+  });
+
+  test('CONSERVATION: N same-role taps sum into balance BY ID — Kirchhoff-honest, no balance.ts edit (INV-1)', () => {
+    // A balanced island: 2 solar arrays (2.0 + 1.2 = 3.2 kW injected) feed a 3.2 kW
+    // home load. Balance keys net BY NODE ID, so the two arrays are TWO independent
+    // injections (net['solar:1'], net['solar:2']) — never one merged `net['solar']`
+    // — and the running total over the role = the sum of their nets, with the bus
+    // balancing to ~0. Role-genericity proven without touching the balance compute.
+    const island = makeHass({
+      'sensor.solar_south_power': st('2.0'),
+      'sensor.solar_garage_power': st('1.2'),
+      'sensor.home_load_power': st('3.2'),
+    });
+    const islandCfg = cfg({
+      energy: {
+        entities: { solar_power: 'sensor.solar_south_power', load_power: 'sensor.home_load_power' },
+        nodes: { instances: { solar: [{}, { entities: { solar_power: 'sensor.solar_garage_power' } }] } },
+      },
+    });
+    const model = bindFlowModel(island, islandCfg, { now: nowMs });
+    const bal = computeBalance(model);
+    // Each instance is its OWN net entry (keyed by instance id, never merged by role).
+    expect(bal.net['solar:1']).toBeCloseTo(2.0, 6);
+    expect(bal.net['solar:2']).toBeCloseTo(1.2, 6);
+    expect(bal.net['solar']).toBeUndefined(); // no role-merged tap exists
+    // The role's running total = the sum of its instances' nets (the ribbon-fold math).
+    expect((bal.net['solar:1'] ?? 0) + (bal.net['solar:2'] ?? 0)).toBeCloseTo(3.2, 6);
+    // Home draws the matching 3.2 kW → the bus balances within tolerance (sources = loads).
+    expect(bal.net['home']).toBeCloseTo(-3.2, 6);
+    expect(bal.balanced).toBe(true);
   });
 });

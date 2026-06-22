@@ -156,18 +156,45 @@ describe('Story 9.1 — energy.nodes is additive/optional/tolerated (no consumpt
     el.remove();
   });
 
-  test('energy.nodes is PRESERVED on the stored config (spread keeps it for 9.2/9.3)', async () => {
+  test('energy.nodes is PRESERVED on the stored config — incl. the 9.7 list-shaped instances', async () => {
     const el = makeCard();
+    // Story 9.7: `instances` is a per-instance descriptor LIST (array length = count,
+    // each entry { title?, entities? }). The spread must round-trip it intact for the
+    // Scene to consume it.
+    const instances = {
+      solar: [
+        { title: 'South' },
+        { title: 'Garage', entities: { solar_power: 'sensor.solar_garage_power' } },
+      ],
+    };
     const cfg = {
       type: 'custom:tesla-card',
-      energy: { nodes: { hide: ['vehicle'], order: ['solar'], instances: { home: 2 } } },
+      energy: { nodes: { hide: ['vehicle'], order: ['solar'], instances } },
     } as unknown as TeslaCardConfig;
     el.setConfig(cfg);
     await expect(el.updateComplete).resolves.toBeDefined();
     // The `{ ...config }` spread keeps energy.nodes on `_config`, so a round-trip
-    // through the editor's config-changed can't drop it before 9.2/9.3 read it.
+    // through the editor's config-changed can't drop it before the Scene reads it.
     const energy = el._config?.energy as { nodes?: Record<string, unknown> } | undefined;
-    expect(energy?.nodes).toEqual({ hide: ['vehicle'], order: ['solar'], instances: { home: 2 } });
+    expect(energy?.nodes).toEqual({ hide: ['vehicle'], order: ['solar'], instances });
+    el.remove();
+  });
+
+  test('a STALE count-shaped instances value (the 9.1 placeholder) is tolerated + preserved (R9)', async () => {
+    // Forward-compat both ways: old YAML carrying the pre-9.7 `{ home: 2 }` count shape
+    // must still round-trip without throwing. The Scene consumer treats a non-array as
+    // "no instances declared" (graceful), but setConfig itself never validates/drops it.
+    const el = makeCard();
+    const cfg = {
+      type: 'custom:tesla-card',
+      energy: { nodes: { instances: { home: 2 } } },
+    } as unknown as TeslaCardConfig;
+    expect(() => el.setConfig(cfg)).not.toThrow();
+    el.hass = fullHass();
+    await expect(el.updateComplete).resolves.toBeDefined();
+    expect(hasRoot(el)).toBe(true);
+    const energy = el._config?.energy as { nodes?: Record<string, unknown> } | undefined;
+    expect(energy?.nodes).toEqual({ instances: { home: 2 } });
     el.remove();
   });
 

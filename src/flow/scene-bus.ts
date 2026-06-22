@@ -104,8 +104,12 @@ export class SceneBusRenderer implements FlowRenderer {
    * only `present` nodes get chips, only the edges the model emits are drawn.
    */
   update(model: FlowModel): void {
-    const edgeByRole = new Map<string, FlowEdge>();
-    for (const e of model.edges) edgeByRole.set(e.from, e);
+    // Story 9.7: key the edge map by `e.from` = NODE ID (per-instance post-9.7) and
+    // look it up by node id below — a duplicated role's chips (`solar:1`/`solar:2`)
+    // must each find their OWN edge, never miss to `'—'` in the aria-label. id===role
+    // for single instances, so this is a zero-diff there.
+    const edgeById = new Map<string, FlowEdge>();
+    for (const e of model.edges) edgeById.set(e.from, e);
 
     // Derive each edge's shared visual ONCE (the one `edgeVisuals` call) and reuse it
     // for both the proof-facing `_visuals` and the draw-facing `_edges` — same data,
@@ -120,7 +124,7 @@ export class SceneBusRenderer implements FlowRenderer {
     this._chips = model.nodes
       .filter((n) => n.present)
       .map((n) => {
-        const edge = edgeByRole.get(n.role);
+        const edge = edgeById.get(n.id);
         return {
           role: n.role,
           color: NODE_COLOR[n.role],

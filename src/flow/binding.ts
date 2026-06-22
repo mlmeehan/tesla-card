@@ -4,6 +4,7 @@ import { resolveEnergyEntities, numById, type EnergyEntities } from '../data/ene
 import { adapterFor } from '../data/dialect';
 import { read, isQuiescent, type ReadOpts } from '../data/freshness';
 import { buildFlowModel, IDLE_KW, type FlowInput, type FlowModel, type Provenance } from './model';
+import { roleInstances } from './instances';
 
 /**
  * D1 — Flow data BINDING (Story 4.2). Turns `(hass, config)` into the per-role
@@ -61,8 +62,8 @@ export const DEADBAND = IDLE_KW;
  * drift. Provenance is moot (no edge is emitted); `'measured'` is the neutral
  * placeholder `buildFlowModel` ignores for a `present:false` node.
  */
-function absentInput(role: EnergyRole): FlowInput {
-  return { role, kW: undefined, provenance: 'measured' };
+function absentInput(role: EnergyRole, id: string = role): FlowInput {
+  return { role, id, kW: undefined, provenance: 'measured' };
 }
 
 /**
@@ -76,7 +77,8 @@ function flowInputFor(
   adapter: ReturnType<typeof adapterFor>,
   entities: EnergyEntities,
   role: EnergyRole,
-  opts: ReadOpts
+  opts: ReadOpts,
+  nodeId: string = role
 ): FlowInput {
   const id = entities[POWER_KEY[role]];
   // NaN-safe read (no id / unavailable / non-finite → undefined), then normalize
@@ -94,7 +96,7 @@ function flowInputFor(
     // becomes an ABSENT node (AC4 + the buildFlowModel `kW===undefined` contract),
     // never a phantom zero-kW edge. So `staleness:'unavailable'` ⇒ absent here;
     // `stale`/`asleep` (numeric echo) ⇒ a present `quiescent` edge.
-    return absentInput(role);
+    return absentInput(role, nodeId);
   }
 
   // Provenance is normalization-aware, NOT flip-aware: a fresh direct read is
@@ -107,7 +109,7 @@ function flowInputFor(
   const provenance: Provenance = quiescent ? 'quiescent' : 'measured';
   // Quiescent still carries the (last-known) value; only the flag changes —
   // `senseOf` maps quiescent → `direction:'none'`, so it renders present-and-calm.
-  return { role, kW, provenance };
+  return { role, id: nodeId, kW, provenance };
 }
 
 /**
@@ -125,6 +127,15 @@ function flowInputFor(
  * every existing caller — notably the Hero (`components/hero.ts`) — a zero-diff.
  * FR-24: an unknown / non-energy string in `hide` (e.g. `'vehicle'`, `'not_a_node'`)
  * simply never matches an energy role here, so it is inert — never thrown.
+ *
+ * Story 9.7 — MULTI-INSTANCE expansion (the mirror of 9.2's hide at this same seam):
+ * instead of REMOVING a role's input, EXPAND it to N inputs. Each role maps to its
+ * `roleInstances` list (`energy.nodes.instances`, default `[{}]` ⇒ exactly one input
+ * ⇒ zero-diff). Each instance binds its OWN resolved entity set —
+ * `{ ...autoResolved, ...spec.entities }`, instance override wins (registry-keyed,
+ * AR-1) — and carries its `instanceId`, so `buildFlowModel` emits N independent
+ * present nodes and `balance.ts` (keyed by node id) sums them with NO balance edit
+ * (AR-6). A hidden role still drops ALL its instances (the single absent input).
  */
 export function flowInputsFrom(
   hass: HomeAssistant | undefined,
@@ -135,11 +146,20 @@ export function flowInputsFrom(
   const entities = resolveEnergyEntities(hass, config);
   const adapter = adapterFor(hass, config);
   const hidden = new Set<Role>(hide);
-  return ENERGY_ROLES.map((role) =>
-    // A hidden energy role takes the SAME absent-node input an unresolved entity
-    // produces (the one `absentInput` helper) — hidden == absent by construction.
-    hidden.has(role) ? absentInput(role) : flowInputFor(hass, adapter, entities, role, opts)
-  );
+  return ENERGY_ROLES.flatMap((role) => {
+    // A hidden energy role drops ALL its instances → the SAME single absent-node
+    // input an unresolved entity produces (hidden == absent by construction).
+    if (hidden.has(role)) return [absentInput(role)];
+    // Expand to the role's instance list (default one bare instance ⇒ zero-diff).
+    return roleInstances(config, role).map(({ id, entities: override }) => {
+      // Per-instance resolution: the auto-resolved set, with this instance's
+      // overrides winning for the keys it sets (#1 keeps auto-resolution; #2+ that
+      // sets no power sensor resolves the SAME entity as #1 — the user's documented
+      // footgun, graceful not a crash).
+      const instEntities = override ? { ...entities, ...override } : entities;
+      return flowInputFor(hass, adapter, instEntities, role, opts, id);
+    });
+  });
 }
 
 /**

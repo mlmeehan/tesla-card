@@ -17,7 +17,7 @@ import { resolveEntities } from '../data/resolve';
 import { resolveEnergyEntities, type EnergyEntities } from '../data/energy';
 import { sliceChanged } from '../data/slice';
 import { read, referenceNow } from '../data/freshness';
-import { bindFlowModel, POWER_KEY } from '../flow/binding';
+import { bindFlowModel, POWER_KEY, ENERGY_ROLES } from '../flow/binding';
 import { BUS_NODE_ID, IDLE_KW, type Direction, type FlowEdge, type FlowModel } from '../flow/model';
 import { SceneBusRenderer, sceneBusStyles, type RectLike } from '../flow/scene-bus';
 import { edgeVisual, NODE_COLOR, NODE_ICON } from '../flow/renderer';
@@ -39,6 +39,7 @@ import {
   type GatewaySegment,
   type RibbonTile,
 } from '../flow/my-home';
+import { roleInstances } from '../flow/instances';
 import type { EnergyRole, Role } from '../data/registry';
 import type { HomeAssistant, LovelaceCard, TeslaCardConfig } from '../types';
 
@@ -134,6 +135,27 @@ const NODE_TAG: Readonly<Record<EnergyRole, string>> = {
   wall_connector: 'tc-wall-connector',
 } as const;
 
+/** Story 9.7 — the per-sub-row card cap (the "default, not a cap" 3-slot grid); beyond it, wrap.
+ *  The OVERFLOW sub-row's channel offset is the CSS `.subrow.overflow` padding-left (230px =
+ *  (380 column + 80 channel)/2, so each overflow card centres on a near-row channel) — a CSS
+ *  literal so the ≤540px phone reset can override it (an inline style could not). */
+const WRAP_MAX_PER_ROW = 3;
+
+/**
+ * One rendered Scene cell (Story 9.7) — a present INSTANCE of a role, or the
+ * synthetic vehicle cell. The render packs these; `id` is the per-instance
+ * `data-node` (the bare role when single — FR-33 zero-diff), `role` drives the
+ * child-card tag + accent colour, `title` disambiguates duplicates (Task 7), and
+ * `entities` carries the per-instance overrides merged into the child's config.
+ */
+interface SceneCell {
+  id: string;
+  role: Role;
+  title?: string;
+  entities?: Partial<EnergyEntities>;
+  vehicle?: boolean;
+}
+
 /**
  * `tc-my-home` — the "My Home" Scene orchestrator (Story 6.5, the Epic-6
  * centrepiece). It COMPOSES the six ecosystem cards into one live Scene driven by
@@ -195,11 +217,12 @@ export class TcMyHome extends LitElement implements LovelaceCard {
   private _anchors?: Record<string, RectLike>;
   /** The bus axis the last reflow resolved (`x` desktop horizontal / `y` phone vertical) — geometry-driven. */
   private _axis: BusAxis = 'x';
-  /** The hovered/keyboard-focused role; drives the dim/light highlight (`undefined` = no
-   *  focus). Story 8.5 widened it to {@link Role} (incl. `'vehicle'`) so the vehicle
-   *  cell can participate in focus WITHOUT becoming a flow node — `coupledRoles`
-   *  stays energy-only; the vehicle coupling is computed in {@link _coupledLit}. */
-  @state() private _focused?: Role;
+  /** The hovered/keyboard-focused NODE ID; drives the dim/light highlight (`undefined`
+   *  = no focus). Story 8.5 admitted the vehicle cell (`'vehicle'`); Story 9.7 widened
+   *  it from a role to a per-instance `data-node` id (`solar:1`), so focusing ONE array
+   *  lights that array's tap, never its same-role sibling — `coupledRoles` stays
+   *  energy-ROLE-only; the per-instance expansion is computed in {@link _coupledLit}. */
+  @state() private _focused?: string;
 
   // ── LovelaceCard contract (AC4) ────────────────────────────────────────────
 
@@ -281,6 +304,19 @@ export class TcMyHome extends LitElement implements LovelaceCard {
         entityId(cfg, 'status')
       );
     }
+    // Story 9.7: `_energy` is the BASE resolution (covers instance #1 + the global
+    // overrides); a per-instance OVERRIDE id (e.g. the 2nd array's own sensor) is NOT
+    // in it, so without this a tick on a duplicated instance's sensor would never
+    // re-render the Scene (AC8: each instance lastUpdated-gated from shared hass). Add
+    // every per-instance entity override id — pure config values, no `hass.states` read.
+    const raw = this._config;
+    if (raw) {
+      for (const role of ENERGY_ROLES) {
+        for (const inst of roleInstances(raw, role)) {
+          if (inst.entities) ids.push(...Object.values(inst.entities));
+        }
+      }
+    }
     return ids;
   }
 
@@ -340,9 +376,13 @@ export class TcMyHome extends LitElement implements LovelaceCard {
     // key, fires the rAF-coalesced reflow EXACTLY once, and the cached geometry (legs,
     // bus tap walk) re-measures the moved anchors. One signature captures hide, unhide,
     // reorder AND vehicle-slot moves — no second key to keep in sync.
+    // Story 9.7: the key is the per-INSTANCE id sequence, so a count change (solar →
+    // solar:1,solar:2) flips it (one reflow), while a value-only tick (same roster)
+    // leaves it unchanged (zero reflow) — AC8.
     const cfg = this._resolvedConfig ?? this._config;
     const { source, load } = cfg ? this._orderedRows(cfg) : { source: [], load: [] };
-    const key = `${source.join(',')}|${load.join(',')}`;
+    const ids = (cells: SceneCell[]): string => cells.map((c) => c.id).join(',');
+    const key = `${ids(source)}|${ids(load)}`;
     if (key !== this._presentKey) {
       this._presentKey = key;
       this._scheduleGeometry();
@@ -389,14 +429,19 @@ export class TcMyHome extends LitElement implements LovelaceCard {
     const container = scene.getBoundingClientRect();
     const abs: Record<string, RectLike> = {};
     scene.querySelectorAll<HTMLElement>('[data-node]').forEach((cell) => {
-      const role = cell.dataset.node;
-      if (role) abs[role] = cell.getBoundingClientRect();
+      // The `data-node` is the per-instance id (Story 9.7); a wrapped card's cell is
+      // found just the same (the query is depth-agnostic across sub-rows).
+      const id = cell.dataset.node;
+      if (id) abs[id] = cell.getBoundingClientRect();
     });
     const rel = relativeAnchors(container, abs);
     // Story-fix (gateway-bus-placement): place the trunk in the inter-row GAP, not
     // at the centroid of card centres (which the tall Powerwall pulls up into the
     // source row). Degrades to the centroid for every degenerate geometry.
-    const bus = busAnchorBetweenRows(rel, SOURCE_ROW, LOAD_ROW);
+    // Story 9.7: pass the present per-INSTANCE ids per band (not the role constants)
+    // so multi-instance + wrapped anchors are found; `max(source bottoms)` is the
+    // PRIMARY (near) sub-row's bottom, keeping busY just below it.
+    const bus = busAnchorBetweenRows(rel, this._bandIds(SOURCE_ROW), this._bandIds(LOAD_ROW));
     if (bus) rel[BUS_NODE_ID] = bus;
     this._bus.setAnchors(rel);
     // Story 6.6: cache the relativized anchors for the Gateway overlay.
@@ -412,71 +457,42 @@ export class TcMyHome extends LitElement implements LovelaceCard {
     this.requestUpdate(); // redraw the overlay over the cached geometry
   }
 
+  /** The present per-instance node ids whose role is in `roles` — a band's bus-tap
+   *  anchor keys (Story 9.7). Single-instance ⇒ the ids ARE the roles (zero-diff). */
+  private _bandIds(roles: readonly EnergyRole[]): string[] {
+    const set = new Set<EnergyRole>(roles);
+    return this._model.nodes.filter((n) => n.present && set.has(n.role)).map((n) => n.id);
+  }
+
   // ── render (AC1b, AC3d) ─────────────────────────────────────────────────────
 
   protected override render(): TemplateResult | typeof nothing {
     if (!this._config) return nothing;
     const cfg = this._resolvedConfig ?? this._config;
-    const present = new Set(this._model.nodes.filter((n) => n.present).map((n) => n.role));
-    // Story 8.5: the vehicle is a present-gated PRESENTATION cell (not a flow node),
-    // present iff its battery entity exists in states.
+    // Story 8.5: the vehicle is a present-gated PRESENTATION cell (not a flow node).
     const vehiclePresent = this._vehiclePresent(cfg);
-    // The focus coupling (Task 4): when a card is hovered/focused, light it + every
-    // node the shared bus couples it to (a source lights all loads, and converse);
-    // the rest dim. Computed from the present model — never a hard-coded map. Widened
-    // to {@link Role} so the vehicle participates (energy `coupledRoles` unchanged).
-    const lit = this._coupledLit(present, vehiclePresent);
+    // The focus coupling (AC3, Story 9.7): a hovered/focused cell lights itself + every
+    // INSTANCE the shared bus couples it to (a source lights all loads, and converse);
+    // the rest dim. Per-instance ids — never a hard-coded map (see {@link _coupledLit}).
+    const lit = this._coupledLit(vehiclePresent);
 
-    // Render a card ONLY for present nodes — an absent node is omitted with its
-    // bus edge (AC1), never an empty card holding a grid cell + a dead anchor.
-    // Each cell is keyboard-focusable (`tabindex=0`) and drives the SAME highlight
-    // on hover (`mouseenter`) and keyboard focus (`focusin`) — the a11y floor.
-    const cell = (role: EnergyRole): TemplateResult => html`
-      <div
-        class="scene-cell ${lit?.has(role) ? 'lit' : ''}"
-        data-node=${role}
-        tabindex="0"
-        @mouseenter=${() => this._focus(role)}
-        @mouseleave=${this._blur}
-        @focusin=${() => this._focus(role)}
-        @focusout=${this._blur}
-      >
-        ${this._childCard(role, cfg)}
-      </div>
-    `;
-    // Story 6.7 — PACK each row: render only the present cards, so an absent node
-    // leaves NOTHING (no 380px ghost cell, no dead `veh` slot). A row with no present
-    // card is omitted entirely (no empty row eating the bus channel). The two packed,
-    // centred rows keep sources-over-loads by construction.
-    // Story 9.3 — the WITHIN-ROW order follows `energy.nodes.order` via {@link
-    // _orderedRows} (a stable partition: listed roles in user order, then unlisted in
-    // canonical order). A defaulted/absent `order` ⇒ today's exact canonical packing
-    // (zero-diff). Moving the cells moves their DOM anchors; the Gateway bus follows
-    // because `gatewaySegments` taps sort by SPATIAL position, not by model order.
+    // Story 6.7 — PACK each row: render only present cards (no ghost cell). Story 9.3 —
+    // WITHIN-ROW order follows `energy.nodes.order`. Story 9.7 — each present role
+    // EXPANDS to its instance cells (N cells per duplicated role), each with a unique
+    // `data-node`; a band over WRAP_MAX_PER_ROW wraps to a 2nd sub-row ({@link
+    // _renderBand}). The Gateway bus follows because `gatewaySegments` taps sort by
+    // SPATIAL position, not model order.
     const { source, load } = this._orderedRows(cfg);
-    const sourceCells = source.map(cell);
-    // Story 8.10/9.3: the vehicle is a load-row cell embedding the real `tesla-card` in
-    // `variant: 'compact'` (hero + status only, kW overlay suppressed). It is folded
-    // INTO the load-row ordering (not always-trailing), so `order` can place the car
-    // anywhere in the row; a defaulted `order` keeps it last (canonical sequence ends in
-    // `'vehicle'`). Present-gated: an absent/hidden car leaves no cell (and no WC→Vehicle
-    // edge). It never enters the bus tap walk — reordering it changes zero energy math.
-    const loadCells = load.map((role) =>
-      role === 'vehicle' ? this._vehicleCell(lit) : cell(role)
-    );
 
-    // Layering, back-to-front: the summary RIBBON (whole-home aggregates, above the
-    // cards) → the cards (each composites its own vignette internally) → ONE
-    // pointer-events:none bus overlay SVG drawing the Gateway running-net trunk. The
-    // overlay draws in container-relative px (no viewBox), so the live anchors line
-    // up 1:1 with the cards beneath. A vehicle-only / empty model ⇒ `_bus.empty` ⇒
-    // the overlay is omitted (no occluding box).
+    // Layering, back-to-front: the summary RIBBON → the cards → ONE pointer-events:none
+    // bus overlay drawing the Gateway running-net trunk + per-instance legs. A
+    // vehicle-only / empty model ⇒ `_bus.empty` ⇒ the overlay is omitted.
     return html`
-      <div class="scene ${this._focused ? 'focus' : ''}" role="group" aria-label=${STRINGS.scene.label}>
+      <div class="scene ${lit ? 'focus' : ''}" role="group" aria-label=${STRINGS.scene.label}>
         ${this._ribbon()}
         <div class="scene-grid">
-          ${sourceCells.length ? html`<div class="source-row">${sourceCells}</div>` : nothing}
-          ${loadCells.length ? html`<div class="load-row">${loadCells}</div>` : nothing}
+          ${this._renderBand(source, 'source-row', lit, cfg)}
+          ${this._renderBand(load, 'load-row', lit, cfg)}
         </div>
         ${this._bus.empty
           ? nothing
@@ -487,9 +503,76 @@ export class TcMyHome extends LitElement implements LovelaceCard {
     `;
   }
 
+  /**
+   * Render one layout band (source or load). ≤{@link WRAP_MAX_PER_ROW} cards render
+   * DIRECTLY in the `bandClass` row — byte-identical to pre-9.7 (FR-33 zero-diff).
+   * Beyond it (Story 9.7 / AC5), the band WRAPS: the first 3 stay in a `.subrow.primary`
+   * and the extras drop to a `.subrow.overflow` offset (CSS padding-left) into the bus
+   * channels so their legs comb to the one trunk without crossing a primary card.
+   * DOM/Tab order is primary-then-overflow, L→R (reading order, SC 1.3.2/2.4.3) — the
+   * offset + the visual top-placement of the overflow row are CSS-only and MUST NOT
+   * reorder the DOM (the bus walk = taps-by-x and the focus walk = reading order are
+   * two independent orders). An empty band renders nothing (no channel-eating row).
+   */
+  private _renderBand(
+    cells: SceneCell[],
+    bandClass: 'source-row' | 'load-row',
+    lit: Set<string> | undefined,
+    cfg: TeslaCardConfig
+  ): TemplateResult | typeof nothing {
+    if (!cells.length) return nothing;
+    const draw = (c: SceneCell): TemplateResult =>
+      c.vehicle ? this._vehicleCell(lit) : this._cell(c, lit, cfg);
+    if (cells.length <= WRAP_MAX_PER_ROW) {
+      return html`<div class="${bandClass}">${cells.map(draw)}</div>`;
+    }
+    const primary = cells.slice(0, WRAP_MAX_PER_ROW);
+    const overflow = cells.slice(WRAP_MAX_PER_ROW);
+    return html`<div class="${bandClass} wrapped">
+      <div class="subrow primary">${primary.map(draw)}</div>
+      <div class="subrow overflow">${overflow.map(draw)}</div>
+    </div>`;
+  }
+
+  /**
+   * One energy-instance cell — keyboard-focusable, carrying its unique per-instance
+   * `data-node` (the bare role when single — zero-diff) and the focus highlight by id.
+   * The child ecosystem card binds this instance's resolved entity set (Story 9.7) via
+   * {@link _childCard}.
+   */
+  private _cell(c: SceneCell, lit: Set<string> | undefined, cfg: TeslaCardConfig): TemplateResult {
+    // Story 9.7 (AC7): a duplicated instance carries a disambiguating TITLE badge
+    // (accent-coloured, ABOVE the card) + an accessible name folding the title in
+    // ("Solar, South Array") — two same-role cards are told apart by TITLE, never a
+    // numeric :n badge (the id stays internal). Single-instance ⇒ no badge + no
+    // aria-label override (the child card's own name reads) + no `has-title` class, so
+    // the cell layout is byte-identical to today (FR-33 zero-diff).
+    const title = c.title;
+    const role = c.role as EnergyRole;
+    const aria = title ? `${STRINGS.energy.nodes[role]}, ${title}` : nothing;
+    return html`
+      <div
+        class="scene-cell ${lit?.has(c.id) ? 'lit' : ''} ${title ? 'has-title' : ''}"
+        data-node=${c.id}
+        tabindex="0"
+        aria-label=${aria}
+        @mouseenter=${() => this._focus(c.id)}
+        @mouseleave=${this._blur}
+        @focusin=${() => this._focus(c.id)}
+        @focusout=${this._blur}
+      >
+        ${title
+          ? html`<span class="uc-title" style="color:${NODE_COLOR[role]}">${title}</span>`
+          : nothing}
+        ${this._childCard(c, cfg)}
+      </div>
+    `;
+  }
+
   // ── focus-highlight (AC3) ───────────────────────────────────────────────────
-  private _focus(role: Role): void {
-    this._focused = role;
+  /** Focus a cell by its `data-node` id (a per-instance id, or `VEHICLE_NODE_ID`). */
+  private _focus(id: string): void {
+    this._focused = id;
   }
   private _blur = (): void => {
     this._focused = undefined;
@@ -551,14 +634,37 @@ export class TcMyHome extends LitElement implements LovelaceCard {
    * {@link LOAD_ROW_WITH_VEHICLE} with `'vehicle'` present iff {@link _vehiclePresent}
    * (which already honors 9.2 hide — so "hide wins over order" falls out for free).
    */
-  private _orderedRows(cfg: TeslaCardConfig): { source: EnergyRole[]; load: Role[] } {
+  private _orderedRows(cfg: TeslaCardConfig): { source: SceneCell[]; load: SceneCell[] } {
     const present = new Set<Role>(this._model.nodes.filter((n) => n.present).map((n) => n.role));
     const order = this._orderList(cfg);
-    const source = orderRow(SOURCE_ROW, present, order);
+    // Order the present ROLES (9.3), then EXPAND each into its present instance cells
+    // (9.7) in instance order — so a duplicated role contributes N adjacent cells.
+    const source = orderRow(SOURCE_ROW, present, order).flatMap((role) =>
+      this._instanceCells(cfg, role)
+    );
     const loadPresent = new Set<Role>(LOAD_ROW.filter((role) => present.has(role)));
     if (this._vehiclePresent(cfg)) loadPresent.add('vehicle');
-    const load = orderRow(LOAD_ROW_WITH_VEHICLE, loadPresent, order);
+    const load = orderRow(LOAD_ROW_WITH_VEHICLE, loadPresent, order).flatMap((role) =>
+      role === 'vehicle'
+        ? [{ id: VEHICLE_NODE_ID, role: 'vehicle' as Role, vehicle: true }]
+        : this._instanceCells(cfg, role)
+    );
     return { source, load };
+  }
+
+  /**
+   * Expand one PRESENT energy role into its present-instance {@link SceneCell}s (Story
+   * 9.7), in instance order, joined to the model: an instance renders iff its node is
+   * present (an unresolved instance #2 drops, exactly as an absent role does). A
+   * single-instance role yields one cell with the bare `role` id (zero-diff).
+   */
+  private _instanceCells(cfg: TeslaCardConfig, role: Role): SceneCell[] {
+    const presentIds = new Set(
+      this._model.nodes.filter((n) => n.role === role && n.present).map((n) => n.id)
+    );
+    return roleInstances(cfg, role)
+      .filter((inst) => presentIds.has(inst.id))
+      .map((inst) => ({ id: inst.id, role, title: inst.title, entities: inst.entities }));
   }
 
   /**
@@ -575,22 +681,42 @@ export class TcMyHome extends LitElement implements LovelaceCard {
   }
 
   /**
-   * The focus-coupling set, widened to {@link Role} (Task 4). `coupledRoles` stays
-   * ENERGY-ONLY (no edit); the vehicle coupling is computed here as a thin wrapper:
-   * focusing the VEHICLE lights `{vehicle, wall_connector}` (its only feed); focusing
-   * the WALL_CONNECTOR also lights the vehicle (the WC edge feeds it). Presentation-
-   * local — the engine never learns about the vehicle node.
+   * The focus-coupling set, as per-INSTANCE node ids (Story 9.7). `coupledRoles`
+   * stays ENERGY-ROLE-only (no engine edit) — it returns the coupled ROLES; this
+   * wrapper expands them to the present instance ids and adds the vehicle coupling:
+   *   • focusing the VEHICLE lights `{vehicle} + every present WC instance` (its feed);
+   *   • focusing an energy instance lights THAT instance + every present instance of
+   *     the OTHER coupled roles (so focusing one array lights it + all loads, NEVER
+   *     its same-role sibling — D15 "hover lights that tap, not a same-role aggregate")
+   *     + the vehicle when a WC is coupled.
+   * Single-instance ⇒ the ids ARE the roles (zero-diff). Presentation-local — the
+   * engine never learns about the vehicle node.
    */
-  private _coupledLit(present: Set<EnergyRole>, vehiclePresent: boolean): Set<Role> | undefined {
+  private _coupledLit(vehiclePresent: boolean): Set<string> | undefined {
     const focused = this._focused;
     if (!focused) return undefined;
-    if (focused === 'vehicle') {
-      const lit = new Set<Role>(['vehicle']);
-      if (present.has('wall_connector')) lit.add('wall_connector');
+    const nodes = this._model.nodes;
+    if (focused === VEHICLE_NODE_ID) {
+      if (!vehiclePresent) return undefined; // vehicle vanished under focus ⇒ no stale dim
+      const lit = new Set<string>([VEHICLE_NODE_ID]);
+      for (const n of nodes) if (n.present && n.role === 'wall_connector') lit.add(n.id);
       return lit;
     }
-    const lit = new Set<Role>(coupledRoles(this._model, focused));
-    if (vehiclePresent && lit.has('wall_connector')) lit.add('vehicle');
+    // Story 9.7: a per-instance focus id can VANISH under reconfigure (e.g. `solar:2`
+    // when the count drops to 1). Return undefined (not a self-only set) so the render
+    // gate drops `.scene.focus` — otherwise the whole Scene dims with nothing lit until
+    // the next pointer event (role-keyed focus could not go stale; per-instance can).
+    const focusedRole = nodes.find((n) => n.id === focused)?.role;
+    if (!focusedRole) return undefined;
+    const coupled = coupledRoles(this._model, focusedRole);
+    const lit = new Set<string>([focused]); // the focused instance always lights
+    for (const n of nodes) {
+      if (!n.present) continue;
+      // Other coupled roles light ALL their instances; the focused role lights ONLY
+      // the focused instance (already added) — its siblings stay dim.
+      if (n.role !== focusedRole && coupled.has(n.role)) lit.add(n.id);
+    }
+    if (vehiclePresent && coupled.has('wall_connector')) lit.add(VEHICLE_NODE_ID);
     return lit;
   }
 
@@ -604,7 +730,7 @@ export class TcMyHome extends LitElement implements LovelaceCard {
    * `scene-cell` carrying `data-node="vehicle"`, whose live rect drives the existing
    * WC→Vehicle edge anchor + focus highlight.
    */
-  private _vehicleCell(lit?: Set<Role>): TemplateResult {
+  private _vehicleCell(lit?: Set<string>): TemplateResult {
     return html`
       <div
         class="scene-cell veh-cell ${lit?.has('vehicle') ? 'lit' : ''}"
@@ -724,15 +850,24 @@ export class TcMyHome extends LitElement implements LovelaceCard {
             ? `${kw} ${r.out}`
             : kw
         : kw;
+    const label = r.tile[t.role];
+    // Story 9.7 (INV-9 / AC6+AC7): a FOLDED tile (count > 1) carries a visible ×N count
+    // chip AND an accessible name announcing the multiplicity + the SUMMED total —
+    // "Solar, 2, 3.2 kW total" — so the value is never read as a single instance. A
+    // single-instance tile is unchanged (no chip, no aria-label ⇒ Lit omits it; zero-diff).
+    const folded = t.count > 1;
+    const aria = folded ? `${label}, ${t.count}, ${value} ${r.total}` : nothing;
     return html`
-      <div class="rib-tile">
+      <div class="rib-tile" aria-label=${aria}>
         <span
           class="rib-ico"
           style="color:${color};background:color-mix(in srgb, ${color} 18%, transparent)"
           >${icon(NODE_ICON[t.role], { size: 18 })}</span
         >
         <span class="rib-tcol">
-          <span class="rib-tk">${r.tile[t.role]}</span>
+          <span class="rib-tk"
+            >${label}${folded ? html`<span class="rib-fold">×${t.count}</span>` : nothing}</span
+          >
           <span class="rib-tv">${value}</span>
         </span>
       </div>
@@ -768,7 +903,7 @@ export class TcMyHome extends LitElement implements LovelaceCard {
    * cleanest FR-33 story). The state-bearing colour-blind-safe text floor stays the
    * renderer's `label()` (the overlay's `aria-label`).
    */
-  private _gatewayView(lit?: Set<Role>): SVGTemplateResult {
+  private _gatewayView(lit?: Set<string>): SVGTemplateResult {
     const anchors = this._anchors;
     if (!anchors) return svg``;
     const segs = gatewaySegments(this._model, anchors, { axis: this._axis });
@@ -807,9 +942,13 @@ export class TcMyHome extends LitElement implements LovelaceCard {
   private _vehicleEdge(
     anchors: Readonly<Record<string, RectLike>>,
     ch: { active: boolean; kW: number; direction: Direction },
-    lit?: Set<Role>
+    lit?: Set<string>
   ): SVGTemplateResult {
-    const wc = anchors['wall_connector'];
+    // Story 9.7: the WC→Vehicle leg anchors to the FIRST present WC instance (matching
+    // `wcVehicleEdge`, which reads the first WC edge), so a multi-WC config still draws
+    // the car leg. Single-WC ⇒ `wall_connector` (zero-diff).
+    const wcId = this._model.nodes.find((n) => n.present && n.role === 'wall_connector')?.id;
+    const wc = wcId ? anchors[wcId] : undefined;
     const veh = anchors[VEHICLE_NODE_ID];
     if (!wc || !veh) return svg``; // both anchors required (WC + vehicle present)
     // Axis-aware leg (see the doc comment): HORIZONTAL across the inter-card gap when the
@@ -981,7 +1120,7 @@ export class TcMyHome extends LitElement implements LovelaceCard {
    * one side of the trunk and load cards the other, so the near edge (and thus the
    * leg's down/up sense) falls straight out of the anchor's position vs the trunk.
    */
-  private _legs(anchors: Readonly<Record<string, RectLike>>, lit?: Set<Role>): SVGTemplateResult {
+  private _legs(anchors: Readonly<Record<string, RectLike>>, lit?: Set<string>): SVGTemplateResult {
     const horiz = this._axis === 'x';
     const bus = anchors[BUS_NODE_ID];
     // Story 9.5 (C increment, FR-33 zero-diff): a leg with no bus junction to tap is
@@ -992,13 +1131,16 @@ export class TcMyHome extends LitElement implements LovelaceCard {
     // anchor-derivation rework (9.7) ever drops the bus independently of node anchors.
     if (!bus) return svg``;
     const cross = horiz ? bus.top + bus.height / 2 : bus.left + bus.width / 2;
-    const edgeByRole = new Map<string, FlowEdge>();
-    for (const e of this._model.edges) edgeByRole.set(e.from, e);
+    // Story 9.7: key edges + anchors by NODE ID (`e.from` IS the instance id now), so
+    // a duplicated role draws ONE leg per instance to ITS own tap. The accent COLOUR
+    // stays per-role. Single-instance ⇒ id === role (zero-diff).
+    const edgeById = new Map<string, FlowEdge>();
+    for (const e of this._model.edges) edgeById.set(e.from, e);
 
     const legs = this._model.nodes
-      .filter((n) => n.present && anchors[n.role])
+      .filter((n) => n.present && anchors[n.id])
       .map((n) => {
-        const rect = anchors[n.role];
+        const rect = anchors[n.id];
         const cx = rect.left + rect.width / 2;
         const cy = rect.top + rect.height / 2;
         const pos = horiz ? cx : cy; // along-axis position of this tap
@@ -1013,7 +1155,7 @@ export class TcMyHome extends LitElement implements LovelaceCard {
         const start = horiz ? { x: pos, y: near } : { x: near, y: pos };
         const end = horiz ? { x: pos, y: cross } : { x: cross, y: pos };
 
-        const edge = edgeByRole.get(n.role);
+        const edge = edgeById.get(n.id);
         const active = !!edge && edge.direction !== 'none';
         const color = NODE_COLOR[n.role];
         const flow = active
@@ -1041,12 +1183,22 @@ export class TcMyHome extends LitElement implements LovelaceCard {
         // card dropping a long way to the horizontal trunk); the e2e pins zero .long legs
         // at phone width.
         const len = Math.abs(near - cross);
+        // Story 9.7 (AC7): a DUPLICATED instance's leg carries an always-present identity
+        // token (the instance ordinal, e.g. "2") at the card end, so two same-hue legs are
+        // separable WITHOUT colour and with motion frozen — the static, non-colour
+        // disambiguator the kW pill alone can't guarantee (two arrays can read equal kW).
+        // Single-instance legs get NO token (only one leg per role — zero-diff).
+        const dup = n.id !== n.role;
+        const idToken = dup
+          ? svg`<text class="gw-leg-id" style="fill:${color}" x=${horiz ? start.x + 13 : start.x} y=${horiz ? start.y : start.y + 13}>${n.id.slice(n.id.indexOf(':') + 1)}</text>`
+          : nothing;
         return svg`
-          <g class="gw-leg ${lit?.has(n.role) ? 'on' : ''}" data-role=${n.role}>
+          <g class="gw-leg ${lit?.has(n.id) ? 'on' : ''}" data-role=${n.id}>
             <line class="gw-leg-base ${horiz && len > LONG_LEG_PX ? 'long' : ''}" style="stroke:${color}" x1=${start.x} y1=${start.y} x2=${end.x} y2=${end.y}></line>
             ${flow}
             ${this._terminal(start, color)}
             ${this._tap(end, color)}
+            ${idToken}
             ${edge
               ? this._pill(mid, color, `${formatNumber(Math.abs(edge.kW), 1)} ${STRINGS.scene.ribbon.unit}`)
               : nothing}
@@ -1057,20 +1209,44 @@ export class TcMyHome extends LitElement implements LovelaceCard {
   }
 
   /** The Scene-unaware child for one role — same shared `.hass` + resolved `.config`. */
-  private _childCard(role: EnergyRole, cfg: TeslaCardConfig): TemplateResult {
-    const tag = NODE_TAG[role];
+  private _childCard(c: SceneCell, cfg: TeslaCardConfig): TemplateResult {
+    // Story 9.7: the child binds THIS instance's resolved entity set. The per-instance
+    // override rides a config spread (`energy.entities` merged, instance wins) — the
+    // child already resolves `config.energy.entities` through the registry path
+    // (`resolveEnergyEntities`, AR-1), so NO child-component change is needed; an
+    // instance with no override gets the shared resolved cfg (a zero-diff, stable
+    // object — see {@link _childCfg}).
+    const childCfg = this._childCfg(c, cfg);
+    const tag = NODE_TAG[c.role as EnergyRole];
     switch (tag) {
       case 'tc-solar':
-        return html`<tc-solar .hass=${this.hass} .config=${cfg}></tc-solar>`;
+        return html`<tc-solar .hass=${this.hass} .config=${childCfg}></tc-solar>`;
       case 'tc-powerwall':
-        return html`<tc-powerwall .hass=${this.hass} .config=${cfg}></tc-powerwall>`;
+        return html`<tc-powerwall .hass=${this.hass} .config=${childCfg}></tc-powerwall>`;
       case 'tc-grid':
-        return html`<tc-grid .hass=${this.hass} .config=${cfg}></tc-grid>`;
+        return html`<tc-grid .hass=${this.hass} .config=${childCfg}></tc-grid>`;
       case 'tc-home':
-        return html`<tc-home .hass=${this.hass} .config=${cfg}></tc-home>`;
+        return html`<tc-home .hass=${this.hass} .config=${childCfg}></tc-home>`;
       default:
-        return html`<tc-wall-connector .hass=${this.hass} .config=${cfg}></tc-wall-connector>`;
+        return html`<tc-wall-connector .hass=${this.hass} .config=${childCfg}></tc-wall-connector>`;
     }
+  }
+
+  /** Memoized per-instance config — `energy.entities` merged with the instance's
+   *  overrides (instance wins). Cached by instance id under the base-config identity
+   *  so geometry-only redraws keep the SAME object (the child's resolve cache holds);
+   *  an instance with no override returns the shared cfg unchanged (zero-diff). */
+  private _childCfgCache?: { base: TeslaCardConfig; map: Map<string, TeslaCardConfig> };
+  private _childCfg(c: SceneCell, cfg: TeslaCardConfig): TeslaCardConfig {
+    if (!c.entities) return cfg;
+    let cache = this._childCfgCache;
+    if (!cache || cache.base !== cfg) cache = this._childCfgCache = { base: cfg, map: new Map() };
+    let childCfg = cache.map.get(c.id);
+    if (!childCfg) {
+      childCfg = { ...cfg, energy: { ...cfg.energy, entities: { ...cfg.energy?.entities, ...c.entities } } };
+      cache.map.set(c.id, childCfg);
+    }
+    return childCfg;
   }
 
   static override styles = [
@@ -1168,6 +1344,13 @@ export class TcMyHome extends LitElement implements LovelaceCard {
         text-transform: uppercase;
         color: var(--tc-text-mute, #64748b);
       }
+      /* Story 9.7 — the folded-instance count chip (×N) beside a duplicated role's key.
+         A quiet accent badge; all token-only (no raw hex). */
+      .rib-fold {
+        margin-left: var(--tc-space-1, 4px);
+        font-weight: var(--tc-fw-stat-key, 700);
+        color: var(--tc-amber, #fbbf24);
+      }
       .rib-tv {
         font-family: var(--tc-font-display, var(--tc-font, ui-sans-serif, system-ui, sans-serif));
         font-size: var(--tc-fs-body, 14px);
@@ -1245,6 +1428,58 @@ export class TcMyHome extends LitElement implements LovelaceCard {
       }
       .scene-cell {
         min-width: 0;
+      }
+      /* Story 9.7 (AC7): a duplicated instance stacks a disambiguating TITLE badge above
+         its card (gated by .has-title so single-instance cells stay byte-identical). The
+         title colour is the node accent, set inline (NODE_COLOR — gate-safe). */
+      .scene-cell.has-title {
+        display: flex;
+        flex-direction: column;
+        gap: var(--tc-space-2, 8px);
+      }
+      .uc-title {
+        font-size: var(--tc-fs-label, 11.5px);
+        font-weight: var(--tc-fw-label, 700);
+        letter-spacing: 0.01em;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+
+      /* ── Story 9.7 — WRAP overflow (AC5 / D15). A band over WRAP_MAX_PER_ROW (3)
+         cards splits into stacked sub-rows: the band becomes a CENTRED vertical stack
+         and each .subrow is the SAME 380px×N grid as an un-wrapped row (cards never
+         shrink below standalone size). The OVERFLOW sub-row renders VISUALLY FIRST
+         (order:-1 → on top, furthest from the trunk) and is offset 230px = (380 column
+         + 80 channel)/2 so each overflow card CENTRES on a near-row channel — its leg
+         then combs straight down through the 80px gap to the one trunk WITHOUT crossing
+         a primary card. DOM/Tab order stays primary→overflow (reading order, SC 1.3.2/
+         2.4.3): the order flip + padding-left are PRESENTATION ONLY and never reorder
+         the DOM (the bus walk = taps-by-x and the focus walk = reading order are two
+         independent orders). No notice, no clamp — the band just reflows taller. */
+      .source-row.wrapped,
+      .load-row.wrapped {
+        display: flex;
+        flex-direction: column;
+        /* The band shrinks to its widest (primary) sub-row and centres as a whole;
+           its sub-rows share a LEFT origin (flex-start), so the overflow padding-left
+           offsets predictably into the channels — NOT re-centred per sub-row. */
+        align-items: flex-start;
+        width: max-content;
+        margin: 0 auto;
+        row-gap: 60px;
+      }
+      .subrow {
+        display: grid;
+        grid-auto-flow: column;
+        grid-auto-columns: 380px;
+        column-gap: 80px;
+        justify-content: start;
+        align-items: start;
+      }
+      .subrow.overflow {
+        order: -1; /* the FAR (top) sub-row, visually — DOM order is unchanged (a11y) */
+        padding-left: 230px; /* (380 + 80)/2 — centre each overflow card on a near-row channel */
       }
 
       /* Story 8.10: the vehicle is the trailing load-row cell again — the embedded
@@ -1337,6 +1572,17 @@ export class TcMyHome extends LitElement implements LovelaceCard {
         fill: none;
         stroke-width: 2;
       }
+      /* Story 9.7 (AC7): the per-leg instance-identity token — a small always-present
+         ordinal at the card end of a DUPLICATED instance's leg, so same-hue legs separate
+         without colour (motion frozen). Static SVG text (no @media, no keyframe), colour
+         set inline from NODE_COLOR. */
+      .gw-leg-id {
+        font-family: var(--tc-font, ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif);
+        font-size: 11px;
+        font-weight: 800;
+        text-anchor: middle;
+        dominant-baseline: central;
+      }
       /* Focus: legs fade back; the coupled legs stay lit. Reduced-motion = instant
          cut (kill the motion, keep the data). */
       .scene.focus .gw-leg {
@@ -1372,6 +1618,29 @@ export class TcMyHome extends LitElement implements LovelaceCard {
           column-gap: 0;
           row-gap: var(--tc-space-4, 16px);
           width: 100%;
+        }
+        /* Story 9.7: at phone width the Scene is a single vertical column (one-column
+           bus) — wrap is a desktop/tablet-kiosk rule. Collapse a wrapped band's sub-rows
+           to one stacked column and DROP the channel offset + the visual order flip, so
+           every card reads top-to-bottom in DOM order (no near/far split, no horizontal
+           offset). The 230px padding-left lives in the stylesheet (not inline) precisely
+           so this media query can override it. */
+        .source-row.wrapped,
+        .load-row.wrapped {
+          row-gap: var(--tc-space-4, 16px);
+          width: 100%;
+        }
+        .subrow {
+          grid-auto-flow: row;
+          grid-template-columns: 1fr;
+          grid-auto-columns: auto;
+          column-gap: 0;
+          row-gap: var(--tc-space-4, 16px);
+          width: 100%;
+        }
+        .subrow.overflow {
+          order: 0;
+          padding-left: 0;
         }
         /* Story 8.10: at phone width the load row stacks to one column, so the WC->Vehicle
            leg drops VERTICALLY down the collapsed 16px gap. That gap cannot hold the 26px

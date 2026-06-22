@@ -380,6 +380,23 @@ describe('FlowRenderer conformance + state-bearing label (AC1, AC4)', () => {
     const { r: empty } = renderFor(unresolved.states as Record<string, unknown>);
     expect(empty.label()).toBe(STRINGS.energy.flowLabel);
   });
+
+  test('Story 9.7: a DUPLICATED role names each instance with its OWN kW — never `—` (a11y)', () => {
+    // Regression: the chip kwText looks the edge up by NODE ID (not role). With the
+    // model keyed by instance id (`solar:1`/`solar:2`), a bare-role lookup misses both
+    // → "Solar —, Solar —" in the live overlay aria-label. Pin the per-instance read.
+    const r = new SceneBusRenderer();
+    r.update(
+      buildFlowModel([
+        { role: 'solar', id: 'solar:1', kW: 2, provenance: 'measured' },
+        { role: 'solar', id: 'solar:2', kW: 1, provenance: 'measured' },
+      ])
+    );
+    const label = r.label();
+    expect(label).not.toContain('—'); // the bug read both chips as a no-value dash
+    expect(label).toContain('2.0 kW'); // solar:1's own reading
+    expect(label).toContain('1.0 kW'); // solar:2's own reading
+  });
 });
 
 // ───────────────────────────────────────────────────────────────────────────

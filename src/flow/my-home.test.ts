@@ -422,6 +422,21 @@ describe('sceneAggregates — ribbon totals derived from the ONE balance net', (
     expect(agg.generation).toBeCloseTo(2, 6);
     expect(agg.consumption).toBeCloseTo(2, 6);
   });
+
+  test('Story 9.7 — generation sums ACROSS a role’s instances (by id), so self-powered counts both arrays (AC6)', () => {
+    const model = buildFlowModel([
+      { role: 'solar', id: 'solar:1', kW: 2.0, provenance: 'measured' },
+      { role: 'solar', id: 'solar:2', kW: 1.2, provenance: 'measured' },
+      { role: 'home', kW: 3.2, provenance: 'measured' },
+    ]);
+    const agg = sceneAggregates(model);
+    // BOTH arrays feed generation (3.2 total) — a role-keyed read (net['solar'] is
+    // undefined under per-instance ids) would silently under-count to 0.
+    expect(agg.generation).toBeCloseTo(3.2, 6);
+    expect(agg.consumption).toBeCloseTo(3.2, 6);
+    // No grid ⇒ fully self-powered, both arrays counted.
+    expect(selfPowered(model).pct).toBe(100);
+  });
 });
 
 describe('coupledRoles — shared-bus focus coupling, computed not hard-coded (Task 4)', () => {
@@ -686,6 +701,20 @@ describe('wcVehicleEdge — the WC edge IS the car-charging edge (AC2 agree-by-c
     });
     expect(wcVehicleEdge({ nodes: [], edges: [] })).toEqual({ active: false, kW: 0, direction: 'none' });
   });
+
+  test('Story 9.7 multi-WC: prefers the CHARGING WC edge over an idle sibling (no first-WC mask)', () => {
+    // Two Wall Connectors, the FIRST idle and the SECOND charging the (single) car.
+    // The car edge must follow the charging WC — a first-but-idle WC must not read
+    // "not charging" while the second feeds the car (a halo-vs-edge mismatch).
+    const model = modelOf([
+      { role: 'wall_connector', id: 'wall_connector:1', kW: 0, provenance: 'measured' }, // idle
+      { role: 'wall_connector', id: 'wall_connector:2', kW: 7.4, provenance: 'measured' }, // charging
+    ]);
+    const ch = wcVehicleEdge(model);
+    expect(ch.active).toBe(true);
+    expect(ch.kW).toBeCloseTo(7.4, 6);
+    expect(ch.direction).not.toBe('none');
+  });
 });
 
 describe('VEHICLE_NODE_ID is excluded from the trunk junction & axis math (Task 2, AC4)', () => {
@@ -874,5 +903,47 @@ describe('ribbonTiles — one tile per present node, canonical order, from the o
     const balance = computeBalance(model);
     const net = balance.net;
     for (const t of ribbonTiles(model, balance)) expect(t.signed).toBe(net[t.role]);
+  });
+});
+
+describe('ribbonTiles — Story 9.7 FOLDS instances by role (INV-9, AC6)', () => {
+  /** A FlowInput carrying an explicit instance id (a duplicated role). */
+  const inst = (role: EnergyRole, id: string, kW: number): FlowInput => ({
+    role,
+    id,
+    kW,
+    provenance: 'measured',
+  });
+
+  test('two solar instances fold to ONE Solar tile whose value is the SUM (count 2)', () => {
+    const model = modelOf([inst('solar', 'solar:1', 2.0), inst('solar', 'solar:2', 1.2), measured('home', 3.2)]);
+    const tiles = ribbonTiles(model);
+    const solar = tiles.filter((t) => t.role === 'solar');
+    expect(solar).toHaveLength(1); // ONE folded tile, never one-per-instance
+    expect(solar[0].kW).toBeCloseTo(3.2, 6); // 2.0 + 1.2 — never one array, never under-count
+    expect(solar[0].count).toBe(2);
+    // a single-instance load is unchanged (count 1).
+    expect(tiles.find((t) => t.role === 'home')!.count).toBe(1);
+  });
+
+  test('the folded value reads from net BY ID — net[role] would be undefined (the "ribbon lies" failure it forbids)', () => {
+    const model = modelOf([inst('solar', 'solar:1', 2.0), inst('solar', 'solar:2', 1.2), measured('home', 3.2)]);
+    const net = computeBalance(model).net;
+    // net is keyed by INSTANCE id; there is NO `net['solar']` — folding by role-key
+    // would silently drop both arrays.
+    expect(net['solar']).toBeUndefined();
+    expect(ribbonTiles(model).find((t) => t.role === 'solar')!.signed).toBeCloseTo(
+      (net['solar:1'] ?? 0) + (net['solar:2'] ?? 0),
+      6,
+    );
+  });
+
+  test('single-instance roles keep count 1 + signed = net[role] (zero-diff)', () => {
+    const model = modelOf([measured('solar', 3), measured('home', 3)]);
+    const net = computeBalance(model).net;
+    for (const t of ribbonTiles(model)) {
+      expect(t.count).toBe(1);
+      expect(t.signed).toBeCloseTo(net[t.role], 6);
+    }
   });
 });

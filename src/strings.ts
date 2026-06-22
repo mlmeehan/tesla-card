@@ -400,6 +400,9 @@ export const STRINGS = {
         wall_connector: 'Car',
       },
       unit: 'kW',
+      /** The folded-instance accessible-name tail (Story 9.7 / INV-9) — e.g. the tile
+       *  for two arrays announces "Solar, 2, 3.2 kW total" so the sum is never silent. */
+      total: 'total',
     },
   },
 

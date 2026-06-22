@@ -20,8 +20,10 @@ import type {
   TyresConfig,
   BodyLayers,
   NodeCustomization,
+  InstanceSpec,
 } from './types';
 import type { Role } from './data/registry';
+import type { EnergyEntities } from './data/energy';
 // The relocated internal types must now resolve FROM THEIR OWNER modules. These
 // type-only imports compile only while the relocation holds (move them back and
 // `npm run typecheck` breaks) — the AC1 relocation pin at the type level.
@@ -49,6 +51,7 @@ describe('AC1 — types.ts is the PUBLIC TeslaCardConfig surface only (E9/AR-14)
         'EnergyConfig',
         'HassEntity',
         'HomeAssistant',
+        'InstanceSpec',
         'LovelaceCard',
         'LovelaceCardEditor',
         'NodeCustomization',
@@ -159,10 +162,23 @@ describe('Story 9.1 — energy.nodes is an ADDITIVE, optional, Role-keyed delta'
     expectTypeOf<'vehicle'>().toMatchTypeOf<Role>();
   });
 
-  test('instances is a forward-compat placeholder: Partial<Record<Role, number>>', () => {
+  test('instances is a per-instance descriptor list: Partial<Record<Role, InstanceSpec[]>> (9.7)', () => {
+    // 9.7 finalized the 9.1 placeholder semantics (the JSDoc explicitly sanctioned
+    // deciding the shape here): a number-per-role cannot carry the per-instance title
+    // + per-instance entity overrides D15 mandates, so it widens to a descriptor list
+    // whose array LENGTH is the count. Not a back-compat break — it was a placeholder.
     expectTypeOf<NonNullable<NodeCustomization['instances']>>().toEqualTypeOf<
-      Partial<Record<Role, number>>
+      Partial<Record<Role, InstanceSpec[]>>
     >();
+  });
+
+  test('InstanceSpec carries an optional title + optional per-instance entities override', () => {
+    expectTypeOf<InstanceSpec['title']>().toEqualTypeOf<string | undefined>();
+    // The per-instance override reuses the SAME EnergyEntities shape energy.entities
+    // uses (resolved through the same registry-keyed path) — never a parallel union.
+    expectTypeOf<InstanceSpec['entities']>().toEqualTypeOf<Partial<EnergyEntities> | undefined>();
+    // Both optional ⇒ a bare `{}` is a valid instance (auto-resolve, today's single node).
+    expectTypeOf<Record<string, never>>().toMatchTypeOf<InstanceSpec>();
   });
 
   test('all three sub-keys are OPTIONAL (omit ⇒ today, SM-C4)', () => {

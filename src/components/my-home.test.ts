@@ -1770,3 +1770,293 @@ describe('Story 9.3 — reorder present nodes within their row by config (render
     expect(spy).not.toHaveBeenCalled();
   });
 });
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Story 9.7 — multi-instance: N cells / taps / legs per duplicated role, each with
+// its own data-node id, entity set, and bus tap. jsdom returns zero rects, so this
+// pins the cell/leg/model ROSTER + ids (pixel geometry — the 182px wrap offset, comb
+// routing, no-cross — is the e2e tier). A single-instance role stays BARE (FR-33).
+// ═══════════════════════════════════════════════════════════════════════════
+/**
+ * A 2-solar-array hass + config. Instance #1 is pinned to the fixture's resolved
+ * solar id; instance #2 to a DERIVED sibling id (never an inlined literal — the
+ * [card] no-hard-coded-ids rule). Returns both ids so the per-instance binding can
+ * be asserted by identity.
+ */
+function twoSolar(): { hass: HomeAssistant; cfg: TeslaCardConfig; ids: { south: string; garage: string } } {
+  const s = states(awakeFx);
+  const south = energyIds(s).solar_power!; // the fixture's resolved base solar id
+  const garage = `${south}_garage`; // a derived sibling = the 2nd array's sensor
+  s[garage] = { ...s[south], state: '1.2' };
+  s[south] = { ...s[south], state: '2.0' };
+  const cfg: TeslaCardConfig = {
+    type: 'tc-my-home',
+    energy: {
+      entities: { solar_power: south }, // pin instance #1's base resolution
+      nodes: { instances: { solar: [{}, { entities: { solar_power: garage } }] } },
+    },
+  };
+  return { hass: makeHass(s), cfg, ids: { south, garage } };
+}
+
+describe('Story 9.7 — render N cells / taps / legs per instance (AC2/AC3/AC4)', () => {
+  test('a 2-instance solar role renders 2 cells with unique data-node ids (solar:1 / solar:2)', async () => {
+    const { hass, cfg } = twoSolar();
+    const el = await mount(hass, cfg);
+    expect(sr(el).querySelector('.scene-cell[data-node="solar:1"]')).not.toBeNull();
+    expect(sr(el).querySelector('.scene-cell[data-node="solar:2"]')).not.toBeNull();
+    // duplicated ⇒ every instance is suffixed; the bare `solar` id is gone (no collision).
+    expect(sr(el).querySelector('.scene-cell[data-node="solar"]')).toBeNull();
+    // both cells embed the tc-solar child.
+    expect(sr(el).querySelector('.scene-cell[data-node="solar:1"] tc-solar')).not.toBeNull();
+    expect(sr(el).querySelector('.scene-cell[data-node="solar:2"] tc-solar')).not.toBeNull();
+  });
+
+  test('the shared model carries 2 present solar nodes + 2 edges — one tap per instance', async () => {
+    const { hass, cfg } = twoSolar();
+    const el = await mount(hass, cfg);
+    const model = (el as unknown as { _model: FlowModel })._model;
+    const solar = model.nodes.filter((n) => n.role === 'solar' && n.present);
+    expect(solar.map((n) => n.id)).toEqual(['solar:1', 'solar:2']);
+    expect(model.edges.filter((e) => e.from === 'solar:1' || e.from === 'solar:2')).toHaveLength(2);
+  });
+
+  test('each cell binds its OWN resolved entity set — the per-instance override reaches the child', async () => {
+    const { hass, cfg, ids } = twoSolar();
+    const el = await mount(hass, cfg);
+    const child = (id: string) =>
+      sr(el).querySelector(`.scene-cell[data-node="${id}"] tc-solar`) as unknown as {
+        config?: TeslaCardConfig;
+      };
+    expect(child('solar:1')?.config?.energy?.entities?.solar_power).toBe(ids.south);
+    expect(child('solar:2')?.config?.energy?.entities?.solar_power).toBe(ids.garage);
+  });
+
+  test('each instance gets its OWN leg keyed by instance id (no merged role leg)', async () => {
+    const { hass, cfg } = twoSolar();
+    const el = await mount(hass, cfg);
+    recompute(el);
+    await el.updateComplete;
+    expect(legOf(el, 'solar:1')).not.toBeNull();
+    expect(legOf(el, 'solar:2')).not.toBeNull();
+    expect(legOf(el, 'solar')).toBeNull();
+  });
+
+  test('FR-33 zero-diff: a single-instance role keeps the BARE data-node (no :1 suffix)', async () => {
+    const el = await mount(makeHass(states(awakeFx)));
+    expect(sr(el).querySelector('.scene-cell[data-node="solar"]')).not.toBeNull();
+    expect(sr(el).querySelector('.scene-cell[data-node="solar:1"]')).toBeNull();
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Story 9.7 — WRAP overflow (AC5/AC7). jsdom has no layout, so this pins the DOM
+// STRUCTURE + reading order (the a11y-critical half): a band over 3 cards splits
+// into a primary + an offset overflow sub-row, DOM order stays primary→overflow
+// (the 182/230px channel offset + the visual top-placement are CSS-only and MUST
+// NOT reorder the DOM — SC 1.3.2/2.4.3). The pixel geometry (offset, comb routing,
+// no-cross) is the e2e tier (tests/e2e/my-home-scene.spec.ts).
+// ═══════════════════════════════════════════════════════════════════════════
+describe('Story 9.7 — wrap overflow: a band over 3 cards splits into sub-rows (AC5/AC7)', () => {
+  test('a 4-source band wraps: a .subrow.primary (3) + a .subrow.overflow (the extras)', async () => {
+    const { hass, cfg } = twoSolar(); // solar:1, solar:2, powerwall, grid = 4 sources
+    const el = await mount(hass, cfg);
+    const band = sr(el).querySelector('.source-row')!;
+    expect(band.classList.contains('wrapped')).toBe(true);
+    expect(band.querySelector('.subrow.primary')!.querySelectorAll('.scene-cell')).toHaveLength(3);
+    expect(band.querySelector('.subrow.overflow')!.querySelectorAll('.scene-cell')).toHaveLength(1);
+  });
+
+  test('DOM/Tab order is the packed reading order primary→overflow (NOT far-before-near)', async () => {
+    const { hass, cfg } = twoSolar();
+    const el = await mount(hass, cfg);
+    const ids = [...sr(el).querySelectorAll('.source-row .scene-cell')].map(
+      (c) => (c as HTMLElement).dataset.node
+    );
+    // canonical packed order, the first 3 in the primary row then the overflow — the
+    // CSS `order:-1` flips only the VISUAL stacking, never this DOM sequence.
+    expect(ids).toEqual(['solar:1', 'solar:2', 'powerwall', 'grid']);
+    const subrows = [...sr(el).querySelectorAll('.source-row .subrow')];
+    expect(subrows[0].classList.contains('primary')).toBe(true);
+    expect(subrows[1].classList.contains('overflow')).toBe(true);
+  });
+
+  test('a band of exactly 3 does NOT wrap — cells are direct children (zero-diff structure)', async () => {
+    const el = await mount(makeHass(states(awakeFx))); // 3 sources: solar, powerwall, grid
+    const band = sr(el).querySelector('.source-row')!;
+    expect(band.classList.contains('wrapped')).toBe(false);
+    expect(band.querySelector('.subrow')).toBeNull();
+    expect(band.querySelectorAll('.scene-cell')).toHaveLength(3);
+  });
+
+  test('the wrap path adds NO overflow notice (it just reflows — clamp/notice is 9.8)', async () => {
+    const { hass, cfg } = twoSolar();
+    const el = await mount(hass, cfg);
+    // no "cards hidden / Show all" affordance on the wrap path.
+    expect(sr(el).querySelector('.clamp-note, .overflow-notice')).toBeNull();
+  });
+});
+
+describe('Story 9.7 — wrap is band-agnostic: the LOAD row wraps symmetrically (AC5)', () => {
+  test('2 wall-connector instances + home + vehicle = 4 load cards ⇒ the load band wraps', async () => {
+    // wc:1 / wc:2 (both resolve the same sensor — structure under test) + home + vehicle
+    // ⇒ the load band exceeds 3 ⇒ the SAME primary/overflow split as the source band.
+    const cfg: TeslaCardConfig = {
+      type: 'tc-my-home',
+      energy: { nodes: { instances: { wall_connector: [{}, {}] } } },
+    };
+    const el = await mount(makeHass(states(awakeFx)), cfg);
+    const band = sr(el).querySelector('.load-row')!;
+    expect(band.classList.contains('wrapped')).toBe(true);
+    expect(band.querySelector('.subrow.primary')).not.toBeNull();
+    expect(band.querySelector('.subrow.overflow')).not.toBeNull();
+    // both WC instances render as distinct cells.
+    expect(sr(el).querySelector('.scene-cell[data-node="wall_connector:1"]')).not.toBeNull();
+    expect(sr(el).querySelector('.scene-cell[data-node="wall_connector:2"]')).not.toBeNull();
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Story 9.7 — the summary ribbon FOLDS instances (INV-9, AC6/AC7). N instances of a
+// role surface as ONE tile whose value is the SUMMED total + a ×N count chip, with an
+// accessible name announcing multiplicity. A ribbon that read net[role] (the pre-9.7
+// fixed-node assumption) would silently drop the 2nd array — the "ribbon lies" failure.
+// ═══════════════════════════════════════════════════════════════════════════
+describe('Story 9.7 — the summary ribbon folds instances (INV-9, AC6/AC7)', () => {
+  const solarTiles = (el: Scene): Element[] =>
+    [...sr(el).querySelectorAll('.rib-tile')].filter((t) =>
+      t.querySelector('.rib-tk')?.textContent?.includes('Solar'),
+    );
+
+  test('2 solar instances ⇒ ONE Solar tile whose value is the SUM (3.2 kW) + a ×2 fold chip', async () => {
+    const { hass, cfg } = twoSolar(); // solar:1 = 2.0, solar:2 = 1.2
+    const el = await mount(hass, cfg);
+    const tiles = solarTiles(el);
+    expect(tiles).toHaveLength(1); // folded — not one tile per array
+    expect(tiles[0].querySelector('.rib-tv')?.textContent?.trim()).toBe(`3.2 ${U}`);
+    expect(tiles[0].querySelector('.rib-fold')?.textContent?.trim()).toBe('×2');
+  });
+
+  test('the folded tile announces multiplicity + total in its accessible name (AC7)', async () => {
+    const { hass, cfg } = twoSolar();
+    const el = await mount(hass, cfg);
+    const aria = solarTiles(el)[0].getAttribute('aria-label') ?? '';
+    expect(aria).toContain('Solar');
+    expect(aria).toContain('2'); // the count
+    expect(aria).toContain('3.2'); // the summed total
+    expect(aria).toContain('total');
+  });
+
+  test('a single-instance ribbon tile is unchanged — no fold chip, no aria-label (zero-diff)', async () => {
+    const el = await mount(makeHass(states(awakeFx)));
+    const tile = [...sr(el).querySelectorAll('.rib-tile')].find(
+      (t) => t.querySelector('.rib-tk')?.textContent?.trim() === 'Solar',
+    )!;
+    expect(tile.querySelector('.rib-fold')).toBeNull();
+    expect(tile.getAttribute('aria-label')).toBeNull();
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Story 9.7 — title disambiguation + a11y under duplication (AC7). Two same-role
+// cards are told apart by TITLE (never a numeric :n badge); the accessible name folds
+// the title in; each duplicated-instance leg carries an always-present identity token
+// (separable without colour, motion frozen). Single-instance stays byte-identical.
+// ═══════════════════════════════════════════════════════════════════════════
+function twoTitledSolar(): { hass: HomeAssistant; cfg: TeslaCardConfig } {
+  const s = states(awakeFx);
+  const south = energyIds(s).solar_power!;
+  const garage = `${south}_garage`;
+  s[garage] = { ...s[south], state: '1.2' };
+  const cfg: TeslaCardConfig = {
+    type: 'tc-my-home',
+    energy: {
+      entities: { solar_power: south },
+      nodes: {
+        instances: {
+          solar: [{ title: 'South Array' }, { title: 'Garage', entities: { solar_power: garage } }],
+        },
+      },
+    },
+  };
+  return { hass: makeHass(s), cfg };
+}
+
+describe('Story 9.7 — title disambiguation + a11y under duplication (AC7)', () => {
+  test('two same-role cells render DISTINCT titles from InstanceSpec.title', async () => {
+    const { hass, cfg } = twoTitledSolar();
+    const el = await mount(hass, cfg);
+    const titleOf = (id: string) =>
+      sr(el).querySelector(`.scene-cell[data-node="${id}"] .uc-title`)?.textContent?.trim();
+    expect(titleOf('solar:1')).toBe('South Array');
+    expect(titleOf('solar:2')).toBe('Garage');
+  });
+
+  test('the cell accessible name folds in the title — told apart by TITLE, not a numeric :n badge', async () => {
+    const { hass, cfg } = twoTitledSolar();
+    const el = await mount(hass, cfg);
+    const c1 = sr(el).querySelector('.scene-cell[data-node="solar:1"]')!;
+    expect(c1.getAttribute('aria-label')).toBe('Solar, South Array');
+    expect(c1.classList.contains('has-title')).toBe(true);
+    // the internal :n id is NEVER surfaced as a visible badge.
+    expect(c1.querySelector('.uc-title')?.textContent).not.toContain(':');
+  });
+
+  test('each duplicated-instance leg carries an always-present identity token', async () => {
+    const { hass, cfg } = twoTitledSolar();
+    const el = await mount(hass, cfg);
+    recompute(el);
+    await el.updateComplete;
+    expect(legOf(el, 'solar:1')?.querySelector('.gw-leg-id')?.textContent?.trim()).toBe('1');
+    expect(legOf(el, 'solar:2')?.querySelector('.gw-leg-id')?.textContent?.trim()).toBe('2');
+  });
+
+  test('single-instance: NO title badge / has-title class / aria-label / leg token (FR-33 zero-diff)', async () => {
+    const el = await mount(makeHass(states(awakeFx)));
+    recompute(el);
+    await el.updateComplete;
+    const solarCell = sr(el).querySelector('.scene-cell[data-node="solar"]')!;
+    expect(solarCell.querySelector('.uc-title')).toBeNull();
+    expect(solarCell.classList.contains('has-title')).toBe(false);
+    expect(solarCell.getAttribute('aria-label')).toBeNull();
+    expect(legOf(el, 'solar')?.querySelector('.gw-leg-id')).toBeNull();
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Story 9.7 — perf + data boundary (AC8). A multi-instance config change reflows
+// EXACTLY once (the present-key includes the instance roster), a value-only tick zero;
+// and the slice-gate watches each per-instance OVERRIDE sensor so a duplicated
+// instance stays lastUpdated-gated from the shared hass (no per-instance polling).
+// ═══════════════════════════════════════════════════════════════════════════
+describe('Story 9.7 — reflow-once + slice covers per-instance overrides (AC8)', () => {
+  test('a config change that ADDS an instance reflows EXACTLY once', async () => {
+    const { hass } = twoSolar();
+    const el = await mount(hass); // single-instance baseline (bare config)
+    const spy = vi.spyOn(el as unknown as { _scheduleGeometry: () => void }, '_scheduleGeometry');
+    el.setConfig({ type: 'tc-my-home', energy: { nodes: { instances: { solar: [{}, {}] } } } });
+    await el.updateComplete;
+    expect(spy).toHaveBeenCalledTimes(1); // the new roster (solar:1,solar:2) flips the key once
+  });
+
+  test('a value-only tick (same instance roster) does NOT recompute geometry', async () => {
+    const { hass, cfg, ids } = twoSolar();
+    const el = await mount(hass, cfg);
+    const spy = vi.spyOn(el as unknown as { _scheduleGeometry: () => void }, '_scheduleGeometry');
+    const s = states(awakeFx);
+    s[ids.garage] = { ...s[ids.south]!, state: '1.2' }; // keep the 2nd array present (same roster)
+    s[ids.south] = { ...s[ids.south]!, state: '9.9', last_updated: FUTURE }; // a new reading only
+    el.hass = makeHass(s);
+    await el.updateComplete;
+    expect(spy).not.toHaveBeenCalled();
+  });
+
+  test('the slice-gate watches each per-instance OVERRIDE sensor (AC8 — instance #2 stays live)', async () => {
+    const { hass, cfg, ids } = twoSolar();
+    const el = await mount(hass, cfg);
+    const sliceIds = new Set(
+      (el as unknown as { _sliceIds(): (string | undefined)[] })._sliceIds(),
+    );
+    expect(sliceIds.has(ids.garage)).toBe(true); // the override sensor is gated on
+  });
+});

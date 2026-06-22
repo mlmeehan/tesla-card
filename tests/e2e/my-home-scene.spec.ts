@@ -953,8 +953,10 @@ test.describe('tc-my-home Scene — Story 8.12: gw-term anchors at the card visi
 });
 
 // ═══════════════════════════════════════════════════════════════════════════
-// Story 9.1 — `energy.nodes` is an ADDITIVE schema hook that is INERT at the live
-// Scene tier (zero consumption until 9.2/9.3/9.7).
+// Story 9.7 — `energy.nodes.instances` is CONSUMED at the live Scene tier (the 9.1
+// schema hook is now fully read: `hide` by 9.2, `order` by 9.3, `instances` by 9.7).
+// The old "inert until 9.7" assertion is retired — a duplicated role renders N live
+// cells, while a stale count-shaped value still degrades to today's Scene (R9).
 //
 // The co-located jsdom corpus (`src/tesla-card.config.test.ts`) already pins the
 // four runtime guarantees (tolerated / preserved / garbage-degrades / omitted-is-
@@ -990,7 +992,7 @@ const sceneFingerprint = (page: Page) =>
     };
   });
 
-test.describe('tc-my-home Scene — Story 9.1: energy.nodes is inert at the live layout tier', () => {
+test.describe('tc-my-home Scene — Story 9.7: energy.nodes.instances is consumed at the live layout tier', () => {
   test.beforeEach(async ({ demo }) => {
     // AWAKE / charging: a live energy site + a present vehicle, so the full Scene
     // (five energy cells + vehicle cell + trunk + legs + ribbon) renders — the
@@ -998,15 +1000,14 @@ test.describe('tc-my-home Scene — Story 9.1: energy.nodes is inert at the live
     await demo.open(AWAKE.open);
   });
 
-  test('AC2/SM-C4 — a well-formed energy.nodes leaves the live Scene IDENTICAL to the no-config baseline (zero consumption)', async ({
+  test('AC9 — a LIST-shaped energy.nodes.instances is CONSUMED: a duplicated role renders N live cells (a STALE count shape stays inert)', async ({
     page,
   }) => {
-    // Baseline: today's Scene with no customization at all.
+    // Baseline: today's single-solar Scene. A single instance keeps the BARE `solar`
+    // data-node — FR-33 zero-diff (no `:1` suffix).
     await mountScene(page);
     await waitForTrunk(page);
     const baseline = await sceneFingerprint(page);
-    // Sanity: the baseline is the full five-energy + vehicle roster (so the
-    // equivalence below is comparing against a real, populated Scene, not an empty one).
     expect(baseline.cellNodes).toEqual([
       'solar',
       'powerwall',
@@ -1016,38 +1017,37 @@ test.describe('tc-my-home Scene — Story 9.1: energy.nodes is inert at the live
       'vehicle',
     ]);
 
-    // The SAME data, now WITH an `energy.nodes` block whose keys — if they were
-    // consumed — would visibly mutate this roster: `hide:['solar']` would drop the
-    // Solar cell + leg, `order:['grid','home']` would re-pack the row. 9.1 ships zero
-    // consumption, so the live Scene must be unchanged.
+    // 9.7 consumes `instances` at the SAME `flowInputsFrom` seam 9.1 reserved it: two
+    // solar instances ⇒ two live cells (`solar:1` / `solar:2`), each its own bus tap —
+    // the bare `solar` id is gone (duplicated ⇒ all instances suffixed).
     await mountScene(page, {
-      config: {
-        energy: {
-          nodes: {
-            hide: ['solar'],
-            order: ['grid', 'home'],
-            instances: { home: 2 },
-          },
-        },
-      },
+      config: { energy: { nodes: { instances: { solar: [{}, {}] } } } },
     });
     await waitForTrunk(page);
-    const withNodes = await sceneFingerprint(page);
+    const dup = await sceneFingerprint(page);
+    expect(dup.cellNodes).toContain('solar:1');
+    expect(dup.cellNodes).toContain('solar:2');
+    expect(dup.cellNodes).not.toContain('solar');
+    // exactly one MORE leg than baseline (the 2nd solar tap); still one trunk + ribbon.
+    expect(dup.legCount).toBe(baseline.legCount + 1);
+    expect(dup.hasTrunk).toBe(true);
+    expect(dup.hasRibbon).toBe(true);
 
-    // Byte-for-byte the same roster, leg count, trunk + ribbon — proof the additive
-    // keys are inert at the layer 9.2/9.3 will later consume them (SM-C4 "exactly today").
-    expect(withNodes).toEqual(baseline);
-    // Specifically: Solar is NOT hidden (hide unconsumed) and the cells keep their
-    // canonical order (order unconsumed) — the two precise "not in 9.1" assertions.
-    expect(withNodes.cellNodes).toContain('solar');
-    expect(withNodes.cellNodes).toEqual(baseline.cellNodes);
+    // Forward-compat (R9): a STALE count-shaped value (the pre-9.7 placeholder) is a
+    // non-array ⇒ treated as "no instances declared" ⇒ today's single bare-id Scene.
+    await mountScene(page, {
+      config: { energy: { nodes: { instances: { solar: 2 } } } },
+    });
+    await waitForTrunk(page);
+    const stale = await sceneFingerprint(page);
+    expect(stale.cellNodes).toEqual(baseline.cellNodes); // byte-for-byte today's roster
+    expect(stale.cellNodes).not.toContain('solar:1');
 
-    // And the trunk is still drawn at live geometry — a real horizontal rail, not a
-    // collapsed jsdom-style zero line.
+    // The trunk is still drawn at live geometry — a real horizontal rail.
     const t = await trunkLine(page);
     expect(Math.abs(t.y1 - t.y2)).toBeLessThanOrEqual(1);
     expect(Math.abs(t.x2 - t.x1)).toBeGreaterThan(50);
-    // consoleGuard (auto fixture) asserts the with-nodes mount emitted no errors.
+    // consoleGuard (auto fixture) asserts every mount above emitted no errors.
   });
 
   test('AC3/FR-24 — GARBAGE in energy.nodes still renders the full Scene at live geometry, console-clean', async ({
@@ -1064,9 +1064,9 @@ test.describe('tc-my-home Scene — Story 9.1: energy.nodes is inert at the live
     });
     await waitForTrunk(page);
 
-    // Garbage in the unconsumed keys degrades to "exactly today" — the full roster
-    // still renders (auto-detect owns the Scene; the new keys are never validated-and-
-    // thrown in 9.1), with real non-zero cell boxes a real layout engine produced.
+    // Garbage in EVERY key degrades to "exactly today" — the full roster still renders
+    // (auto-detect owns the Scene; garbage is never validated-and-thrown — FR-24/R9 —
+    // incl. a non-array `instances`), with real non-zero cell boxes a real layout produced.
     const fp = await sceneFingerprint(page);
     expect(fp.cellNodes).toEqual([
       'solar',
@@ -1302,5 +1302,110 @@ test.describe('tc-my-home Scene — Story 9.3: reorder follows live geometry (th
     // Degrades to today's canonical packing — no crash, no blank (consoleGuard asserts clean).
     expect(await sourceOrderByX(page)).toEqual(['solar', 'powerwall', 'grid']);
     await expect(cells(page)).toHaveCount(5);
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Story 9.7 — multi-instance WRAP overflow (AC5 / D15). The pixel-geometry tier the
+// jsdom suite cannot reach: a band over 3 cards splits into a primary + an offset
+// overflow sub-row whose legs comb to the ONE Gateway trunk WITHOUT crossing a
+// primary card. Two solar instances (both resolving the same sensor — the GEOMETRY
+// is under test, not distinct values) ⇒ 4 source cards ⇒ wrap. Under the auto
+// console-error guard.
+// ═══════════════════════════════════════════════════════════════════════════
+test.describe('tc-my-home Scene — Story 9.7: multi-instance wrap overflow (AC5)', () => {
+  test.beforeEach(async ({ demo }) => {
+    await demo.open(AWAKE.open);
+  });
+
+  const wrapCfg = { energy: { nodes: { instances: { solar: [{}, {}] } } } };
+
+  test('AC5 — the 4-source band wraps; the overflow leg combs to ONE trunk through a channel (no crossing)', async ({
+    page,
+  }) => {
+    await mountScene(page, { width: 1400, config: wrapCfg });
+    await waitForTrunk(page);
+
+    // The duplicated solar gives solar:1 / solar:2 → 4 sources → the band WRAPS.
+    const band = scene(page).locator('.source-row');
+    await expect(band).toHaveClass(/wrapped/);
+    const primaryCells = scene(page).locator('.subrow.primary .scene-cell');
+    const overflowCells = scene(page).locator('.subrow.overflow .scene-cell');
+    await expect(primaryCells).toHaveCount(3);
+    await expect(overflowCells).toHaveCount(1);
+
+    // ONE trunk, horizontal (AR-7 — a 2nd tap-Y + longer legs, never a 2nd trunk).
+    await expect(trunk(page)).toHaveCount(1);
+    const t = await trunkLine(page);
+    expect(Math.abs(t.y1 - t.y2)).toBeLessThanOrEqual(1);
+
+    // The overflow card keeps standalone width (never shrunk below the 380px track).
+    const overflowBox = await overflowCells.first().evaluate((c) => {
+      const r = c.getBoundingClientRect();
+      return { centerX: r.left + r.width / 2, width: r.width, top: r.top };
+    });
+    expect(overflowBox.width).toBeGreaterThanOrEqual(360);
+
+    // NO-CROSS: the overflow card's centre-x (where its leg drops) falls in a CHANNEL
+    // between primary cards — outside every primary card's horizontal extent — so the
+    // leg combs straight down to the trunk without passing through a primary card.
+    const primaryBoxes = await primaryCells.evaluateAll((cs) =>
+      cs.map((c) => {
+        const r = c.getBoundingClientRect();
+        return { left: r.left, right: r.right, top: r.top, width: r.width, height: r.height };
+      }),
+    );
+    for (const b of primaryBoxes) {
+      expect(
+        overflowBox.centerX < b.left - 1 || overflowBox.centerX > b.right + 1,
+        `overflow centre ${overflowBox.centerX} must sit in a channel, not within [${b.left},${b.right}]`,
+      ).toBe(true);
+      // AC7 — cards never shrink below standalone size (the 380px track) under wrap, so
+      // every focus target stays well over the 44×44 CSS-px floor.
+      expect(b.width).toBeGreaterThanOrEqual(360);
+      expect(b.height).toBeGreaterThanOrEqual(44);
+    }
+
+    // The overflow sub-row is the FAR (top) row — visually ABOVE the primary, so its
+    // legs are the long comb legs and the primary sits just above the trunk.
+    expect(overflowBox.top).toBeLessThan(primaryBoxes[0].top);
+
+    // The wrap path shows NO overflow notice — it just reflows taller (clamp is 9.8).
+    await expect(scene(page).locator('.clamp-note')).toHaveCount(0);
+  });
+
+  test('AC5 — every source leg (incl. the overflow comb) reaches the single trunk; the longer combs earn .long (9.6 LONG_LEG_PX holds)', async ({
+    page,
+  }) => {
+    await mountScene(page, { width: 1400, config: wrapCfg });
+    await waitForTrunk(page);
+
+    // 4 present source taps + 2 loads = 6 energy legs, all to the one trunk.
+    await expect(legs(page)).toHaveCount(6);
+    // The far overflow comb spans well over LONG_LEG_PX (160) → .long; the primary
+    // legs stay short/calm — so the existing 9.6 threshold needs NO retune.
+    await expect(scene(page).locator('.gw-leg-base.long')).not.toHaveCount(0);
+  });
+
+  test('AC5 — at phone (≤540px viewport) the band does NOT wrap into channels — one vertical column', async ({
+    page,
+  }) => {
+    // The wrap reset is a genuine `@media (max-width:540px)` rule (keyed on the VIEWPORT,
+    // like the rest of the Scene's phone reflow) — so narrow the viewport, not just the host.
+    await page.setViewportSize({ width: 500, height: 1100 });
+    await mountScene(page, { width: 460, config: wrapCfg });
+    await waitForTrunk(page);
+    // The wrapped DOM still exists, but the ≤540px reset drops the offset + order flip:
+    // every source card stacks in one column. Assert the overflow card is NOT pushed into
+    // a channel (its left edge aligns with the primary cards' — no 230px horizontal offset).
+    const primaryLeft = await scene(page)
+      .locator('.subrow.primary .scene-cell')
+      .first()
+      .evaluate((c) => c.getBoundingClientRect().left);
+    const overflowLeft = await scene(page)
+      .locator('.subrow.overflow .scene-cell')
+      .first()
+      .evaluate((c) => c.getBoundingClientRect().left);
+    expect(Math.abs(overflowLeft - primaryLeft)).toBeLessThanOrEqual(2);
   });
 });

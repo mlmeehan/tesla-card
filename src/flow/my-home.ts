@@ -1,5 +1,6 @@
 import type { EnergyRole } from '../data/registry';
 import { ENERGY_ROLES } from './binding';
+import { roleOfInstance } from './instances';
 import { BUS_NODE_ID, IDLE_KW, type Direction, type FlowModel } from './model';
 import { computeBalance, type Balance } from './balance';
 import { edgeVisual } from './renderer';
@@ -63,7 +64,15 @@ export const VEHICLE_NODE_ID = 'vehicle';
  * (the cell then falls back to the discrete `charging_status` for plugged/parked).
  */
 export function wcVehicleEdge(model: FlowModel): { active: boolean; kW: number; direction: Direction } {
-  const e = model.edges.find((x) => x.from === 'wall_connector');
+  // Story 9.7: match the WC edge by ROLE (not a bare `'wall_connector'` id), so a
+  // multi-WC config still finds the charging WC. PREFER an ACTIVE WC edge (the one
+  // actually feeding the single, 9.8-deferred car) over an idle sibling — a
+  // first-but-idle WC must not mask a charging second one (else the car edge reads
+  // "not charging" while the halo reads charging: a halo-vs-edge mismatch). Fall back
+  // to the first WC edge when none is active (an idle/plugged read). Single-WC is a
+  // zero-diff ("first active else first" === "the one edge").
+  const wcEdges = model.edges.filter((x) => roleOfInstance(x.from) === 'wall_connector');
+  const e = wcEdges.find((x) => x.direction !== 'none') ?? wcEdges[0];
   if (!e || e.direction === 'none') return { active: false, kW: 0, direction: 'none' };
   return { active: true, kW: Math.abs(e.kW), direction: e.direction };
 }
@@ -365,11 +374,14 @@ export function gatewaySegments(
   const net = (opts.balance ?? computeBalance(model)).net;
   const axis = opts.axis ?? busAxis(anchors);
 
-  // Present, anchored taps — each tap's value IS its signed bus injection net[role]
+  // Present, anchored taps — each tap's value IS its signed bus injection net[id]
   // (do NOT re-apply orientation: BUS_ORIENTATION already baked +source/−load in).
+  // Story 9.7: keyed by NODE ID, not role — so N same-role instances are N
+  // independent taps (each with its own anchor + its own net), never one merged tap.
+  // Single-instance is a zero-diff (id === role).
   const taps = model.nodes
-    .filter((n) => n.present && anchors[n.role])
-    .map((n) => ({ pos: centreAlong(anchors[n.role], axis), k: net[n.role] ?? 0 }))
+    .filter((n) => n.present && anchors[n.id])
+    .map((n) => ({ pos: centreAlong(anchors[n.id], axis), k: net[n.id] ?? 0 }))
     .sort((a, b) => a.pos - b.pos);
   if (!taps.length) return [];
 
@@ -427,14 +439,21 @@ export function sceneAggregates(model: FlowModel, balance?: Balance): SceneAggre
   let generation = 0;
   let consumption = 0;
   let gridPresent = false;
+  let gridNet = 0;
+  // Story 9.7: read each node's net BY ID and accumulate the grid term across grid
+  // instances (single-instance grid ⇒ `net['grid']`, a zero-diff). Source/load is
+  // still read off the net SIGN, never a per-role branch (role-generic).
   for (const node of model.nodes) {
     if (!node.present) continue;
-    if (node.role === 'grid') gridPresent = true;
-    const v = net[node.role] ?? 0;
+    const v = net[node.id] ?? 0;
+    if (node.role === 'grid') {
+      gridPresent = true;
+      gridNet += v;
+    }
     if (v > IDLE_KW) generation += v;
     else if (v < -IDLE_KW) consumption += -v;
   }
-  return { generation, consumption, gridNet: gridPresent ? (net['grid'] ?? 0) : 0, gridPresent };
+  return { generation, consumption, gridNet, gridPresent };
 }
 
 /** The self-powered-now lead, derived from the ONE balance net (Story 8.7). */
@@ -478,14 +497,16 @@ export function selfPowered(model: FlowModel, balance?: Balance): SelfPowered {
   return { pct, selfKw, totalKw };
 }
 
-/** One per-node aggregate tile — a present role + its signed/magnitude net (Story 8.7). */
+/** One per-ROLE aggregate tile — a present role + its FOLDED signed/magnitude net (Story 8.7 / 9.7). */
 export interface RibbonTile {
   /** The energy role this tile labels (`wall_connector` is shown as "Car"). */
   role: EnergyRole;
-  /** The node's signed net (`+` source/discharge/export, `−` load) — carries the grid `in`/`out` sense. */
+  /** The role's signed net SUMMED across its instances (`+` source/discharge/export, `−` load) — carries the grid `in`/`out` sense. */
   signed: number;
-  /** The magnitude `|signed|` (the value most tiles display). */
+  /** The magnitude `|signed|` of the folded net (the value most tiles display). */
   kW: number;
+  /** How many present INSTANCES this tile folds (1 = a single node; >1 drives the count affordance). */
+  count: number;
 }
 
 /**
@@ -502,9 +523,20 @@ export interface RibbonTile {
 export function ribbonTiles(model: FlowModel, balance?: Balance): RibbonTile[] {
   const net = (balance ?? computeBalance(model)).net;
   const order = new Map(SCENE_NODES.map((role, i) => [role, i]));
-  return model.nodes
-    .filter((n) => n.present)
-    .map((n) => ({ role: n.role, signed: net[n.role] ?? 0, kW: Math.abs(net[n.role] ?? 0) }))
+  // Story 9.7 (INV-9): FOLD by role — sum each role's instances' nets (keyed by node
+  // id) into ONE tile, never a tile-per-instance and never `net[role]` (undefined for
+  // a duplicated role — that silent under-count is the "ribbon lies" failure). A
+  // single-instance role folds one node ⇒ count:1, signed = net[role] (zero-diff).
+  const byRole = new Map<EnergyRole, { signed: number; count: number }>();
+  for (const n of model.nodes) {
+    if (!n.present) continue;
+    const cur = byRole.get(n.role) ?? { signed: 0, count: 0 };
+    cur.signed += net[n.id] ?? 0;
+    cur.count += 1;
+    byRole.set(n.role, cur);
+  }
+  return [...byRole.entries()]
+    .map(([role, { signed, count }]) => ({ role, signed, kW: Math.abs(signed), count }))
     .sort((a, b) => (order.get(a.role) ?? 0) - (order.get(b.role) ?? 0));
 }
 
@@ -528,14 +560,22 @@ export function roleKind(net: Readonly<Record<string, number>>, role: EnergyRole
  * the set of roles to LIGHT (the rest dim).
  */
 export function coupledRoles(model: FlowModel, focused: EnergyRole, balance?: Balance): Set<EnergyRole> {
-  const net = (balance ?? computeBalance(model)).net;
+  const net = (balance ?? computeBalance(model)).net; // keyed by node id (9.7)
+  // Story 9.7: aggregate net BY ROLE (sum across a role's instances) for the
+  // source/load classification — `roleKind` reads a role-keyed map, so a duplicated
+  // role's kind reflects its TOTAL net (two arrays couple as one source). The element
+  // expands this role set back to the per-INSTANCE lit set (so focusing one array
+  // lights that array's tap, not its sibling). Single-instance ⇒ roleNet === net
+  // (zero-diff).
+  const roleNet: Record<string, number> = {};
+  for (const n of model.nodes) if (n.present) roleNet[n.role] = (roleNet[n.role] ?? 0) + (net[n.id] ?? 0);
   const present = model.nodes.filter((n) => n.present).map((n) => n.role);
   const lit = new Set<EnergyRole>([focused]);
-  const kind = roleKind(net, focused);
+  const kind = roleKind(roleNet, focused);
   if (kind === 'source') {
-    for (const r of present) if (roleKind(net, r) === 'load') lit.add(r);
+    for (const r of present) if (roleKind(roleNet, r) === 'load') lit.add(r);
   } else if (kind === 'load') {
-    for (const r of present) if (roleKind(net, r) === 'source') lit.add(r);
+    for (const r of present) if (roleKind(roleNet, r) === 'source') lit.add(r);
   }
   return lit;
 }
