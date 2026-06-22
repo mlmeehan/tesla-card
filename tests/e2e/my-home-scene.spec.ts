@@ -1186,3 +1186,121 @@ test.describe('tc-my-home Scene — Story 9.2: a hidden node renders identically
     await expect(overlay(page)).toHaveCount(0);
   });
 });
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Story 9.3 — reorder present nodes WITHIN their row by config, at the LIVE-LAYOUT
+// tier. The co-located jsdom suite pins the rendered cell SEQUENCE, but jsdom returns
+// ZERO-sized rects, so it CANNOT prove the load-bearing AC1/AC2 claim where it matters:
+// reordering the cells moves their DOM anchors, and the Gateway bus FOLLOWS because
+// `gatewaySegments` taps sort by SPATIAL position (the anchor centre), NOT by
+// `SCENE_NODES`/model order. This block is that proof — the source cells render in the
+// configured left→right order at genuine non-zero geometry, and each leg's tap walks
+// the bus in that SAME reordered spatial order — under the auto console-error guard.
+// ═══════════════════════════════════════════════════════════════════════════
+
+// The source-row cells' `data-node` ordered by their LIVE left edge (the real
+// left→right layout order a genuine engine produced — jsdom cannot see this).
+const sourceOrderByX = (page: Page) =>
+  scene(page).evaluate((el) => {
+    const root = (el as HTMLElement).shadowRoot!;
+    return [...root.querySelectorAll<HTMLElement>('.source-row .scene-cell')]
+      .map((c) => ({ node: c.dataset.node, x: c.getBoundingClientRect().left }))
+      .sort((a, b) => a.x - b.x)
+      .map((c) => c.node);
+  });
+
+// Each present source role → its leg tap centre along the (horizontal) trunk — the
+// bus's spatial tap-walk handle. `.gw-tap` cx is container-relative overlay px, so we
+// compare ORDERING (not absolute values vs the page-space cell boxes).
+const tapXByRole = (page: Page, role: string) =>
+  scene(page)
+    .locator(`.gw-leg[data-role="${role}"] .gw-tap`)
+    .first()
+    .evaluate((c) => Number(c.getAttribute('cx')));
+
+test.describe('tc-my-home Scene — Story 9.3: reorder follows live geometry (the bus tracks the moved anchors)', () => {
+  test.beforeEach(async ({ demo }) => {
+    await demo.open(AWAKE.open);
+  });
+
+  test('AC1/AC2 — order:["grid","solar"] packs the source row [grid, solar, powerwall] AND the bus taps walk that SAME spatial order', async ({
+    page,
+  }) => {
+    // Canonical baseline first: the un-reordered source row is [solar, powerwall, grid].
+    await mountScene(page, { width: 1100 });
+    await waitForTrunk(page);
+    expect(await sourceOrderByX(page)).toEqual(['solar', 'powerwall', 'grid']);
+
+    // Now reorder via config — grid + solar listed (user order), powerwall trails canonical.
+    await mountScene(page, { width: 1100, config: { energy: { nodes: { order: ['grid', 'solar'] } } } });
+    await waitForTrunk(page);
+
+    // (AC1) The LIVE layout packs the cells in the configured left→right order.
+    expect(await sourceOrderByX(page)).toEqual(['grid', 'solar', 'powerwall']);
+
+    // (AC2) The Gateway bus FOLLOWS: each leg's tap sits at its cell's spatial centre,
+    // so the taps walk the trunk in the SAME reordered order (grid → solar → powerwall).
+    // This is the geometry proof — the bus read the moved anchors, never `SCENE_NODES`.
+    const gridTap = await tapXByRole(page, 'grid');
+    const solarTap = await tapXByRole(page, 'solar');
+    const pwTap = await tapXByRole(page, 'powerwall');
+    expect(gridTap).toBeLessThan(solarTap);
+    expect(solarTap).toBeLessThan(pwTap);
+
+    // The trunk is still a real horizontal rail spanning the reordered row (no sign flip,
+    // no collapsed line) — the energy math is untouched, only the spatial walk reordered.
+    const t = await trunkLine(page);
+    expect(Math.abs(t.y1 - t.y2)).toBeLessThanOrEqual(1);
+    expect(Math.abs(t.x2 - t.x1)).toBeGreaterThan(50);
+  });
+
+  test('AC2 — reorder preserves the Kirchhoff-honest roster: same leg count + the bus still names every present node (colour-blind floor)', async ({
+    page,
+  }) => {
+    await mountScene(page, { width: 1100 });
+    await waitForTrunk(page);
+    const baseLegs = await legs(page).count();
+    const baseLabel = await overlay(page).getAttribute('aria-label');
+
+    await mountScene(page, { width: 1100, config: { energy: { nodes: { order: ['grid', 'solar'] } } } });
+    await waitForTrunk(page);
+
+    // Reordering is a VIEW over the same present set: no node gained or lost, no edge
+    // re-signed. The leg count is identical and the overlay's state-bearing label (built
+    // from the canonical model, not render order) still names every node + kW unchanged.
+    expect(await legs(page).count()).toBe(baseLegs);
+    expect(await overlay(page).getAttribute('aria-label')).toBe(baseLabel);
+  });
+
+  test('AC4 — order:["vehicle","home"] places the car BEFORE home/WC at live geometry; its WC→Vehicle leg follows', async ({
+    page,
+  }) => {
+    await mountScene(page, { width: 1100, config: { energy: { nodes: { order: ['vehicle', 'home'] } } } });
+    await waitForTrunk(page);
+
+    // The vehicle cell lays out as the LEFTMOST load-row cell (it moved within its row).
+    const loadOrder = await scene(page).evaluate((el) => {
+      const root = (el as HTMLElement).shadowRoot!;
+      return [...root.querySelectorAll<HTMLElement>('.load-row .scene-cell')]
+        .map((c) => ({ node: c.dataset.node, x: c.getBoundingClientRect().left }))
+        .sort((a, b) => a.x - b.x)
+        .map((c) => c.node);
+    });
+    expect(loadOrder).toEqual(['vehicle', 'home', 'wall_connector']);
+
+    // It remains a presentation cell with its WC→Vehicle overlay leg intact (drawn from
+    // the cell's live anchor wherever it landed) — the edge followed the moved cell.
+    await expect(vehCell(page)).toHaveCount(1);
+    await expect(vehLeg(page)).toHaveCount(1);
+  });
+
+  test('AC4/FR-24 — GARBAGE order (non-array) renders the canonical Scene at live geometry, console-clean', async ({
+    page,
+  }) => {
+    await mountScene(page, { width: 1100, config: { energy: { nodes: { order: 'nope' } } } });
+    await waitForTrunk(page);
+    // Degrades to today's canonical packing — no crash, no blank (consoleGuard asserts clean).
+    expect(await sourceOrderByX(page)).toEqual(['solar', 'powerwall', 'grid']);
+    await expect(cells(page)).toHaveCount(5);
+  });
+});

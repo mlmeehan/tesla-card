@@ -1529,3 +1529,113 @@ describe('Story 9.2 — hide a present node at the model/binding seam (hidden ==
     expect(model.nodes.find((n) => n.role === 'wall_connector')?.present).toBe(true); // WC untouched
   });
 });
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Story 9.3 — reorder present nodes WITHIN their row by config (additive, geometry-
+// driven). The co-located proof of the WIRING: `energy.nodes.order` reorders the
+// RENDERED cells (the real lever — moving the cells moves their DOM anchors, and the
+// Gateway bus follows because `gatewaySegments` taps sort by SPATIAL position, not by
+// `SCENE_NODES`), a stable partition keeps unlisted/garbage roles canonical (AC3/AC4),
+// the vehicle reorders within the load row (AC4), hide wins over order (9.2), and a
+// reorder-only config change fires the present-set reflow EXACTLY once (AC5). The
+// real-geometry tier (the bus tap walk tracking the reordered anchor centres) is the
+// e2e Story 9.3 block — jsdom returns zero rects, so it pins the cell SEQUENCE here.
+// ═══════════════════════════════════════════════════════════════════════════
+const orderCfg = (order: unknown, hide?: Role[]): TeslaCardConfig =>
+  ({
+    type: 'tc-my-home',
+    energy: { nodes: { order, ...(hide ? { hide } : {}) } },
+  }) as unknown as TeslaCardConfig;
+/** The `data-node` sequence of a row, INCLUDING the vehicle cell (the DOM-order handle). */
+const sourceNodes = (el: Scene): (string | undefined)[] =>
+  [...sr(el).querySelectorAll<HTMLElement>('.source-row .scene-cell')].map((c) => c.dataset.node);
+const loadNodes = (el: Scene): (string | undefined)[] =>
+  [...sr(el).querySelectorAll<HTMLElement>('.load-row .scene-cell')].map((c) => c.dataset.node);
+
+describe('Story 9.3 — reorder present nodes within their row by config (render-is-geometry)', () => {
+  test('AC1 — order honored: order:["grid","solar"] packs the source row [grid, solar, powerwall]', async () => {
+    const el = await mount(makeHass(states(awakeFx)), orderCfg(['grid', 'solar']));
+    // listed (user order) then unlisted (canonical) — powerwall trails.
+    expect(sourceNodes(el)).toEqual(['grid', 'solar', 'powerwall']);
+    // The load row is untouched (no load roles listed) — canonical, vehicle trailing.
+    expect(loadNodes(el)).toEqual(['home', 'wall_connector', 'vehicle']);
+  });
+
+  test('AC3 — partial order: only listed roles move, the rest keep canonical order', async () => {
+    const el = await mount(makeHass(states(awakeFx)), orderCfg(['grid']));
+    // grid first; solar, powerwall keep their canonical relative order after it.
+    expect(sourceNodes(el)).toEqual(['grid', 'solar', 'powerwall']);
+  });
+
+  test('zero-diff — no order key renders the exact canonical packing (byte-for-byte today)', async () => {
+    const el = await mount(makeHass(states(awakeFx)));
+    expect(sourceNodes(el)).toEqual(['solar', 'powerwall', 'grid']);
+    expect(loadNodes(el)).toEqual(['home', 'wall_connector', 'vehicle']);
+  });
+
+  test('AC4 — an order entry naming an ABSENT node is ignored; present cells stay ordered', async () => {
+    // Powerwall genuinely absent (its power sensor dropped) — order names it anyway.
+    const el = await mount(subsetHass(['solar', 'grid', 'home', 'wall_connector']), orderCfg(['grid', 'powerwall', 'solar']));
+    // powerwall is not present, so it drops from the partition: [grid, solar].
+    expect(sourceNodes(el)).toEqual(['grid', 'solar']);
+  });
+
+  test('AC4/FR-24 — a non-array `order` degrades to canonical order, no crash', async () => {
+    const el = await mount(makeHass(states(awakeFx)), orderCfg('nope'));
+    expect(sourceNodes(el)).toEqual(['solar', 'powerwall', 'grid']);
+    expect(loadNodes(el)).toEqual(['home', 'wall_connector', 'vehicle']);
+  });
+
+  test('AC4/FR-24 — unknown strings and duplicate roles are ignored, present cells still ordered', async () => {
+    // 'not_a_node' is unknown (fails row membership); the duplicate 'grid' is deduped
+    // (first-occurrence wins) — the partition is [grid, solar, powerwall], no crash.
+    const el = await mount(makeHass(states(awakeFx)), orderCfg(['grid', 'not_a_node', 'grid', 'solar']));
+    expect(sourceNodes(el)).toEqual(['grid', 'solar', 'powerwall']);
+  });
+
+  test('AC4 — a cross-row order entry no-ops in this row (home in the SOURCE order is ignored)', async () => {
+    // 'home' is a load role — naming it does NOT promote it into the source row.
+    const el = await mount(makeHass(states(awakeFx)), orderCfg(['home', 'grid']));
+    expect(sourceNodes(el)).toEqual(['grid', 'solar', 'powerwall']); // grid honored, home inert here
+    expect(loadNodes(el)).toEqual(['home', 'wall_connector', 'vehicle']); // load row unchanged
+  });
+
+  test('AC4 — order × hide: hide:["powerwall"], order:["grid","powerwall","solar"] ⇒ [grid, solar] (hide wins, reorder honored on the rest)', async () => {
+    const el = await mount(makeHass(states(awakeFx)), orderCfg(['grid', 'powerwall', 'solar'], ['powerwall']));
+    // powerwall hidden at the model seam (9.2) ⇒ not present ⇒ dropped from the order partition.
+    expect(sr(el).querySelector('.scene-cell[data-node="powerwall"]')).toBeNull();
+    expect(sourceNodes(el)).toEqual(['grid', 'solar']);
+  });
+
+  test('AC4 — vehicle reorder: order:["vehicle","home"] renders the vehicle BEFORE home/WC, WC→Vehicle edge intact', async () => {
+    const el = await mount(makeHass(states(awakeFx)), orderCfg(['vehicle', 'home']));
+    // The load row places the vehicle cell first, then home (listed), then WC (canonical rest).
+    expect(loadNodes(el)).toEqual(['vehicle', 'home', 'wall_connector']);
+    // The vehicle remains a presentation cell and its WC→Vehicle overlay edge still draws.
+    recompute(el);
+    await el.updateComplete;
+    expect(vehCell(el)).not.toBeNull();
+    expect(vehEdge(el)).not.toBeNull();
+    // The source row is untouched by a load-row reorder.
+    expect(sourceNodes(el)).toEqual(['solar', 'powerwall', 'grid']);
+  });
+
+  test('AC5 — a reorder-only CONFIG change fires the present-set reflow EXACTLY once', async () => {
+    const el = await mount(makeHass(states(awakeFx)));
+    expect(sourceNodes(el)).toEqual(['solar', 'powerwall', 'grid']);
+    const spy = vi.spyOn(el as unknown as { _scheduleGeometry: () => void }, '_scheduleGeometry');
+    el.setConfig(orderCfg(['grid', 'solar'])); // same present-set, NEW order
+    await el.updateComplete;
+    expect(spy).toHaveBeenCalledTimes(1); // ONE reflow — the cached geometry re-measures the moved anchors
+    expect(sourceNodes(el)).toEqual(['grid', 'solar', 'powerwall']);
+  });
+
+  test('AC5 — a re-render with the SAME order schedules ZERO geometry recomputes (no per-tick reflow)', async () => {
+    const el = await mount(makeHass(states(awakeFx)), orderCfg(['grid', 'solar']));
+    const spy = vi.spyOn(el as unknown as { _scheduleGeometry: () => void }, '_scheduleGeometry');
+    // A value-only hass tick (same present-set, same order) must NOT reflow.
+    el.hass = makeHass(states(awakeFx));
+    await el.updateComplete;
+    expect(spy).not.toHaveBeenCalled();
+  });
+});

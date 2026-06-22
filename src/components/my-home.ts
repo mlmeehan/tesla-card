@@ -85,6 +85,46 @@ const LONG_LEG_PX = 160;
 const SOURCE_ROW: readonly EnergyRole[] = ['solar', 'powerwall', 'grid'];
 const LOAD_ROW: readonly EnergyRole[] = ['home', 'wall_connector'];
 
+/**
+ * Story 9.3: the load row's ORDERING domain — the two energy loads PLUS the
+ * synthetic `'vehicle'` presentation cell, so `energy.nodes.order` can place the car
+ * anywhere in the load row (not just trailing). The canonical sequence ENDS in
+ * `'vehicle'`, so a defaulted/absent/garbage `order` keeps it trailing — byte-for-byte
+ * Story 8.10's behaviour (zero-diff). This is NOT a flow-node list (the vehicle never
+ * enters `gatewaySegments`' tap walk — it is not a `FlowNode`); it is purely the
+ * load-row CELL packing domain. The energy loads stay `LOAD_ROW` everywhere else.
+ */
+const LOAD_ROW_WITH_VEHICLE: readonly Role[] = ['home', 'wall_connector', 'vehicle'];
+
+/**
+ * Story 9.3 — order a row's PRESENT roles by the user's `order` list. A STABLE
+ * PARTITION: `[roles listed in `order` (this row, present, first-occurrence wins)] ++
+ * [this row's present roles NOT listed, in canonical order]`. Everything that is not a
+ * present member of THIS row drops out by construction — an other-row role (fails the
+ * `rowSet` membership), an absent or 9.2-hidden role (fails `presentRoles`), an unknown
+ * string and a duplicate (deduped via `seen`). So AC4's "ignore gracefully" needs NO
+ * special-casing: an empty/garbage `order` ⇒ `rest` == `canonicalRow.filter(present)`
+ * == today's exact packed sequence (zero-diff). PURE (no DOM, no `hass`) — the reorder
+ * lever is this VIEW over present roles, never a mutation of the canonical constants.
+ */
+function orderRow<R extends Role>(
+  canonicalRow: readonly R[],
+  presentRoles: ReadonlySet<Role>,
+  order: readonly Role[]
+): R[] {
+  const rowSet = new Set<Role>(canonicalRow);
+  const seen = new Set<Role>();
+  const listed: R[] = [];
+  for (const role of order) {
+    if (rowSet.has(role) && presentRoles.has(role) && !seen.has(role)) {
+      seen.add(role);
+      listed.push(role as R);
+    }
+  }
+  const rest = canonicalRow.filter((role) => presentRoles.has(role) && !seen.has(role));
+  return [...listed, ...rest];
+}
+
 /** node-id (EnergyRole) → the registered child-card tag that renders it. */
 const NODE_TAG: Readonly<Record<EnergyRole, string>> = {
   solar: 'tc-solar',
@@ -289,19 +329,20 @@ export class TcMyHome extends LitElement implements LovelaceCard {
   }
 
   protected override updated(): void {
-    // Recompute geometry when the PRESENT-NODE SET changes (a card appeared /
-    // vanished — a genuine reflow), NOT on a value-only `hass` tick (AC3a:
-    // geometry is reflow-driven, never tick-driven).
-    // Story 8.5: the vehicle appearing/disappearing is a genuine reflow (the load
-    // row gains/loses a 380px card → the WC→Vehicle anchor changes), so fold
-    // `vehiclePresent` into the present-set key (NOT a value-only tick).
+    // Recompute geometry when the RENDERED CELL SEQUENCE changes (a card appeared /
+    // vanished, or — Story 9.3 — the user REORDERED the row), NOT on a value-only
+    // `hass` tick (AC3a: geometry is reflow-driven, never tick-driven).
+    // Story 8.5: the vehicle appearing/disappearing is a genuine reflow (the load row
+    // gains/loses a 380px card → the WC→Vehicle anchor changes).
+    // Story 9.3 (AC5 — the design hazard): the key is derived from the ORDERED present
+    // sequence the render packs ({@link _orderedRows}), NOT the canonical `_model.nodes`
+    // order — so a reorder-only config change (same present-set, new order) flips the
+    // key, fires the rAF-coalesced reflow EXACTLY once, and the cached geometry (legs,
+    // bus tap walk) re-measures the moved anchors. One signature captures hide, unhide,
+    // reorder AND vehicle-slot moves — no second key to keep in sync.
     const cfg = this._resolvedConfig ?? this._config;
-    const vehiclePresent = cfg ? this._vehiclePresent(cfg) : false;
-    const key =
-      this._model.nodes
-        .filter((n) => n.present)
-        .map((n) => n.role)
-        .join(',') + `|veh:${vehiclePresent ? 1 : 0}`;
+    const { source, load } = cfg ? this._orderedRows(cfg) : { source: [], load: [] };
+    const key = `${source.join(',')}|${load.join(',')}`;
     if (key !== this._presentKey) {
       this._presentKey = key;
       this._scheduleGeometry();
@@ -403,18 +444,26 @@ export class TcMyHome extends LitElement implements LovelaceCard {
         ${this._childCard(role, cfg)}
       </div>
     `;
-    // Story 6.7 — PACK each row: render only the present cards in canonical order,
-    // so an absent node leaves NOTHING (no 380px ghost cell, no dead `veh` slot).
-    // A row with no present card is omitted entirely (no empty row eating the bus
-    // channel). The two packed, centred rows keep sources-over-loads by construction.
-    const sourceCells = SOURCE_ROW.filter((role) => present.has(role)).map(cell);
-    const loadCells = LOAD_ROW.filter((role) => present.has(role)).map(cell);
-    // Story 8.10: the vehicle is the TRAILING load-row cell again (reverses 8.9's
-    // own-row band) — a peer of Home + Wall Connector. It embeds the real `tesla-card`
-    // in `variant: 'compact'` (hero + status only, kW overlay suppressed) so it fits
-    // the 380px track without re-cramming. Present-gated + packed: an absent car leaves
-    // no cell (and no WC→Vehicle edge); a present car appends after the energy loads.
-    if (vehiclePresent) loadCells.push(this._vehicleCell(lit));
+    // Story 6.7 — PACK each row: render only the present cards, so an absent node
+    // leaves NOTHING (no 380px ghost cell, no dead `veh` slot). A row with no present
+    // card is omitted entirely (no empty row eating the bus channel). The two packed,
+    // centred rows keep sources-over-loads by construction.
+    // Story 9.3 — the WITHIN-ROW order follows `energy.nodes.order` via {@link
+    // _orderedRows} (a stable partition: listed roles in user order, then unlisted in
+    // canonical order). A defaulted/absent `order` ⇒ today's exact canonical packing
+    // (zero-diff). Moving the cells moves their DOM anchors; the Gateway bus follows
+    // because `gatewaySegments` taps sort by SPATIAL position, not by model order.
+    const { source, load } = this._orderedRows(cfg);
+    const sourceCells = source.map(cell);
+    // Story 8.10/9.3: the vehicle is a load-row cell embedding the real `tesla-card` in
+    // `variant: 'compact'` (hero + status only, kW overlay suppressed). It is folded
+    // INTO the load-row ordering (not always-trailing), so `order` can place the car
+    // anywhere in the row; a defaulted `order` keeps it last (canonical sequence ends in
+    // `'vehicle'`). Present-gated: an absent/hidden car leaves no cell (and no WC→Vehicle
+    // edge). It never enters the bus tap walk — reordering it changes zero energy math.
+    const loadCells = load.map((role) =>
+      role === 'vehicle' ? this._vehicleCell(lit) : cell(role)
+    );
 
     // Layering, back-to-front: the summary RIBBON (whole-home aggregates, above the
     // cards) → the cards (each composites its own vignette internally) → ONE
@@ -477,6 +526,39 @@ export class TcMyHome extends LitElement implements LovelaceCard {
   private _hiddenRoles(cfg: TeslaCardConfig): readonly Role[] {
     const hide = cfg.energy?.nodes?.hide;
     return Array.isArray(hide) ? (hide as readonly Role[]) : [];
+  }
+
+  /**
+   * The Scene's left-to-right node order from `energy.nodes.order` (Story 9.3).
+   * Defensive (FR-24), a sibling of {@link _hiddenRoles}: a non-array / garbage
+   * `order` degrades to "no reorder" (`[]` ⇒ canonical order), never throws. The
+   * list is consumed ONLY through {@link orderRow}, which filters to roles present in
+   * the row being packed, so unknown strings, other-row roles, absent/hidden roles and
+   * duplicates are all inert by construction (no entity IDs, pure config — AR-1 safe).
+   */
+  private _orderList(cfg: TeslaCardConfig): readonly Role[] {
+    const order = cfg.energy?.nodes?.order;
+    return Array.isArray(order) ? (order as readonly Role[]) : [];
+  }
+
+  /**
+   * Story 9.3 — the SINGLE source of truth for the rendered, order-applied cell
+   * sequence of each row. {@link render} packs its cells from this, and {@link updated}
+   * derives the geometry reflow signature (`_presentKey`) from it — so a reorder-only
+   * config change (same present-set, new order) flips the key and trips EXACTLY ONE
+   * rAF-coalesced reflow (AC5), keeping the bus tap walk + legs in sync with the moved
+   * cards. The source row orders over `SOURCE_ROW`; the load row orders over
+   * {@link LOAD_ROW_WITH_VEHICLE} with `'vehicle'` present iff {@link _vehiclePresent}
+   * (which already honors 9.2 hide — so "hide wins over order" falls out for free).
+   */
+  private _orderedRows(cfg: TeslaCardConfig): { source: EnergyRole[]; load: Role[] } {
+    const present = new Set<Role>(this._model.nodes.filter((n) => n.present).map((n) => n.role));
+    const order = this._orderList(cfg);
+    const source = orderRow(SOURCE_ROW, present, order);
+    const loadPresent = new Set<Role>(LOAD_ROW.filter((role) => present.has(role)));
+    if (this._vehiclePresent(cfg)) loadPresent.add('vehicle');
+    const load = orderRow(LOAD_ROW_WITH_VEHICLE, loadPresent, order);
+    return { source, load };
   }
 
   /**

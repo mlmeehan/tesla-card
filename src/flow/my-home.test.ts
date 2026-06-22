@@ -347,6 +347,65 @@ describe('gatewaySegments — running net = Σ(+source/−load), sourced from ba
   });
 });
 
+// ═══════════════════════════════════════════════════════════════════════════
+// Story 9.3 — the bus follows GEOMETRY, not model order (reorder-invariance).
+//
+// AC1/AC2's load-bearing claim: `energy.nodes.order` reorders the rendered CELLS,
+// which moves their DOM anchors, and the Gateway bus follows because `gatewaySegments`
+// taps sort by SPATIAL position — never by `SCENE_NODES`/model order. The element
+// suite (`components/my-home.test.ts`) pins the cell SEQUENCE and the e2e proves the
+// taps walk the reordered spatial order at live geometry; this is the PURE, deterministic
+// proof of the engine guarantee underneath: feed the SAME model with anchors in a
+// reordered spatial order and the walk (and any both-sides-fed convergence) tracks the
+// anchors, not the registry order — with the running-sum balance unchanged node-for-node.
+// `gatewaySegments` itself is NOT edited by 9.3; this proves it already reorders for free.
+// ═══════════════════════════════════════════════════════════════════════════
+describe('Story 9.3 — gatewaySegments walks by anchor geometry, not model/SCENE_NODES order', () => {
+  test('AC1/AC2 — same model, anchors REORDERED ⇒ the tap walk follows the anchors (not the model order)', () => {
+    // Model order (buildFlowModel ⇒ ENERGY_ROLES): solar, grid, home. Distinct nets so
+    // the FIRST segment alone distinguishes a geometry walk from a model-order walk.
+    const model = modelOf([measured('solar', 3), measured('grid', 2), measured('home', 5)]);
+    const net = computeBalance(model).net; // solar +3, grid +2, home −5
+    // Anchors place GRID leftmost — the opposite of the model's solar-first order.
+    const segs = gatewaySegments(model, { grid: r(0, 0), solar: r(200, 0), home: r(400, 0) }, { axis: 'x' });
+    // Taps emitted strictly left→right by anchor centre (50, 250, 450) — the spatial sort.
+    expect(segs.map((s) => s.from)).toEqual([50, 250, 450]);
+    // The leftmost segment's running net is GRID's (+2), proving the walk read the anchor
+    // x, not the model's solar-first order (which would give +3 here). Then +5, then 0.
+    expect(segs[0].net).toBeCloseTo(net['grid'], 6); // +2 (geometry), not +3 (model order)
+    expect(segs[1].net).toBeCloseTo(net['grid'] + net['solar'], 6); // +5
+    expect(segs[2].net).toBeCloseTo(0, 6); // balanced tail
+  });
+
+  test('AC2 — a both-sides-fed load CONVERGES at its tap regardless of which flanking source is left vs right', () => {
+    // grid +2, solar +3, home −5: home is fed from both sides, so the running net flips
+    // sign across its tap ⇒ the adjacent segments converge ON home. Swapping the two
+    // SOURCE anchors left↔right must NOT move (or flip) that convergence — it is a
+    // geometry-faithful Kirchhoff read, invariant to the source reorder (AC2: reorder
+    // never flips a sign). Home is held at the middle position in both layouts.
+    const model = modelOf([measured('grid', 2), measured('solar', 3), measured('home', 5)]);
+    const homeTap = 250; // 200 + 100/2 — the middle anchor's centre in both layouts
+
+    // Layout A: grid · home · solar.
+    const a = gatewaySegments(model, { grid: r(0, 0), home: r(200, 0), solar: r(400, 0) }, { axis: 'x' });
+    expect(a[0].direction).toBe('forward'); // left source → home : points right, AT home
+    expect(a[0].to).toBe(homeTap);
+    expect(a[1].direction).toBe('reverse'); // right source → home : points left, AT home
+    expect(a[1].from).toBe(homeTap);
+
+    // Layout B: the two sources SWAPPED (solar · home · grid). The convergence is identical.
+    const b = gatewaySegments(model, { solar: r(0, 0), home: r(200, 0), grid: r(400, 0) }, { axis: 'x' });
+    expect(b[0].direction).toBe('forward'); // converges from the left, still AT home
+    expect(b[0].to).toBe(homeTap);
+    expect(b[1].direction).toBe('reverse'); // converges from the right, still AT home
+    expect(b[1].from).toBe(homeTap);
+
+    // The whole-home balance is invariant to the reorder — the tail closes at 0 either way.
+    expect(a[a.length - 1].net).toBeCloseTo(0, 6);
+    expect(b[b.length - 1].net).toBeCloseTo(0, 6);
+  });
+});
+
 describe('sceneAggregates — ribbon totals derived from the ONE balance net', () => {
   test('grid import: generation/consumption sum the sources/loads; net is the grid term', () => {
     const agg = sceneAggregates(fixtureModel(gridImport));
