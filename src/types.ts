@@ -4,7 +4,7 @@ import type { EnergyEntities } from './data/energy';
 import type { Integration } from './data/dialect';
 // Type-only import of the canonical node-key vocabulary (AR-1 safe: registry.ts is
 // a pure leaf in src/data/ that imports nothing upward, so this cannot form a cycle
-// and reads no hass.states). `Role` is the SIX suite nodes INCLUDING `vehicle`
+// and reads no hass.states). `Role` is the SEVEN suite nodes INCLUDING `vehicle`
 // (NOT `EnergyRole`, which excludes the car) — exactly the keyspace Epic 9's node
 // customization needs. Reusing it keeps the customization keyspace from drifting
 // from the registry's single source of truth.
@@ -60,35 +60,6 @@ export type PanelId =
   | 'media';
 
 /**
- * My-Home Scene node/card customization (Epic 9 / CAP-5, FR-41 to ratify).
- *
- * ADDITIVE + OPTIONAL: omit ⇒ today's auto-detect/present-gated Scene, exactly
- * (SM-C4). Its keyspace is {@link Role} — the six suite nodes INCLUDING `vehicle`
- * — NOT `EnergyRole`, which structurally excludes the car. Unknown strings in any
- * list are tolerated and ignored downstream, never thrown (forward-compat / R9).
- * Precedence: a node listed in BOTH `hide` and `order` is HIDDEN (hide wins).
- *
- * Semver back-compat: these keys are purely additive/optional — omitted ⇒ today's
- * behavior — and every future build MUST keep tolerating them (and any unknown
- * extras within), riding the top-level `TeslaCardConfig` forward-compat contract
- * (R9: `setConfig` spreads, validates only what it consumes, never throws). This
- * is the public, JSDoc-pinned 9.1 contract (a fuller user doc lands with the 9.4
- * GUI editor); `types.test.ts` + `tesla-card.config.test.ts` keep it from regressing.
- *
- * SCHEMA-ONLY in Story 9.1 — this declares the stable public home; it ships ZERO
- * consumption. The keys are read later: `hide` by 9.2 (at the `flow/binding.ts`
- * `flowInputsFrom` model seam, so the one shared `FlowModel` drops the node by
- * construction — never a render-only filter), `order` by 9.3 (geometry-driven
- * grid-row packing), `instances` by 9.7 (multi-instance — GATED on a product +
- * UX pass; typed forward-compatibly here, do NOT consume it in 9.1–9.6).
- *
- * REVIEW NOTE (AC1 — "final shape decided in review"): `vehicle` is a Scene NODE,
- * not an energy role, yet this nests node customization under `energy`. The
- * reviewer may prefer to HOIST this to a top-level `nodes?:` key on
- * `TeslaCardConfig`; default here follows the epic's proposed `energy.nodes?`
- * home. Non-blocking — the proposed shape ships as-is.
- */
-/**
  * One instance of a duplicated Scene node (Story 9.7). The {@link
  * NodeCustomization.instances} list is a per-instance DESCRIPTOR list — its array
  * LENGTH is the instance count, and each entry carries that instance's
@@ -131,6 +102,35 @@ export interface InstanceSpec {
  */
 export type SceneRow = 'source' | 'load';
 
+/**
+ * My-Home Scene node/card customization (Epic 9 / CAP-5, FR-41 to ratify).
+ *
+ * ADDITIVE + OPTIONAL: omit ⇒ today's auto-detect/present-gated Scene, exactly
+ * (SM-C4). Its keyspace is {@link Role} — the seven suite nodes INCLUDING `vehicle`
+ * — NOT `EnergyRole`, which structurally excludes the car. Unknown strings in any
+ * list are tolerated and ignored downstream, never thrown (forward-compat / R9).
+ * Precedence: a node listed in BOTH `hide` and `order` is HIDDEN (hide wins).
+ *
+ * Semver back-compat: these keys are purely additive/optional — omitted ⇒ today's
+ * behavior — and every future build MUST keep tolerating them (and any unknown
+ * extras within), riding the top-level `TeslaCardConfig` forward-compat contract
+ * (R9: `setConfig` spreads, validates only what it consumes, never throws). This
+ * is the public, JSDoc-pinned 9.1 contract (a fuller user doc lands with the 9.4
+ * GUI editor); `types.test.ts` + `tesla-card.config.test.ts` keep it from regressing.
+ *
+ * SCHEMA-ONLY in Story 9.1 — this declares the stable public home; it ships ZERO
+ * consumption. The keys are read later: `hide` by 9.2 (at the `flow/binding.ts`
+ * `flowInputsFrom` model seam, so the one shared `FlowModel` drops the node by
+ * construction — never a render-only filter), `order` by 9.3 (geometry-driven
+ * grid-row packing), `rows` by 9.15 (cross-row promotion), `instances` by 9.7
+ * (multi-instance). The 9.4 GUI editor reads/writes `hide`/`order`/`rows`.
+ *
+ * REVIEW NOTE (AC1 — "final shape decided in review"): `vehicle` is a Scene NODE,
+ * not an energy role, yet this nests node customization under `energy`. The
+ * reviewer may prefer to HOIST this to a top-level `nodes?:` key on
+ * `TeslaCardConfig`; default here follows the epic's proposed `energy.nodes?`
+ * home. Non-blocking — the proposed shape ships as-is.
+ */
 export interface NodeCustomization {
   /** Nodes to remove from the Scene — each behaves EXACTLY as if absent (9.2 consumes). */
   hide?: Role[];

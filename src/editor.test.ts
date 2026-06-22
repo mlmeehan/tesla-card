@@ -410,28 +410,59 @@ describe('AC4 — text-field hygiene + event wiring contract', () => {
 });
 
 // ── Story 9.4 — node hide/reorder GUI controls ─────────────────────────────────
-// The editor surfaces the Story 9.1 `energy.nodes.{hide,order}` keys via the same
+// The editor surfaces the Story 9.1 `energy.nodes.{hide,order,rows}` keys via the same
 // toggle family as the three hide switches above. These pin the read/write config
 // contract: reflect, write, prune-to-zero-diff, and forward-compat round-trip.
-// The six Scene nodes incl. `vehicle` (registry `ROLES`) — render order is fixed.
-const ROLES = ['vehicle', 'solar', 'powerwall', 'grid', 'home', 'wall_connector'] as const;
+// The seven Scene nodes incl. `vehicle` + `generator` (registry `ROLES`). Since the
+// holistic editor re-review the controls render ROW-GROUPED (Sources then Loads) to
+// mirror the card's two-row Scene — so look node controls up BY ROLE, not flat index.
+const ROLES = ['vehicle', 'solar', 'powerwall', 'grid', 'home', 'wall_connector', 'generator'] as const;
+// Display label per role (mirrors the editor's NODE_LABELS, which is not exported).
+const ROLE_LABEL: Record<string, string> = {
+  vehicle: STRINGS.editor.nodeVehicle,
+  solar: STRINGS.energy.nodes.solar,
+  powerwall: STRINGS.energy.nodes.powerwall,
+  grid: STRINGS.energy.nodes.grid,
+  home: STRINGS.energy.nodes.home,
+  wall_connector: STRINGS.energy.nodes.wall_connector,
+  generator: STRINGS.energy.nodes.generator,
+};
 
-/** The six per-node show checkboxes (inside the Scene-nodes `.group`). */
+/** The seven per-node show checkboxes (inside the Scene-nodes `.group`), in DOM order. */
 function nodeChecks(el: EditorEl): HTMLInputElement[] {
   return Array.from(
     el.shadowRoot!.querySelectorAll('.group input[type="checkbox"]')
   ) as HTMLInputElement[];
 }
-/** The displayed node order, read off the move-row labels. */
+/** The displayed node order (row-grouped: sources then loads), read off the row labels. */
 function orderLabels(el: EditorEl): string[] {
   return Array.from(el.shadowRoot!.querySelectorAll('.node-row .node-name')).map(
     (n) => n.textContent?.trim() ?? ''
   );
 }
+/** The `.node-row` element for a given role (row-order-independent lookup by label). */
+function nodeRowFor(el: EditorEl, role: string): Element {
+  const label = ROLE_LABEL[role];
+  return Array.from(el.shadowRoot!.querySelectorAll('.node-row')).find(
+    (r) => r.querySelector('.node-name')?.textContent?.trim() === label
+  )!;
+}
+/** The show/hide checkbox for `role` (label-based — survives row regrouping). */
+function checkFor(el: EditorEl, role: string): HTMLInputElement {
+  return nodeRowFor(el, role).querySelector('input[type="checkbox"]') as HTMLInputElement;
+}
 /** The move-up / move-down buttons for the node at display row `i`. */
 function moveButtons(el: EditorEl, i: number): { up: HTMLButtonElement; down: HTMLButtonElement } {
   const rows = el.shadowRoot!.querySelectorAll('.node-row');
   const btns = rows[i].querySelectorAll('button.move');
+  return { up: btns[0] as HTMLButtonElement, down: btns[1] as HTMLButtonElement };
+}
+/** The move-up / move-down buttons for `role` (label-based). */
+function moveButtonsFor(
+  el: EditorEl,
+  role: string
+): { up: HTMLButtonElement; down: HTMLButtonElement } {
+  const btns = nodeRowFor(el, role).querySelectorAll('button.move');
   return { up: btns[0] as HTMLButtonElement, down: btns[1] as HTMLButtonElement };
 }
 
@@ -455,10 +486,8 @@ describe('Story 9.4 AC1/AC2 — seven per-node show toggles render + reflect', (
       energy: { nodes: { hide: ['solar'] } },
     } as unknown as TeslaCardConfig);
     await el.updateComplete;
-    const solarIdx = ROLES.indexOf('solar');
-    const checks = nodeChecks(el);
-    expect(checks[solarIdx].checked).toBe(false); // hidden → show unchecked
-    expect(checks[ROLES.indexOf('home')].checked).toBe(true); // others still shown
+    expect(checkFor(el, 'solar').checked).toBe(false); // hidden → show unchecked
+    expect(checkFor(el, 'home').checked).toBe(true); // others still shown
     el.remove();
   });
 });
@@ -470,20 +499,19 @@ describe('Story 9.4 AC1/AC3 — hide toggle writes energy.nodes.hide + prunes to
     await el.updateComplete;
     const cap = captureEmit(el);
 
-    const checks = nodeChecks(el);
-    const homeIdx = ROLES.indexOf('home');
     // Uncheck "Home" → hide it.
-    checks[homeIdx].checked = false;
-    checks[homeIdx].dispatchEvent(new Event('change'));
+    const home = checkFor(el, 'home');
+    home.checked = false;
+    home.dispatchEvent(new Event('change'));
     let emitted = cap.get() as unknown as TeslaCardConfig & { energy?: EnergyShape };
     expect(emitted.energy?.nodes?.hide).toEqual(['home']);
 
     // Re-render with the emitted config, then re-check "Home" → un-hide it.
     el.setConfig(emitted);
     await el.updateComplete;
-    const checks2 = nodeChecks(el);
-    checks2[homeIdx].checked = true;
-    checks2[homeIdx].dispatchEvent(new Event('change'));
+    const home2 = checkFor(el, 'home');
+    home2.checked = true;
+    home2.dispatchEvent(new Event('change'));
     emitted = cap.get() as unknown as TeslaCardConfig & { energy?: EnergyShape };
     // Zero-diff default: no empty hide, no empty nodes, no empty energy.
     expect('energy' in emitted).toBe(false);
@@ -496,15 +524,15 @@ describe('Story 9.4 AC1/AC3 — hide toggle writes energy.nodes.hide + prunes to
     await el.updateComplete;
     const cap = captureEmit(el);
 
-    // Hide grid (index 3) first, then solar (index 1).
-    let checks = nodeChecks(el);
-    checks[ROLES.indexOf('grid')].checked = false;
-    checks[ROLES.indexOf('grid')].dispatchEvent(new Event('change'));
+    // Hide grid first, then solar.
+    const grid = checkFor(el, 'grid');
+    grid.checked = false;
+    grid.dispatchEvent(new Event('change'));
     el.setConfig(cap.get() as unknown as TeslaCardConfig);
     await el.updateComplete;
-    checks = nodeChecks(el);
-    checks[ROLES.indexOf('solar')].checked = false;
-    checks[ROLES.indexOf('solar')].dispatchEvent(new Event('change'));
+    const solar = checkFor(el, 'solar');
+    solar.checked = false;
+    solar.dispatchEvent(new Event('change'));
 
     const emitted = cap.get() as unknown as TeslaCardConfig & { energy?: EnergyShape };
     // solar precedes grid in ROLES → canonical order, not click order.
@@ -521,9 +549,9 @@ describe('Story 9.4 AC1/AC3 — hide toggle writes energy.nodes.hide + prunes to
     await el.updateComplete;
     const cap = captureEmit(el);
 
-    const checks = nodeChecks(el);
-    checks[ROLES.indexOf('solar')].checked = false; // hide solar
-    checks[ROLES.indexOf('solar')].dispatchEvent(new Event('change'));
+    const solar = checkFor(el, 'solar');
+    solar.checked = false; // hide solar
+    solar.dispatchEvent(new Event('change'));
 
     const emitted = cap.get() as unknown as TeslaCardConfig & {
       energy?: EnergyShape & { hide?: boolean };
@@ -536,86 +564,94 @@ describe('Story 9.4 AC1/AC3 — hide toggle writes energy.nodes.hide + prunes to
 });
 
 describe('Story 9.4 AC1/AC4 — order control writes energy.nodes.order + prunes canonical', () => {
-  test('default display order is the canonical ROLES order', async () => {
+  test('default display order is the row-grouped canonical order (sources then loads)', async () => {
     const el = makeEditor();
     el.setConfig({ type: 'custom:tesla-card' } as TeslaCardConfig);
     await el.updateComplete;
+    // Sources [solar, powerwall, grid, generator] then loads [home, wall_connector, vehicle].
     expect(orderLabels(el)).toEqual([
-      STRINGS.editor.nodeVehicle,
       STRINGS.energy.nodes.solar,
       STRINGS.energy.nodes.powerwall,
       STRINGS.energy.nodes.grid,
+      STRINGS.energy.nodes.generator,
       STRINGS.energy.nodes.home,
       STRINGS.energy.nodes.wall_connector,
-      STRINGS.energy.nodes.generator,
+      STRINGS.editor.nodeVehicle,
     ]);
     el.remove();
   });
 
-  test('move-down on the first node emits the full seven-node order with the swap', async () => {
+  test('move-down on the first source emits the full row-grouped order with the within-row swap', async () => {
     const el = makeEditor();
     el.setConfig({ type: 'custom:tesla-card' } as TeslaCardConfig);
     await el.updateComplete;
     const cap = captureEmit(el);
 
-    moveButtons(el, 0).down.click(); // vehicle ↓ → swaps with solar
+    moveButtonsFor(el, 'solar').down.click(); // solar ↓ → swaps with powerwall (within the source row)
     const emitted = cap.get() as unknown as TeslaCardConfig & { energy?: EnergyShape };
+    // Emitted order is the full row-grouped sequence: sources (swapped) ++ loads (canonical).
     expect(emitted.energy?.nodes?.order).toEqual([
-      'solar',
-      'vehicle',
       'powerwall',
+      'solar',
       'grid',
+      'generator',
       'home',
       'wall_connector',
-      'generator',
+      'vehicle',
     ]);
     el.remove();
   });
 
-  test('restoring canonical order DELETES energy.nodes.order (zero-diff)', async () => {
+  test('restoring canonical within-row order DELETES energy.nodes.order (zero-diff)', async () => {
     const el = makeEditor();
+    // A single within-source swap from canonical (powerwall before solar).
     el.setConfig({
       type: 'custom:tesla-card',
-      energy: { nodes: { order: ['solar', 'vehicle', 'powerwall', 'grid', 'home', 'wall_connector'] } },
+      energy: { nodes: { order: ['powerwall', 'solar', 'grid', 'generator', 'home', 'wall_connector', 'vehicle'] } },
     } as unknown as TeslaCardConfig);
     await el.updateComplete;
     const cap = captureEmit(el);
 
-    // solar is at row 0; move it down → swaps back with vehicle → canonical.
-    moveButtons(el, 0).down.click();
+    // powerwall leads the source row; move it down → swaps back with solar → canonical.
+    moveButtonsFor(el, 'powerwall').down.click();
     const emitted = cap.get() as unknown as TeslaCardConfig & { energy?: EnergyShape };
     expect('energy' in emitted).toBe(false); // canonical order → key + energy pruned
     el.remove();
   });
 
-  test('partial order reflects in the displayed list (listed ++ canonical remainder)', async () => {
+  test('partial order reflects WITHIN the node’s row (listed ++ canonical remainder)', async () => {
     const el = makeEditor();
     el.setConfig({
       type: 'custom:tesla-card',
       energy: { nodes: { order: ['home'] } },
     } as unknown as TeslaCardConfig);
     await el.updateComplete;
-    // home leads, the rest follow in canonical ROLES order.
-    expect(orderLabels(el)[0]).toBe(STRINGS.energy.nodes.home);
+    // `home` is a LOAD, so it leads the LOAD row; the source row is untouched canonical.
     expect(orderLabels(el)).toEqual([
-      STRINGS.energy.nodes.home,
-      STRINGS.editor.nodeVehicle,
       STRINGS.energy.nodes.solar,
       STRINGS.energy.nodes.powerwall,
       STRINGS.energy.nodes.grid,
-      STRINGS.energy.nodes.wall_connector,
       STRINGS.energy.nodes.generator,
+      STRINGS.energy.nodes.home,
+      STRINGS.energy.nodes.wall_connector,
+      STRINGS.editor.nodeVehicle,
     ]);
     el.remove();
   });
 
-  test('move-up is disabled on the first row, move-down on the last (no-op edges)', async () => {
+  test('move gating is per ROW edge — never crosses the source/load boundary', async () => {
     const el = makeEditor();
     el.setConfig({ type: 'custom:tesla-card' } as TeslaCardConfig);
     await el.updateComplete;
-    expect(moveButtons(el, 0).up.disabled).toBe(true);
-    expect(moveButtons(el, 6).down.disabled).toBe(true); // last row is now the generator (index 6)
-    expect(moveButtons(el, 0).down.disabled).toBe(false);
+    // First source (solar): up disabled; last source (generator): down disabled — so a
+    // move can't push a source into the load row (that is the row selector's job).
+    expect(moveButtonsFor(el, 'solar').up.disabled).toBe(true);
+    expect(moveButtonsFor(el, 'solar').down.disabled).toBe(false);
+    expect(moveButtonsFor(el, 'generator').down.disabled).toBe(true);
+    expect(moveButtonsFor(el, 'generator').up.disabled).toBe(false);
+    // First load (home): up disabled; last load (vehicle): down disabled.
+    expect(moveButtonsFor(el, 'home').up.disabled).toBe(true);
+    expect(moveButtonsFor(el, 'vehicle').down.disabled).toBe(true);
     el.remove();
   });
 });
@@ -630,9 +666,9 @@ describe('Story 9.4 AC3 — forward-compat: a node edit never drops an unknown t
     await el.updateComplete;
     const cap = captureEmit(el);
 
-    const checks = nodeChecks(el);
-    checks[ROLES.indexOf('grid')].checked = false;
-    checks[ROLES.indexOf('grid')].dispatchEvent(new Event('change'));
+    const grid = checkFor(el, 'grid');
+    grid.checked = false;
+    grid.dispatchEvent(new Event('change'));
 
     const emitted = cap.get() as unknown as TeslaCardConfig & {
       energy?: EnergyShape;
@@ -655,9 +691,9 @@ describe('Story 9.4 AC3 — forward-compat: a node edit never drops an unknown t
     await el.updateComplete;
     const cap = captureEmit(el);
 
-    const checks = nodeChecks(el);
-    checks[ROLES.indexOf('solar')].checked = true; // show solar → hide becomes []
-    checks[ROLES.indexOf('solar')].dispatchEvent(new Event('change'));
+    const solar = checkFor(el, 'solar');
+    solar.checked = true; // show solar → hide becomes []
+    solar.dispatchEvent(new Event('change'));
 
     const emitted = cap.get() as unknown as TeslaCardConfig & {
       energy?: EnergyShape & { future_node_key?: unknown };
@@ -681,39 +717,40 @@ describe('Story 9.4 AC3 — forward-compat: a node edit never drops an unknown t
 //   • the prune is exercised on a single node; a full six-node hide→show sweep
 //     proves the maximal `hide` list still prunes back to a byte-identical default.
 
-describe('Story 9.4 AC1/AC4 — move-UP swaps with the previous node (the dir:-1 path)', () => {
-  test('move-up on a middle row emits the full six-node order with that pair swapped', async () => {
+describe('Story 9.4 AC1/AC4 — move-UP swaps with the previous node in-row (the dir:-1 path)', () => {
+  test('move-up on a mid-row source emits the full row-grouped order with that pair swapped', async () => {
     const el = makeEditor();
     el.setConfig({ type: 'custom:tesla-card' } as TeslaCardConfig);
     await el.updateComplete;
     const cap = captureEmit(el);
 
-    // powerwall is at row 2 (vehicle, solar, powerwall, …); move it up → swaps with solar.
-    moveButtons(el, 2).up.click();
+    // powerwall is 2nd in the source row [solar, powerwall, grid, generator]; up → swaps with solar.
+    moveButtonsFor(el, 'powerwall').up.click();
     const emitted = cap.get() as unknown as TeslaCardConfig & { energy?: EnergyShape };
     expect(emitted.energy?.nodes?.order).toEqual([
-      'vehicle',
       'powerwall',
       'solar',
       'grid',
+      'generator',
       'home',
       'wall_connector',
-      'generator',
+      'vehicle',
     ]);
     el.remove();
   });
 
   test('move-up restoring canonical order DELETES energy.nodes.order (zero-diff, parity with move-down)', async () => {
     const el = makeEditor();
+    // powerwall ahead of solar in the source row — one within-row swap from canonical.
     el.setConfig({
       type: 'custom:tesla-card',
-      energy: { nodes: { order: ['solar', 'vehicle', 'powerwall', 'grid', 'home', 'wall_connector'] } },
+      energy: { nodes: { order: ['powerwall', 'solar', 'grid', 'generator', 'home', 'wall_connector', 'vehicle'] } },
     } as unknown as TeslaCardConfig);
     await el.updateComplete;
     const cap = captureEmit(el);
 
-    // vehicle is at row 1; move it UP → swaps back with solar → canonical order.
-    moveButtons(el, 1).up.click();
+    // solar is 2nd in the source row; move it UP → swaps back with powerwall → canonical.
+    moveButtonsFor(el, 'solar').up.click();
     const emitted = cap.get() as unknown as TeslaCardConfig & { energy?: EnergyShape };
     expect('energy' in emitted).toBe(false); // canonical → order + energy pruned
     el.remove();
@@ -729,15 +766,16 @@ describe('Story 9.4 AC1 — orderedRoles sanitizes the displayed order (Story 9.
       energy: { nodes: { order: ['home', 'home', 'bogus_role', 'solar'] } },
     } as unknown as TeslaCardConfig);
     await el.updateComplete;
-    // listed-valid-deduped [home, solar] ++ canonical remainder.
+    // Sanitized + row-grouped: solar leads the source row (rest canonical); home leads the
+    // load row (rest canonical). The duplicate `home` dedups and `bogus_role` drops.
     expect(orderLabels(el)).toEqual([
-      STRINGS.energy.nodes.home,
       STRINGS.energy.nodes.solar,
-      STRINGS.editor.nodeVehicle,
       STRINGS.energy.nodes.powerwall,
       STRINGS.energy.nodes.grid,
-      STRINGS.energy.nodes.wall_connector,
       STRINGS.energy.nodes.generator,
+      STRINGS.energy.nodes.home,
+      STRINGS.energy.nodes.wall_connector,
+      STRINGS.editor.nodeVehicle,
     ]);
     expect(orderLabels(el).length).toBe(7); // never fewer/more than the seven nodes
     el.remove();
@@ -756,9 +794,9 @@ describe('Story 9.4 — the editor writes intent, not precedence (Dev Notes)', (
     const cap = captureEmit(el);
 
     // Hide "home" — which is also first in the custom order.
-    const checks = nodeChecks(el);
-    checks[ROLES.indexOf('home')].checked = false;
-    checks[ROLES.indexOf('home')].dispatchEvent(new Event('change'));
+    const home = checkFor(el, 'home');
+    home.checked = false;
+    home.dispatchEvent(new Event('change'));
 
     const emitted = cap.get() as unknown as TeslaCardConfig & { energy?: EnergyShape };
     expect(emitted.energy?.nodes?.hide).toEqual(['home']); // intent written...
@@ -776,7 +814,7 @@ describe('Story 9.4 — the editor writes intent, not precedence (Dev Notes)', (
 });
 
 describe('Story 9.4 AC3 — full hide→show sweep prunes back to a byte-identical default', () => {
-  test('hiding all six nodes then showing all six leaves no energy key (zero-diff)', async () => {
+  test('hiding all seven nodes then showing all seven leaves no energy key (zero-diff)', async () => {
     const el = makeEditor();
     el.setConfig({ type: 'custom:tesla-card' } as TeslaCardConfig);
     await el.updateComplete;
@@ -784,10 +822,9 @@ describe('Story 9.4 AC3 — full hide→show sweep prunes back to a byte-identic
 
     // Hide every node, re-setConfig between toggles so each edit builds on the last.
     for (const role of ROLES) {
-      const checks = nodeChecks(el);
-      const idx = ROLES.indexOf(role);
-      checks[idx].checked = false;
-      checks[idx].dispatchEvent(new Event('change'));
+      const check = checkFor(el, role);
+      check.checked = false;
+      check.dispatchEvent(new Event('change'));
       el.setConfig(cap.get() as unknown as TeslaCardConfig);
       await el.updateComplete;
     }
@@ -798,10 +835,9 @@ describe('Story 9.4 AC3 — full hide→show sweep prunes back to a byte-identic
 
     // Now show every node again.
     for (const role of ROLES) {
-      const checks = nodeChecks(el);
-      const idx = ROLES.indexOf(role);
-      checks[idx].checked = true;
-      checks[idx].dispatchEvent(new Event('change'));
+      const check = checkFor(el, role);
+      check.checked = true;
+      check.dispatchEvent(new Event('change'));
       el.setConfig(cap.get() as unknown as TeslaCardConfig);
       await el.updateComplete;
     }
@@ -834,6 +870,142 @@ describe('Story 9.4 AC5 — controls are accessible + state-free (AR-1)', () => 
     await expect(el.updateComplete).resolves.toBeDefined();
     expect(nodeChecks(el).length).toBe(7); // toggles rendered without any hass
     expect(orderLabels(el).length).toBe(7);
+    el.remove();
+  });
+});
+
+// ── Holistic editor re-review (2026-06-22) — FR-24 crash guards + promotion-aware order ──
+// The card tolerates a garbage `energy.nodes.{hide,order}` (Array.isArray guards in
+// `_hiddenRoles`/`_orderList`); these pin that the EDITOR no longer crashes on a config
+// the card renders fine, never persists a corrupted sibling, and reorders within the
+// EFFECTIVE (promoted) row.
+describe('editor re-review — FR-24: garbage hide/order never throws on open (P1/P2)', () => {
+  test('a non-array energy.nodes.order does NOT throw render; the list degrades to canonical', async () => {
+    const el = makeEditor();
+    expect(() =>
+      el.setConfig({
+        type: 'custom:tesla-card',
+        energy: { nodes: { order: 42 } },
+      } as unknown as TeslaCardConfig)
+    ).not.toThrow();
+    await el.updateComplete;
+    // All seven node-rows render, in canonical row-grouped order (garbage order ignored).
+    expect(orderLabels(el)).toEqual([
+      STRINGS.energy.nodes.solar,
+      STRINGS.energy.nodes.powerwall,
+      STRINGS.energy.nodes.grid,
+      STRINGS.energy.nodes.generator,
+      STRINGS.energy.nodes.home,
+      STRINGS.energy.nodes.wall_connector,
+      STRINGS.editor.nodeVehicle,
+    ]);
+    el.remove();
+  });
+
+  test('a non-array energy.nodes.hide does NOT throw and hides nothing', async () => {
+    const el = makeEditor();
+    expect(() =>
+      el.setConfig({
+        type: 'custom:tesla-card',
+        energy: { nodes: { hide: true } },
+      } as unknown as TeslaCardConfig)
+    ).not.toThrow();
+    await el.updateComplete;
+    expect(nodeChecks(el).length).toBe(7);
+    expect(nodeChecks(el).every((c) => c.checked)).toBe(true); // nothing falsely hidden
+    el.remove();
+  });
+
+  test('a STRING hide does not substring-hide a node (no `.includes` false-positive)', async () => {
+    const el = makeEditor();
+    // 'wall_connector'.includes('wall_connector') would be true under a string read —
+    // the Array.isArray guard means a string degrades to "nothing hidden".
+    el.setConfig({
+      type: 'custom:tesla-card',
+      energy: { nodes: { hide: 'wall_connector' } },
+    } as unknown as TeslaCardConfig);
+    await el.updateComplete;
+    expect(checkFor(el, 'wall_connector').checked).toBe(true);
+    el.remove();
+  });
+
+  test('an unrelated edit does NOT mangle a garbage sibling (no spread-corruption)', async () => {
+    const el = makeEditor();
+    // `hide` is a garbage string — the card ignores it; the editor must leave it byte-
+    // identical, NOT spread it into ['s','o','l','a','r'] when committing a row change.
+    el.setConfig({
+      type: 'custom:tesla-card',
+      energy: { nodes: { hide: 'solar' } },
+    } as unknown as TeslaCardConfig);
+    await el.updateComplete;
+    const cap = captureEmit(el);
+
+    const sel = el.shadowRoot!.querySelector(
+      `.row-select[aria-label="${STRINGS.editor.sceneNodesRowLabel}: ${STRINGS.energy.nodes.home}"]`
+    ) as HTMLSelectElement;
+    sel.value = 'source';
+    sel.dispatchEvent(new Event('change'));
+
+    const emitted = cap.get() as unknown as TeslaCardConfig & {
+      energy?: { nodes?: { hide?: unknown; rows?: Record<string, string> } };
+    };
+    expect(emitted.energy?.nodes?.rows).toEqual({ home: 'source' }); // the intended write
+    expect(emitted.energy?.nodes?.hide).toBe('solar'); // garbage sibling untouched (not corrupted)
+    el.remove();
+  });
+});
+
+describe('editor re-review — reorder respects the EFFECTIVE (promoted) row (D1)', () => {
+  test('a promoted load reorders AMONG the sources, and the promotion survives the move', async () => {
+    const el = makeEditor();
+    // wall_connector promoted to the source row ⇒ source row = [solar, powerwall, grid, generator, wall_connector].
+    el.setConfig({
+      type: 'custom:tesla-card',
+      energy: { nodes: { rows: { wall_connector: 'source' } } },
+    } as unknown as TeslaCardConfig);
+    await el.updateComplete;
+    const cap = captureEmit(el);
+
+    // wall_connector is last in the (promoted) source row; move it up → swaps with generator.
+    moveButtonsFor(el, 'wall_connector').up.click();
+    const emitted = cap.get() as unknown as TeslaCardConfig & {
+      energy?: { nodes?: { order?: string[]; rows?: Record<string, string> } };
+    };
+    expect(emitted.energy?.nodes?.order).toEqual([
+      'solar',
+      'powerwall',
+      'grid',
+      'wall_connector',
+      'generator',
+      'home',
+      'vehicle',
+    ]);
+    expect(emitted.energy?.nodes?.rows).toEqual({ wall_connector: 'source' }); // promotion preserved
+    el.remove();
+  });
+
+  test('restoring the promoted within-row order prunes order but KEEPS the promotion (zero-diff baseline tracks rows)', async () => {
+    const el = makeEditor();
+    // Promotion active + a one-swap-from-canonical order within the promoted source row.
+    el.setConfig({
+      type: 'custom:tesla-card',
+      energy: {
+        nodes: {
+          rows: { wall_connector: 'source' },
+          order: ['solar', 'powerwall', 'grid', 'wall_connector', 'generator', 'home', 'vehicle'],
+        },
+      },
+    } as unknown as TeslaCardConfig);
+    await el.updateComplete;
+    const cap = captureEmit(el);
+
+    // Move generator up → swaps back with wall_connector → the canonical order FOR THIS promotion.
+    moveButtonsFor(el, 'generator').up.click();
+    const emitted = cap.get() as unknown as TeslaCardConfig & {
+      energy?: { nodes?: { order?: string[]; rows?: Record<string, string> } };
+    };
+    expect(emitted.energy?.nodes?.order).toBeUndefined(); // pruned against the promotion-aware canonical
+    expect(emitted.energy?.nodes?.rows).toEqual({ wall_connector: 'source' }); // promotion kept
     el.remove();
   });
 });

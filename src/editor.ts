@@ -21,10 +21,10 @@ const PANELS: { id: PanelId; name: string }[] = [
   { id: 'media', name: STRINGS.tabs.media },
 ];
 
-// Display name for each of the six Scene nodes (Story 9.4). The five energy
-// roles reuse the existing `STRINGS.energy.nodes.*` chip labels (single-sourced,
-// not duplicated); `vehicle` is editor-owned because `STRINGS.energy.nodes` has
-// no `vehicle` key (the Hero silhouette IS the vehicle).
+// Display name for each of the seven Scene nodes (Stories 9.4 + 9.14). The six
+// energy roles reuse the existing `STRINGS.energy.nodes.*` chip labels (single-
+// sourced, not duplicated); `vehicle` is editor-owned because `STRINGS.energy.nodes`
+// has no `vehicle` key (the Hero silhouette IS the vehicle).
 const NODE_LABELS: Record<Role, string> = {
   vehicle: STRINGS.editor.nodeVehicle,
   solar: STRINGS.energy.nodes.solar,
@@ -40,29 +40,35 @@ function rolesEqual(a: readonly Role[], b: readonly Role[]): boolean {
   return a.length === b.length && a.every((r, i) => r === b[i]);
 }
 
-// Story 9.15 — the canonical source roles (mirrors `my-home.ts` SOURCE_ROW), so the
-// editor can compute a node's DEFAULT row to prune a `rows` entry that equals it
-// (delete-on-canonical, SM-C4). Every other role is a canonical load.
+// The editor mirrors the card's row model (`my-home.ts` SOURCE_ROW /
+// LOAD_ROW_WITH_VEHICLE / SCENE_ROW_ORDER) so its grouped preview AND the `order`
+// it emits match what the Scene renders. NOTE: hand-duplicated, not typecheck-bound
+// to the card — see deferred-work.md (SOURCE_ROLES parity). `SCENE_ROW_ORDER` is the
+// canonical (default) Scene sequence: every source role, then every load role + the
+// synthetic `vehicle` cell (trailing, so a defaulted order keeps the car last).
 const SOURCE_ROLES: readonly Role[] = ['solar', 'powerwall', 'grid', 'generator'];
+const LOAD_ROLES: readonly Role[] = ['home', 'wall_connector', 'vehicle'];
+const SCENE_ROW_ORDER: readonly Role[] = [...SOURCE_ROLES, ...LOAD_ROLES];
 const canonicalRow = (role: Role): SceneRow => (SOURCE_ROLES.includes(role) ? 'source' : 'load');
 
-/**
- * The order the editor displays (and the card draws, per Story 9.3): the
- * configured `order` entries — valid, de-duplicated, in listed order — followed
- * by the remaining `ROLES` in canonical order. Unknown/absent entries are
- * ignored, mirroring the render-side stable partition so the editor preview
- * matches the Scene.
- */
-function orderedRoles(order: readonly Role[] | undefined): Role[] {
-  const listed: Role[] = [];
-  const seen = new Set<Role>();
-  for (const r of order ?? []) {
-    if (ROLES.includes(r) && !seen.has(r)) {
-      listed.push(r);
-      seen.add(r);
-    }
-  }
-  return [...listed, ...ROLES.filter((r) => !seen.has(r))];
+// A role's EFFECTIVE row: a valid `'source'`/`'load'` override wins, anything else
+// (absent / invalid / a garbage non-object `rows`) falls through to canonical — the
+// same defensive read as the card's `_rowOf` (FR-24). `rows` is read as a loose record
+// so a garbage value can't throw.
+function effectiveRow(role: Role, rows: NodeCustomization['rows']): SceneRow {
+  const v = (rows as Record<string, unknown> | undefined)?.[role];
+  return v === 'source' || v === 'load' ? v : canonicalRow(role);
+}
+
+// The flat `order` an UNCONFIGURED order yields for the given row overrides: each
+// effective row's members in canonical Scene sequence, sources then loads. The
+// zero-diff prune (SM-C4) compares the emitted order against THIS — so a row-grouped
+// no-op reorder, and a promotion's re-grouped order, both serialize byte-for-byte.
+function canonicalOrder(rows: NodeCustomization['rows']): Role[] {
+  return [
+    ...SCENE_ROW_ORDER.filter((r) => effectiveRow(r, rows) === 'source'),
+    ...SCENE_ROW_ORDER.filter((r) => effectiveRow(r, rows) === 'load'),
+  ];
 }
 
 @customElement('tesla-card-editor')
@@ -127,13 +133,25 @@ export class TeslaCardEditor extends LitElement implements LovelaceCardEditor {
   private _commitNodes(mutate: (nodes: NodeCustomization) => void): void {
     const c = this._config;
     const nodes: NodeCustomization = { ...(c.energy?.nodes ?? {}) };
-    if (nodes.hide) nodes.hide = [...nodes.hide];
-    if (nodes.order) nodes.order = [...nodes.order];
-    if (nodes.rows) nodes.rows = { ...nodes.rows };
+    // Clone ONLY well-formed containers. A garbage string/number `hide`/`order`/`rows`
+    // (FR-24: tolerated and never consumed by the card) must NOT be spread — `[...'nope']`
+    // / `{ ...'nope' }` would persist a corrupted char-indexed value on an unrelated edit,
+    // and `[...42]` throws. Leave a malformed sibling byte-identical so it round-trips.
+    if (Array.isArray(nodes.hide)) nodes.hide = [...nodes.hide];
+    if (Array.isArray(nodes.order)) nodes.order = [...nodes.order];
+    if (nodes.rows && typeof nodes.rows === 'object' && !Array.isArray(nodes.rows))
+      nodes.rows = { ...nodes.rows };
     mutate(nodes);
 
-    if (nodes.hide && nodes.hide.length === 0) delete nodes.hide;
-    if (nodes.order && (nodes.order.length === 0 || rolesEqual(nodes.order, ROLES)))
+    if (Array.isArray(nodes.hide) && nodes.hide.length === 0) delete nodes.hide;
+    // Prune `order` when it is the no-op default for the CURRENT row overrides — compared
+    // against the EFFECTIVE canonical sequence (not registry `ROLES`), so a row-grouped
+    // reorder restored to default, and a promotion's re-grouped order, both prune to
+    // zero-diff (SM-C4).
+    if (
+      Array.isArray(nodes.order) &&
+      (nodes.order.length === 0 || rolesEqual(nodes.order, canonicalOrder(nodes.rows)))
+    )
       delete nodes.order;
 
     const next: TeslaCardConfig = { ...c };
@@ -148,9 +166,15 @@ export class TeslaCardEditor extends LitElement implements LovelaceCardEditor {
     this._emit(next);
   }
 
-  /** A node is hidden when it appears in `energy.nodes.hide`. */
+  /**
+   * A node is hidden when it appears in `energy.nodes.hide`. Reads defensively
+   * (`Array.isArray`, mirroring the card's `_hiddenRoles`): a non-array `hide`
+   * (FR-24 garbage / future build) degrades to "nothing hidden" — never a `.includes`
+   * throw, and a string `hide` never substring-matches a role.
+   */
   private _isHidden(role: Role): boolean {
-    return (this._config.energy?.nodes?.hide ?? []).includes(role);
+    const hide = this._config.energy?.nodes?.hide;
+    return Array.isArray(hide) && hide.includes(role);
   }
 
   // Show/hide toggle: checked = visible, so a `change` flips membership in `hide`.
@@ -165,17 +189,21 @@ export class TeslaCardEditor extends LitElement implements LovelaceCardEditor {
     });
   }
 
-  // Move a node one step earlier/later in the displayed order, emitting the full
-  // six-node order. `_commitNodes` deletes it if the swap restores canonical order.
+  // Move a node one step earlier/later WITHIN its effective row, emitting the full
+  // row-grouped order (sources ++ loads). Gated at the row's edges (not the flat list),
+  // so a move never crosses the source/load boundary — promotion is the row selector's
+  // job. `_commitNodes` deletes `order` if the result restores the canonical sequence.
   private _moveNode(role: Role, dir: -1 | 1): void {
-    const current = orderedRoles(this._config.energy?.nodes?.order);
-    const i = current.indexOf(role);
+    const row = this._nodeRow(role);
+    const within = this._rowOrder(row);
+    const i = within.indexOf(role);
     const j = i + dir;
-    if (j < 0 || j >= current.length) return; // no-op at the edges
-    const nextOrder = [...current];
-    [nextOrder[i], nextOrder[j]] = [nextOrder[j], nextOrder[i]];
+    if (j < 0 || j >= within.length) return; // no-op at the row edges
+    [within[i], within[j]] = [within[j], within[i]];
+    const source = row === 'source' ? within : this._rowOrder('source');
+    const load = row === 'load' ? within : this._rowOrder('load');
     this._commitNodes((nodes) => {
-      nodes.order = nextOrder;
+      nodes.order = [...source, ...load];
     });
   }
 
@@ -184,8 +212,29 @@ export class TeslaCardEditor extends LitElement implements LovelaceCardEditor {
   // else (absent / invalid / garbage) falls through to the role's canonical row. Drives
   // the row selector's selected value, matching the card's `_rowOf` classifier.
   private _nodeRow(role: Role): SceneRow {
-    const v = this._config.energy?.nodes?.rows?.[role];
-    return v === 'source' || v === 'load' ? v : canonicalRow(role);
+    return effectiveRow(role, this._config.energy?.nodes?.rows);
+  }
+
+  /**
+   * The display (and emitted) order for one effective row: the configured `order`
+   * entries whose effective row is `row` (valid, de-duplicated, first-occurrence
+   * wins), then that row's remaining canonical members in Scene sequence. Mirrors
+   * the card's per-row `orderRow` (`my-home.ts`) so the grouped preview matches the
+   * Scene. Reads `order` defensively (`Array.isArray`) — a garbage `order` degrades
+   * to canonical (FR-24), never throws, exactly as the card's `_orderList` tolerates.
+   */
+  private _rowOrder(row: SceneRow): Role[] {
+    const order = this._config.energy?.nodes?.order;
+    const listed: Role[] = [];
+    const seen = new Set<Role>();
+    for (const r of Array.isArray(order) ? order : []) {
+      if (ROLES.includes(r) && this._nodeRow(r) === row && !seen.has(r)) {
+        listed.push(r);
+        seen.add(r);
+      }
+    }
+    const rest = SCENE_ROW_ORDER.filter((r) => this._nodeRow(r) === row && !seen.has(r));
+    return [...listed, ...rest];
   }
 
   // Promote a node to the chosen row (Story 9.15). Commits through `_commitNodes` with a
@@ -210,64 +259,76 @@ export class TeslaCardEditor extends LitElement implements LovelaceCardEditor {
     </svg>`;
   }
 
-  // The "My Home Scene cards" group: a per-node show/hide checkbox column plus an
-  // ordered move-up/down list. Reads only the static `ROLES` vocabulary + the
-  // config (no `hass.states`, AR-1). Mirrors the existing hide-toggle family (AC2).
+  // One node-row: a show/hide checkbox, the node name, the Source/Load promotion
+  // select (Story 9.15), and move-earlier/later buttons gated at the node's OWN row
+  // edges (`i`/`within` scope the gating to this effective row, so a move never crosses
+  // the source/load boundary). The checkbox carries its own accessible name (the visible
+  // label sits in the sibling `.node-name`).
+  private _renderNodeRow(role: Role, i: number, within: readonly Role[]): TemplateResult {
+    return html`
+      <div class="node-row">
+        <label class="check node-check">
+          <input
+            type="checkbox"
+            aria-label=${NODE_LABELS[role]}
+            .checked=${!this._isHidden(role)}
+            @change=${() => this._toggleNode(role)}
+          />
+        </label>
+        <span class="node-name">${NODE_LABELS[role]}</span>
+        <select
+          class="row-select"
+          aria-label=${`${STRINGS.editor.sceneNodesRowLabel}: ${NODE_LABELS[role]}`}
+          .value=${this._nodeRow(role)}
+          @change=${(e: Event) =>
+            this._setNodeRow(role, (e.target as HTMLSelectElement).value as SceneRow)}
+        >
+          <option value="source">${STRINGS.editor.rowSource}</option>
+          <option value="load">${STRINGS.editor.rowLoad}</option>
+        </select>
+        <button
+          type="button"
+          class="move"
+          aria-label=${`${STRINGS.editor.moveNodeUp}: ${NODE_LABELS[role]}`}
+          ?disabled=${i === 0}
+          @click=${() => this._moveNode(role, -1)}
+        >
+          ${this._icon(mdiChevronUp)}
+        </button>
+        <button
+          type="button"
+          class="move"
+          aria-label=${`${STRINGS.editor.moveNodeDown}: ${NODE_LABELS[role]}`}
+          ?disabled=${i === within.length - 1}
+          @click=${() => this._moveNode(role, 1)}
+        >
+          ${this._icon(mdiChevronDown)}
+        </button>
+      </div>
+    `;
+  }
+
+  // One row group (Sources / Loads): a sub-heading + the row's present-order nodes.
+  private _renderRowGroup(row: SceneRow, heading: string): TemplateResult {
+    const within = this._rowOrder(row);
+    return html`
+      <span class="group-heading">${heading}</span>
+      ${within.map((role, i) => this._renderNodeRow(role, i, within))}
+    `;
+  }
+
+  // The "My Home Scene cards" group: two row-grouped sub-lists (Sources, then Loads),
+  // each carrying its nodes' show/hide + Source/Load + move-within-row controls. The
+  // grouping mirrors the card's two-row Scene so the preview matches what renders.
+  // Reads only the static `ROLES` vocabulary + the config (no `hass.states`, AR-1).
   private _renderSceneNodes(): TemplateResult {
-    const ordered = orderedRoles(this._config.energy?.nodes?.order);
     return html`
       <div class="group" role="group" aria-label=${STRINGS.editor.sceneNodesHeading}>
         <span class="group-heading">${STRINGS.editor.sceneNodesHeading}</span>
         <span class="hint">${STRINGS.editor.sceneNodesShowHint}</span>
-        ${ROLES.map(
-          (role) => html`
-            <label class="check">
-              <input
-                type="checkbox"
-                .checked=${!this._isHidden(role)}
-                @change=${() => this._toggleNode(role)}
-              />
-              <span>${NODE_LABELS[role]}</span>
-            </label>
-          `
-        )}
-        <span class="group-heading">${STRINGS.editor.sceneNodesOrderHeading}</span>
         <span class="hint">${STRINGS.editor.sceneNodesOrderHint}</span>
-        ${ordered.map(
-          (role, i) => html`
-            <div class="node-row">
-              <span class="node-name">${NODE_LABELS[role]}</span>
-              <select
-                class="row-select"
-                aria-label=${`${STRINGS.editor.sceneNodesRowLabel}: ${NODE_LABELS[role]}`}
-                .value=${this._nodeRow(role)}
-                @change=${(e: Event) =>
-                  this._setNodeRow(role, (e.target as HTMLSelectElement).value as SceneRow)}
-              >
-                <option value="source">${STRINGS.editor.rowSource}</option>
-                <option value="load">${STRINGS.editor.rowLoad}</option>
-              </select>
-              <button
-                type="button"
-                class="move"
-                aria-label=${`${STRINGS.editor.moveNodeUp}: ${NODE_LABELS[role]}`}
-                ?disabled=${i === 0}
-                @click=${() => this._moveNode(role, -1)}
-              >
-                ${this._icon(mdiChevronUp)}
-              </button>
-              <button
-                type="button"
-                class="move"
-                aria-label=${`${STRINGS.editor.moveNodeDown}: ${NODE_LABELS[role]}`}
-                ?disabled=${i === ordered.length - 1}
-                @click=${() => this._moveNode(role, 1)}
-              >
-                ${this._icon(mdiChevronDown)}
-              </button>
-            </div>
-          `
-        )}
+        ${this._renderRowGroup('source', STRINGS.editor.rowSource)}
+        ${this._renderRowGroup('load', STRINGS.editor.rowLoad)}
       </div>
     `;
   }
