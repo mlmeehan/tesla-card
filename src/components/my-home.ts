@@ -984,7 +984,14 @@ export class TcMyHome extends LitElement implements LovelaceCard {
   private _legs(anchors: Readonly<Record<string, RectLike>>, lit?: Set<Role>): SVGTemplateResult {
     const horiz = this._axis === 'x';
     const bus = anchors[BUS_NODE_ID];
-    const cross = bus ? (horiz ? bus.top + bus.height / 2 : bus.left + bus.width / 2) : 0;
+    // Story 9.5 (C increment, FR-33 zero-diff): a leg with no bus junction to tap is
+    // degenerate — without this guard `cross` fell back to 0, so a desktop near-edge at
+    // y>160 would draw a `.long` conduit clear to y=0. Refuse to draw it rather than draw
+    // a false leg. Unreachable in steady state (node anchors present ⟺ bus defined), so
+    // output is byte-identical today; the guard makes the regression impossible if a future
+    // anchor-derivation rework (9.7) ever drops the bus independently of node anchors.
+    if (!bus) return svg``;
+    const cross = horiz ? bus.top + bus.height / 2 : bus.left + bus.width / 2;
     const edgeByRole = new Map<string, FlowEdge>();
     for (const e of this._model.edges) edgeByRole.set(e.from, e);
 

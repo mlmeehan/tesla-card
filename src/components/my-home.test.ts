@@ -1386,6 +1386,94 @@ describe('Story 8.12 — gw-term anchors at the card visible bottom (source-row 
 });
 
 // ═══════════════════════════════════════════════════════════════════════════
+// Story 9.5 — C-increment: the `if (!bus)` short-circuit in `_legs`. The ONLY real
+// verification of the fix: e2e/screenshot pins can't reach the degenerate path (in
+// steady state node anchors present ⟺ bus defined), so we force it synthetically by
+// injecting `_anchors` WITHOUT a `bus`/BUS_NODE_ID key. Pre-fix, `cross` fell back to
+// 0 and a desktop near-edge at y>160 drew a `.long` conduit clear to y=0; post-fix the
+// guard returns `svg\`\`` so NO leg renders at all (stronger than "no .long").
+// ═══════════════════════════════════════════════════════════════════════════
+describe('Story 9.5 — C-increment: bus-less leg short-circuit (FR-33 zero-diff)', () => {
+  test('AC1/AC3 — bus undefined ⇒ no leg drawn (was: a `.long` conduit to the y=0 cross)', async () => {
+    const el = await mount(makeHass(states(awakeFx)));
+    recompute(el); // populate the model so `solar` is a present node (jsdom: zero rects)
+    await el.updateComplete;
+    const inst = el as unknown as { _anchors: Record<string, unknown>; _axis: string };
+    // Omit the `bus`/BUS_NODE_ID key. Solar's near edge sits at y=200; against the dead
+    // `cross=0` fallback, len=|200-0|=200 > LONG_LEG_PX (160) on the desktop (horiz) axis,
+    // so pre-fix this rendered `.gw-leg-base.long` drawn down to y=0. Post-fix: nothing.
+    inst._anchors = { solar: { left: 0, top: 200, width: 100, height: 50 } };
+    inst._axis = 'x';
+    (el as unknown as { requestUpdate(): void }).requestUpdate();
+    await el.updateComplete;
+    expect(legOf(el, 'solar')).toBeNull(); // no leg at all — the direct proof of AC1
+  });
+
+  test('AC5 — the short-circuit is order-independent (keys off !bus, never _model.nodes order)', async () => {
+    const el = await mount(makeHass(states(awakeFx)));
+    recompute(el);
+    await el.updateComplete;
+    const inst = el as unknown as { _anchors: Record<string, unknown>; _axis: string };
+    // A reordered anchor set (as Story 9.3's reorder would produce) with the bus STILL
+    // omitted: the guard fires regardless of which node anchors are present or in what
+    // order, so no legs draw for any role.
+    inst._anchors = {
+      home: { left: 200, top: 200, width: 100, height: 50 },
+      solar: { left: 0, top: 200, width: 100, height: 50 },
+    };
+    inst._axis = 'x';
+    (el as unknown as { requestUpdate(): void }).requestUpdate();
+    await el.updateComplete;
+    expect(legOf(el, 'solar')).toBeNull();
+    expect(legOf(el, 'home')).toBeNull();
+  });
+
+  // QA gap (AC1/AC4): the deleted `: 0` ternary fell back to 0 on BOTH cross branches
+  // (`horiz ? bus.top+h/2 : bus.left+w/2`). The two tests above only force `_axis='x'`,
+  // so they prove the HORIZONTAL branch's degenerate path is short-circuited. The guard
+  // sits BEFORE the `horiz` split, so it must short-circuit the vertical (phone) axis too
+  // — where pre-fix `cross` fell back to 0 via `bus.left+w/2` and a near-edge at x>0 drew
+  // a degenerate leg clear to x=0 (no `.long`, gated off at phone, but a false leg all the
+  // same). This pins the guard as axis-agnostic — the one axis the existing tests miss.
+  test('AC1/AC4 — bus undefined on the VERTICAL (phone) axis also draws no leg (guard is axis-agnostic)', async () => {
+    const el = await mount(makeHass(states(awakeFx)));
+    recompute(el);
+    await el.updateComplete;
+    const inst = el as unknown as { _anchors: Record<string, unknown>; _axis: string };
+    // Phone axis (y): `cross = bus.left + bus.width/2` → 0 pre-fix. Solar's near edge sits
+    // at x=200 (cx=250 > 0 ⇒ near = rect.left = 200), so pre-fix a leg drew to x=0. Post-fix
+    // the `if (!bus)` guard returns `svg\`\`` before the axis split ⇒ no leg on EITHER axis.
+    inst._anchors = { solar: { left: 200, top: 0, width: 100, height: 50 } };
+    inst._axis = 'y';
+    (el as unknown as { requestUpdate(): void }).requestUpdate();
+    await el.updateComplete;
+    expect(legOf(el, 'solar')).toBeNull();
+  });
+
+  // QA gap (AC2 zero-diff proxy / positive control): the two negatives above prove the guard
+  // FIRES when bus is absent; this matched positive proves it does NOT over-fire when bus is
+  // present — the same `solar` anchor PLUS a `bus` key still renders its leg exactly as today.
+  // This is the unit-level proxy for AC2's "steady-state is byte-identical" and pins the guard's
+  // boundary at exactly `!bus`: a regression that widened it (e.g. `if (!bus || …)`) fails here.
+  test('AC2 — guard does NOT over-fire: with the bus key present the leg still renders (zero-diff)', async () => {
+    const el = await mount(makeHass(states(awakeFx)));
+    recompute(el);
+    await el.updateComplete;
+    const inst = el as unknown as { _anchors: Record<string, unknown>; _axis: string };
+    // Identical to the AC1/AC3 negative above, but WITH the bus junction defined: the leg
+    // must draw. (Pre- and post-fix this is byte-identical — the guard only touches !bus.)
+    inst._anchors = {
+      solar: { left: 0, top: 200, width: 100, height: 50 },
+      bus: { left: 0, top: 400, width: 0, height: 0 },
+    };
+    inst._axis = 'x';
+    (el as unknown as { requestUpdate(): void }).requestUpdate();
+    await el.updateComplete;
+    expect(legOf(el, 'solar')).not.toBeNull(); // bus present ⇒ leg draws (guard inert)
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
 // Story 9.2 — hide a present node by config (hidden == absent). The co-located proof
 // of the WIRING: an ENERGY node hidden via `energy.nodes.hide` drops at the shared
 // model (no cell, packed rows — NOT a render-only filter), the VEHICLE hide omits its
