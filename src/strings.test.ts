@@ -165,6 +165,24 @@ describe('centralized strings — voice contract (Story 2.5)', () => {
     expect(STRINGS.editor.notifyHiddenDetected).toBe('Notify me about detected-but-hidden products');
   });
 
+  test('Story 9.11: per-entity remap picker copy (reset, map-a-miss, dead-pick announce)', () => {
+    // The accordion picker's net-new copy — single-sourced here, calm/honest. Reset is a
+    // real labelled revert; the map-a-miss verb is honest about a FIRST mapping; the
+    // dead-pick announce composes "<role>, mapped — <state>" (never icon-only, AC3).
+    expect(STRINGS.editor.resetAuto).toBe('Reset to auto');
+    expect(STRINGS.editor.mapManuallyPrefix).toBe('Map');
+    expect(STRINGS.editor.mapManuallySuffix).toBe('manually');
+    expect(STRINGS.editor.remapMapped).toBe('mapped');
+    // Composes the AC's surfaces verbatim.
+    expect(`${STRINGS.editor.resetAuto} ${STRINGS.energy.nodes.solar}`).toBe('Reset to auto Solar');
+    expect(
+      `${STRINGS.editor.mapManuallyPrefix} ${STRINGS.energy.nodes.wall_connector} ${STRINGS.editor.mapManuallySuffix}`
+    ).toBe('Map Wall connector manually');
+    expect(
+      `${STRINGS.energy.nodes.solar}, ${STRINGS.editor.remapMapped} — ${STRINGS.wizard.detect.unavailable}`
+    ).toBe('Solar, mapped — unavailable');
+  });
+
   test('Story 5.7: closures panel gains the honest three-state copy', () => {
     // The honesty-first panel needs an `unknown` state word, an honest status
     // line for unconfirmable closures, and a neutral lock name — never a false

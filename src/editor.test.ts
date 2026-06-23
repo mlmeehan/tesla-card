@@ -1645,3 +1645,285 @@ describe('Story 9.10 AC8 — the global detected-but-hidden toggle round-trips',
     el.remove();
   });
 });
+
+// ── Story 9.11 — per-entity overrides in the GUI ───────────────────────────────
+// The picker drops into the 9.10 chevron slot. jsdom note: `ha-selector`/`ha-form` are
+// UNDEFINED custom elements here (inert) — these tests assert the element's PRESENCE +
+// its bound `.selector`/`.value` properties and drive the handler by DISPATCHING a
+// synthetic `value-changed`; they never depend on HA's real picker behaviour.
+const chevronForRole = (el: EditorEl, role: string): HTMLButtonElement =>
+  el.shadowRoot!.querySelector(`.disco-summary .remap-chevron[data-role="${role}"]`) as HTMLButtonElement;
+const summaryPanelSelector = (el: EditorEl) =>
+  el.shadowRoot!.querySelector('.disco-summary .remap-panel ha-selector') as unknown as {
+    selector?: { entity?: { filter?: unknown } };
+    value?: unknown;
+    hass?: unknown;
+  } | null;
+const summaryRowFor = (el: EditorEl, label: string) =>
+  summaryRows(el).find((r) => r.textContent?.includes(label))!;
+/** Open a role's accordion and return its rendered ha-selector. */
+async function openRemap(el: EditorEl, role: string) {
+  chevronForRole(el, role).click();
+  await el.updateComplete;
+  return summaryPanelSelector(el);
+}
+/** Drive the native picker's value-changed on the open accordion's selector. */
+async function pick(el: EditorEl, value: string | undefined): Promise<void> {
+  const sel = el.shadowRoot!.querySelector('.disco-summary .remap-panel ha-selector')!;
+  sel.dispatchEvent(new CustomEvent('value-changed', { detail: { value }, bubbles: false }));
+  await el.updateComplete;
+}
+
+describe('Story 9.11 AC1 — accordion picker: present row pre-filled + filtered', () => {
+  test('opening a PRESENT row reveals an ha-selector with a per-role FILTER, pre-filled with the resolved id', async () => {
+    const el = makeEditor();
+    el.hass = ONLINE_HASS;
+    el.setConfig(CONFIGURED);
+    await el.updateComplete;
+    const sel = await openRemap(el, 'solar');
+    expect(sel).toBeTruthy();
+    // Present row → filtered selector (a list-of-filters, OR semantics).
+    expect(Array.isArray(sel!.selector?.entity?.filter)).toBe(true);
+    // Pre-filled with the auto-resolved id (discovery's representative key).
+    expect(sel!.value).toBe('sensor.my_home_solar_power');
+    expect(sel!.hass).toBe(ONLINE_HASS); // wired to the editor's own hass
+    el.remove();
+  });
+
+  test('the accordion expands IN PLACE — the summary list stays visible around it', async () => {
+    const el = makeEditor();
+    el.hass = ONLINE_HASS;
+    el.setConfig(CONFIGURED);
+    await el.updateComplete;
+    await openRemap(el, 'solar');
+    expect(summaryRows(el).length).toBe(7); // every row still present (expand-in-place, D-9.11-1)
+    expect(chevronForRole(el, 'solar').getAttribute('aria-expanded')).toBe('true');
+    // The chevron glyph swaps (rotation is decorative; the disclosure state is aria-expanded).
+    const open = chevronForRole(el, 'solar').querySelector('svg path')!.getAttribute('d');
+    chevronForRole(el, 'solar').click();
+    await el.updateComplete;
+    const closed = chevronForRole(el, 'solar').querySelector('svg path')!.getAttribute('d');
+    expect(open).not.toBe(closed);
+    el.remove();
+  });
+});
+
+describe('Story 9.11 AC1 — absent (— not found) row opens an UNFILTERED map-a-miss picker', () => {
+  test('an absent row reveals an ha-selector with NO filter and NO pre-fill; chevron is a "Map … manually" affordance', async () => {
+    const el = makeEditor();
+    el.hass = ONLINE_HASS; // generator is absent
+    el.setConfig(CONFIGURED);
+    await el.updateComplete;
+    // The absent row's chevron is the map-a-miss affordance, not "Remap".
+    expect(chevronForRole(el, 'generator').getAttribute('aria-label')).toBe(
+      `${STRINGS.editor.mapManuallyPrefix} ${STRINGS.energy.nodes.generator} ${STRINGS.editor.mapManuallySuffix}`
+    );
+    const sel = await openRemap(el, 'generator');
+    expect(sel).toBeTruthy();
+    expect(sel!.selector?.entity).toEqual({}); // unfiltered — broad registry + native type-ahead
+    expect(sel!.value).toBeUndefined(); // never an empty PRE-FILLED picker
+    el.remove();
+  });
+
+  test('mapping a missed product writes the override and the row flips to its live state', async () => {
+    const el = makeEditor();
+    // A Wall Connector the resolver missed, but it IS live once mapped.
+    el.hass = {
+      states: {
+        'binary_sensor.garage_model_y_status': { entity_id: 'binary_sensor.garage_model_y_status', state: 'on', attributes: {} },
+        'sensor.my_home_solar_power': { entity_id: 'sensor.my_home_solar_power', state: '2.4', attributes: {} },
+        'sensor.my_wc': { entity_id: 'sensor.my_wc', state: '7.2', attributes: {} },
+      },
+    } as unknown as HomeAssistant;
+    el.setConfig(CONFIGURED);
+    await el.updateComplete;
+    const cap = captureEmit(el);
+    await openRemap(el, 'wall_connector');
+    await pick(el, 'sensor.my_wc');
+    const emitted = cap.get() as unknown as TeslaCardConfig;
+    expect(emitted.energy?.entities?.wc_power).toBe('sensor.my_wc');
+    el.remove();
+  });
+});
+
+describe('Story 9.11 AC2/AC4 — the write targets the right surface via whole-config replace', () => {
+  test('an energy pick writes energy.entities.<key>', async () => {
+    const el = makeEditor();
+    el.hass = ONLINE_HASS;
+    el.setConfig(CONFIGURED);
+    await el.updateComplete;
+    const cap = captureEmit(el);
+    await openRemap(el, 'solar');
+    await pick(el, 'sensor.custom_solar');
+    const emitted = cap.get() as unknown as TeslaCardConfig;
+    expect(emitted.energy?.entities?.solar_power).toBe('sensor.custom_solar');
+    expect('entities' in emitted).toBe(false); // vehicle surface untouched
+    el.remove();
+  });
+
+  test('a vehicle pick writes entities.status (the representative vehicle key)', async () => {
+    const el = makeEditor();
+    el.hass = ONLINE_HASS;
+    el.setConfig(CONFIGURED);
+    await el.updateComplete;
+    const cap = captureEmit(el);
+    await openRemap(el, 'vehicle');
+    await pick(el, 'binary_sensor.my_status');
+    const emitted = cap.get() as unknown as TeslaCardConfig;
+    expect(emitted.entities?.status).toBe('binary_sensor.my_status');
+    el.remove();
+  });
+
+  test('forward-compat round-trip: a remap preserves unknown top-level + unknown energy keys (R9)', async () => {
+    const el = makeEditor();
+    el.hass = ONLINE_HASS;
+    el.setConfig({
+      type: 'custom:tesla-card',
+      name: 'Y',
+      future_x: 'keep',
+      energy: { entities: { grid_power: 'sensor.keep_grid' }, future_e: 'keep2' },
+    } as unknown as TeslaCardConfig);
+    await el.updateComplete;
+    const cap = captureEmit(el);
+    await openRemap(el, 'solar');
+    await pick(el, 'sensor.custom_solar');
+    const emitted = cap.get() as unknown as Record<string, unknown> & { energy?: Record<string, unknown> & { entities?: Record<string, string> } };
+    expect(emitted.future_x).toBe('keep'); // unknown top-level key rides the spread
+    expect(emitted.energy!.future_e).toBe('keep2'); // unknown energy sub-key preserved
+    expect(emitted.energy!.entities!.grid_power).toBe('sensor.keep_grid'); // sibling override kept
+    expect(emitted.energy!.entities!.solar_power).toBe('sensor.custom_solar');
+    el.remove();
+  });
+});
+
+describe('Story 9.11 AC4 — Reset-to-auto deletes the key + prunes byte-identical', () => {
+  test('Reset is HIDDEN when no override, and appears once one is set', async () => {
+    const el = makeEditor();
+    el.hass = ONLINE_HASS;
+    el.setConfig(CONFIGURED);
+    await el.updateComplete;
+    await openRemap(el, 'solar');
+    expect(el.shadowRoot!.querySelector('.disco-summary .reset-auto')).toBeFalsy(); // no override yet
+    await pick(el, 'sensor.custom_solar'); // panel stays open; the write re-renders it
+    expect(el.shadowRoot!.querySelector('.disco-summary .reset-auto')).toBeTruthy();
+    el.remove();
+  });
+
+  test('Reset of the SOLE override deletes the key and prunes energy entirely (zero-diff)', async () => {
+    const el = makeEditor();
+    el.hass = ONLINE_HASS;
+    el.setConfig({
+      type: 'custom:tesla-card',
+      name: 'Y',
+      energy: { entities: { solar_power: 'sensor.custom_solar' } },
+    } as unknown as TeslaCardConfig);
+    await el.updateComplete;
+    const cap = captureEmit(el);
+    await openRemap(el, 'solar');
+    const reset = el.shadowRoot!.querySelector('.disco-summary .reset-auto') as HTMLButtonElement;
+    expect(reset.getAttribute('aria-label')).toBe(`${STRINGS.editor.resetAuto} ${STRINGS.energy.nodes.solar}`);
+    reset.click();
+    await el.updateComplete;
+    const emitted = cap.get() as unknown as Record<string, unknown>;
+    expect('energy' in emitted).toBe(false); // entities emptied → energy pruned
+    el.remove();
+  });
+
+  test('Reset preserves sibling overrides AND sibling energy sub-keys (round-trip)', async () => {
+    const el = makeEditor();
+    el.hass = ONLINE_HASS;
+    el.setConfig({
+      type: 'custom:tesla-card',
+      name: 'Y',
+      energy: {
+        entities: { solar_power: 'sensor.custom_solar', battery_power: 'sensor.keep_pw' },
+        nodes: { hide: ['grid'] },
+      },
+    } as unknown as TeslaCardConfig);
+    await el.updateComplete;
+    const cap = captureEmit(el);
+    await openRemap(el, 'solar');
+    (el.shadowRoot!.querySelector('.disco-summary .reset-auto') as HTMLButtonElement).click();
+    await el.updateComplete;
+    const emitted = cap.get() as unknown as TeslaCardConfig;
+    expect(emitted.energy?.entities).toEqual({ battery_power: 'sensor.keep_pw' }); // sibling override kept
+    expect(emitted.energy?.nodes).toEqual({ hide: ['grid'] }); // sibling sub-key kept
+    el.remove();
+  });
+
+  test('a vehicle Reset deletes entities.status and prunes entities', async () => {
+    const el = makeEditor();
+    el.hass = ONLINE_HASS;
+    el.setConfig({
+      type: 'custom:tesla-card',
+      name: 'Y',
+      entities: { status: 'binary_sensor.custom_status' },
+    } as unknown as TeslaCardConfig);
+    await el.updateComplete;
+    const cap = captureEmit(el);
+    await openRemap(el, 'vehicle');
+    (el.shadowRoot!.querySelector('.disco-summary .reset-auto') as HTMLButtonElement).click();
+    await el.updateComplete;
+    const emitted = cap.get() as unknown as Record<string, unknown>;
+    expect('entities' in emitted).toBe(false);
+    el.remove();
+  });
+});
+
+describe('Story 9.11 AC3 — honest dead-pick: mirror ⚠ + announce, saved regardless', () => {
+  test('picking an unavailable entity flips the row to ⚠ unavailable and announces it (saved, never refused)', async () => {
+    const el = makeEditor();
+    el.hass = {
+      states: {
+        'binary_sensor.garage_model_y_status': { entity_id: 'binary_sensor.garage_model_y_status', state: 'on', attributes: {} },
+        'sensor.my_home_solar_power': { entity_id: 'sensor.my_home_solar_power', state: '2.4', attributes: {} },
+        'sensor.dead_solar': { entity_id: 'sensor.dead_solar', state: 'unavailable', attributes: {} },
+      },
+    } as unknown as HomeAssistant;
+    el.setConfig(CONFIGURED);
+    await el.updateComplete;
+    const cap = captureEmit(el);
+    await openRemap(el, 'solar');
+    await pick(el, 'sensor.dead_solar');
+    // Saved regardless (honesty ≠ refusal).
+    expect((cap.get() as unknown as TeslaCardConfig).energy?.entities?.solar_power).toBe('sensor.dead_solar');
+    // The summary row mirrors the ⚠ unavailable state (re-derived from the live override).
+    expect(summaryRowFor(el, STRINGS.energy.nodes.solar).classList.contains('unavailable')).toBe(true);
+    // The polite live region announces the settled three-state in WORDS (never icon-only).
+    const live = el.shadowRoot!.querySelector('.disco-summary .remap-live')!;
+    expect(live.getAttribute('aria-live')).toBe('polite');
+    expect(live.getAttribute('role')).toBe('status');
+    expect(live.textContent).toBe(
+      `${STRINGS.energy.nodes.solar}, ${STRINGS.editor.remapMapped} — ${STRINGS.wizard.detect.unavailable}`
+    );
+    el.remove();
+  });
+});
+
+describe('Story 9.11 AC1 — wizard Step-2 Confirm: present-only full list', () => {
+  test('Confirm shows every PRESENT role as an always-open picker row, never an absent row', async () => {
+    const el = makeEditor();
+    el.hass = ONLINE_HASS; // present: vehicle, solar, powerwall — the other four absent
+    el.setConfig({ type: 'custom:tesla-card' } as TeslaCardConfig);
+    await el.updateComplete;
+    await clickPrimary(el); // Detect → Confirm
+    const rows = Array.from(el.shadowRoot!.querySelectorAll('.confirm-list .confirm-row'));
+    expect(rows.length).toBe(3); // present-only (vehicle, solar, powerwall)
+    expect(el.shadowRoot!.querySelectorAll('.confirm-row.absent').length).toBe(0); // never a — not found row
+    // Each present row hosts an always-visible picker (full-list layout, no accordion).
+    expect(el.shadowRoot!.querySelectorAll('.confirm-list .remap-panel ha-selector').length).toBe(3);
+    el.remove();
+  });
+});
+
+describe('Story 9.11 — styles carry the accordion + reset + live-region surfaces (token fallbacks)', () => {
+  test('the panel fades, cuts under reduced-motion, and the reset/live-region sit at text-dim', () => {
+    const styles = String((customElements.get('tesla-card-editor') as unknown as { styles: unknown }).styles);
+    expect(styles).toContain('.remap-panel');
+    expect(/@media \(prefers-reduced-motion: reduce\)[^}]*\{[^@]*\.remap-panel[^}]*animation: none/.test(styles)).toBe(true);
+    expect(styles).toContain('.reset-auto');
+    expect(styles).toContain('.remap-live');
+    // Reset/live region use the ≥4.5:1 text-dim, never the dimmer text-mute.
+    expect(/\.reset-auto[^}]*text-mute/.test(styles)).toBe(false);
+  });
+});

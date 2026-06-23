@@ -218,3 +218,111 @@ test.describe('Story 9.10 discovery summary (real browser)', () => {
     }
   });
 });
+
+// Story 9.11 — per-entity remap accordion, REAL-BROWSER E2E. The picker's read/write
+// logic + Reset-to-auto pruning + dead-pick mirror are exhaustively pinned in jsdom
+// (src/editor.test.ts). This covers only what jsdom structurally cannot: the accordion
+// mounts IN PLACE (the at-a-glance list is NOT replaced) and its expand transition really
+// cuts under prefers-reduced-motion.
+//
+// HARNESS GAP (honest, not silent): the native `<ha-selector>` is registered ONLY inside
+// the Home-Assistant frontend, which the demo harness does not load — so the picker body
+// renders empty (zero-height) here and cannot be measured or driven. The ≥44×44 picker-row
+// target, the Reset-to-auto visibility toggle, and the dead-pick mirror+announce all depend
+// on a functioning picker and/or a config entity OVERRIDE the harness exposes no param to
+// seed; the jsdom tier covers all three. The chevron's own ≥44×44 floor is proven by the
+// Story 9.10 spec above. (Same class of gap the 9.10 advisory noted.) Because the panel is
+// zero-height, these assert `toBeAttached` (not `toBeVisible`) + read computed CSS, which
+// `getComputedStyle` resolves on attached-but-hidden elements.
+test.describe('Story 9.11 per-entity remap accordion (real browser)', () => {
+  test('a present row expands IN PLACE — the accordion mounts and the summary list stays put', async ({ page }) => {
+    const ed = new TeslaEditorPage(page);
+    await ed.openAt('done');
+    const before = await ed.summaryRows.count();
+    expect(before).toBeGreaterThan(0);
+    await ed.remapChevrons.first().click();
+    await expect(ed.remapPanel).toBeAttached(); // the entity-picker-row dropped into the slot
+    await expect(ed.remapChevrons.first()).toHaveAttribute('aria-expanded', 'true');
+    // Expand-in-place (D-9.11-1): the at-a-glance list is NOT replaced — every row remains.
+    expect(await ed.summaryRows.count()).toBe(before);
+  });
+
+  test('the accordion panel fades by default and is cut under prefers-reduced-motion', async ({ page }) => {
+    const ed = new TeslaEditorPage(page);
+
+    await page.emulateMedia({ reducedMotion: 'no-preference' });
+    await ed.openAt('done');
+    await ed.remapChevrons.first().click();
+    await expect(ed.remapPanel).toBeAttached();
+    expect(await ed.remapPanel.evaluate((el) => getComputedStyle(el).animationName)).toBe('wiz-fade');
+
+    await page.emulateMedia({ reducedMotion: 'reduce' });
+    await ed.openAt('done');
+    await ed.remapChevrons.first().click();
+    await expect(ed.remapPanel).toBeAttached();
+    expect(await ed.remapPanel.evaluate((el) => getComputedStyle(el).animationName)).toBe('none'); // instant cut
+  });
+
+  // Re-clicking the chevron collapses the disclosure (AC4 accordion) and RETURNS FOCUS to
+  // the chevron (Task 2 focus management). jsdom can't traverse focus across the editor's
+  // shadow boundary, so this real-browser proof is the only place the focus-return is pinned
+  // — and it needs no `ha-selector` (focus lands on the always-present chevron, not the picker).
+  test('re-clicking the chevron collapses in place and returns focus to the chevron', async ({ page }) => {
+    const ed = new TeslaEditorPage(page);
+    await ed.openAt('done');
+    const chevron = ed.remapChevrons.first();
+
+    await chevron.click(); // expand
+    await expect(ed.remapPanel).toBeAttached();
+    await expect(chevron).toHaveAttribute('aria-expanded', 'true');
+
+    await chevron.click(); // collapse
+    await expect(ed.remapPanel).toHaveCount(0); // panel removed — disclosure closed
+    await expect(chevron).toHaveAttribute('aria-expanded', 'false');
+    // Focus is moved back to the chevron the user came from (keyboard/SR continuity).
+    expect(await deepActiveClass(page)).toContain('remap-chevron');
+  });
+
+  // AC1 / D-9.11-2 map-a-miss: an absent (`— not found`) role in the normal-form summary is
+  // ALSO chevron-tappable, but its label is the honest first-mapping verb ("Map … manually",
+  // never "Remap"), and tapping it expands the same accordion panel. The default demo scenario
+  // resolves the vehicle but leaves the energy roles absent, so ≥1 map-a-miss chevron renders.
+  // (The unfiltered picker body itself is the documented harness gap — covered in jsdom.)
+  test('an absent summary row exposes a "Map … manually" chevron that expands in place', async ({ page }) => {
+    const ed = new TeslaEditorPage(page);
+    await ed.openAt('done');
+    const miss = ed.mapManuallyChevrons.first();
+    await expect(miss).toBeVisible(); // a real missed detection is fixable in place, not hidden
+    // The verb is honest about a FIRST mapping — never "Remap" on a product that was not found.
+    const label = await miss.getAttribute('aria-label');
+    expect(label).toMatch(/^Map .+ manually$/);
+    expect(label).not.toContain('Remap');
+
+    await miss.click();
+    await expect(ed.remapPanel).toBeAttached(); // the (unfiltered) map-a-miss picker dropped in
+    await expect(miss).toHaveAttribute('aria-expanded', 'true');
+  });
+});
+
+// Story 9.11 — wizard Step-2 (Confirm & remap) full-list layout (AC1, Task 5), REAL-BROWSER.
+// The `_renderConfirm` present-only full list is jsdom-pinned, but the `.confirm-row` wrappers
+// render independently of the (harness-absent) `ha-selector` body, so the layout + the
+// present-only filter are structurally verifiable in a live DOM.
+test.describe('Story 9.11 wizard Confirm full-list (real browser)', () => {
+  test('Step-2 shows a present-only entity-picker-row per detected role (no "— not found" row)', async ({
+    page,
+  }) => {
+    const ed = new TeslaEditorPage(page);
+    await ed.open(); // bare ⇒ wizard at Detect (default scenario: vehicle present, energy absent)
+    const detected = await ed.discoRows.count(); // all seven roles shown at Detect
+    expect(detected).toBe(7);
+
+    await ed.clickNext(); // Detect → Confirm
+    await expect(ed.step(1)).toHaveClass(/current/);
+
+    const rows = await ed.confirmRows.count();
+    expect(rows).toBeGreaterThan(0); // every present role gets a picker row
+    expect(rows).toBeLessThan(detected); // present-only — the absent roles are filtered OUT
+    await expect(ed.confirmAbsentRows).toHaveCount(0); // Priya never sees a product she lacks
+  });
+});

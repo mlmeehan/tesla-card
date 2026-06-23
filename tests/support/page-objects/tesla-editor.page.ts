@@ -94,6 +94,47 @@ export class TeslaEditorPage {
     return this.editor.locator('.disco-summary .remap-chevron');
   }
 
+  // ── Story 9.11 — per-entity remap picker ─────────────────────────────────────
+  /** A summary row's remap chevron by its data-role (present row = "Remap", absent = "Map … manually"). */
+  remapChevron(role: string): Locator {
+    return this.editor.locator(`.disco-summary .remap-chevron[data-role="${role}"]`);
+  }
+
+  /** The expanded accordion picker panel (the entity-picker-row, present only when a row is open). */
+  get remapPanel(): Locator {
+    return this.editor.locator('.disco-summary .remap-panel');
+  }
+
+  /** The native ha-selector inside the open accordion panel. */
+  get remapPicker(): Locator {
+    return this.editor.locator('.disco-summary .remap-panel ha-selector');
+  }
+
+  /** The Reset-to-auto button inside the open panel (present only when an override is set). */
+  get resetAuto(): Locator {
+    return this.editor.locator('.disco-summary .reset-auto');
+  }
+
+  /** The polite live region that announces a pick's settled three-state. */
+  get remapLive(): Locator {
+    return this.editor.locator('.disco-summary .remap-live');
+  }
+
+  /** The summary's map-a-miss chevrons — absent (`— not found`) rows, labelled "Map … manually". */
+  get mapManuallyChevrons(): Locator {
+    return this.editor.locator('.disco-summary .remap-chevron[aria-label*="manually"]');
+  }
+
+  /** The wizard Step-2 Confirm full-list rows (present-only). */
+  get confirmRows(): Locator {
+    return this.editor.locator('.confirm-list .confirm-row');
+  }
+
+  /** Absent (`— not found`) confirm rows — should never exist (Confirm is present-only). */
+  get confirmAbsentRows(): Locator {
+    return this.editor.locator('.confirm-list .confirm-row.absent');
+  }
+
   /** The trade-dress disclaimer line in the wizard chrome. */
   get disclaimer(): Locator {
     return this.editor.locator('.wiz-disclaimer');

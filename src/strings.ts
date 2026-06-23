@@ -499,6 +499,18 @@ export const STRINGS = {
     // — the 9.11 per-entity-remap entry seam (9.10 ships the affordance only).
     detectedHeading: 'Detected on your system',
     remap: 'Remap',
+    // ── Per-entity remap picker (Story 9.11) ──────────────────────────────────
+    // The accordion picker drops into the 9.10 chevron slot. `resetAuto` labels the
+    // one-tap revert (shown only when an override is set) — composed `${resetAuto}
+    // ${label}` → "Reset to auto Solar". The `— not found` row's chevron is a
+    // map-a-miss affordance, composed `${mapManuallyPrefix} ${label}
+    // ${mapManuallySuffix}` → "Map Wall connector manually". `remapMapped` composes
+    // the polite live-region announcement after a pick — `${label}, ${remapMapped} —
+    // ${stateWord}` → "Solar, mapped — unavailable" (honest dead-pick, never icon-only).
+    resetAuto: 'Reset to auto',
+    mapManuallyPrefix: 'Map',
+    mapManuallySuffix: 'manually',
+    remapMapped: 'mapped',
     // ── Detected-but-hidden global toggle (Story 9.10, D-9.10-3) ──────────────
     // Opts out of the card-side advisory entirely. A real on/off switch in the
     // editor; the card reads `notify_hidden_detected` to gate the banner.

@@ -9,6 +9,7 @@ import {
   mdiCheckCircle,
   mdiAlertCircleOutline,
   mdiAutoFix,
+  mdiRestore,
 } from '@mdi/js';
 import type {
   HomeAssistant,
@@ -18,7 +19,8 @@ import type {
   NodeCustomization,
   SceneRow,
 } from './types';
-import { ROLES, type Role } from './data/registry';
+import type { EntityKey } from './const';
+import { ROLES, type Role, type EnergyKey } from './data/registry';
 import { resolveEntities } from './data/resolve';
 import { resolveEnergyEntities } from './data/energy';
 import { STRINGS } from './strings';
@@ -87,6 +89,47 @@ const NODE_LABELS: Record<Role, string> = {
 function rolesEqual(a: readonly Role[], b: readonly Role[]): boolean {
   return a.length === b.length && a.every((r, i) => r === b[i]);
 }
+
+// ── Per-entity override targets (Story 9.11, the seam discovery + remap share) ──
+// Each discovery role maps to ONE representative function-key whose override lives
+// on an existing config surface (PRD §13): `vehicle` writes `config.entities.status`,
+// every energy role writes `config.energy.entities.<*_power>`. SINGLE-SOURCED here so
+// `_discover`'s resolution and the remap picker's write target the SAME key (no drift)
+// — `_discover` derives its `idFor` from this table, the picker writes/reads/resets it.
+// Discriminated on `surface` so `key` narrows to the right keyspace with no cast.
+type OverrideTarget =
+  | { surface: 'vehicle'; key: EntityKey }
+  | { surface: 'energy'; key: EnergyKey };
+const OVERRIDE_TARGET: Record<Role, OverrideTarget> = {
+  vehicle: { surface: 'vehicle', key: 'status' },
+  solar: { surface: 'energy', key: 'solar_power' },
+  powerwall: { surface: 'energy', key: 'battery_power' },
+  grid: { surface: 'energy', key: 'grid_power' },
+  home: { surface: 'energy', key: 'load_power' },
+  wall_connector: { surface: 'energy', key: 'wc_power' },
+  generator: { surface: 'energy', key: 'generator_power' },
+};
+
+// Per-role PERMISSIVE entity-picker filters (EXPERIENCE.md:181–182). A list-of-filters
+// is OR: a correctly-detected entity that an integration-only filter would wrongly hide
+// (e.g. a cross-integration power hub, or a self-keyed `sensor.solar_power` from a
+// non-Tesla inverter) is never filtered out of its own remap list — the domain/
+// device_class fallback admits it. Pinned against the live corpus: the vehicle's
+// representative `status` is `binary_sensor.garage_model_y_status` (tesla_fleet); every
+// energy `*_power` is `sensor.my_home_*_power` (tesla_fleet / powerwall), device_class
+// `power`. The `— not found` row uses NO filter (broad registry + native type-ahead).
+const VEHICLE_FILTER: readonly unknown[] = [
+  { integration: 'tesla_fleet' },
+  { integration: 'teslemetry' },
+  { integration: 'tessie' },
+  { domain: 'binary_sensor' },
+];
+const ENERGY_FILTER: readonly unknown[] = [
+  { integration: 'tesla_fleet' },
+  { integration: 'powerwall' },
+  { domain: 'sensor', device_class: 'power' },
+  { domain: 'sensor', device_class: 'energy' },
+];
 
 // The editor mirrors the card's row model (`my-home.ts` SOURCE_ROW /
 // LOAD_ROW_WITH_VEHICLE / SCENE_ROW_ORDER) so its grouped preview AND the `order`
@@ -485,19 +528,93 @@ export class TeslaCardEditor extends LitElement implements LovelaceCardEditor {
     const hass = this.hass?.states ? this.hass : undefined;
     const vehicle = resolveEntities(hass, c);
     const energy = resolveEnergyEntities(hass, c);
-    const idFor: Record<Role, string | undefined> = {
-      vehicle: vehicle.status ?? vehicle.battery_level,
-      solar: energy.solar_power,
-      powerwall: energy.battery_power,
-      grid: energy.grid_power,
-      home: energy.load_power,
-      wall_connector: energy.wc_power,
-      generator: energy.generator_power,
+    // Single-source the resolved id off OVERRIDE_TARGET (Story 9.11) so discovery and
+    // the remap picker target the SAME representative key — the discriminated `surface`
+    // narrows `key` to the right resolved map with no cast.
+    const idFor = (role: Role): string | undefined => {
+      const t = OVERRIDE_TARGET[role];
+      return t.surface === 'vehicle' ? vehicle[t.key] : energy[t.key];
     };
     return ROLES.map((role) => {
-      const entityId = idFor[role];
+      const entityId = idFor(role);
       return { role, instanceId: role, state: this._liveness(entityId), entityId };
     });
+  }
+
+  // ── Per-entity override read/write (Story 9.11) ───────────────────────────────
+  // The CURRENT override value at a role's surface/key (or `undefined` when unset).
+  // Reads the SAME representative key `_discover` resolves, so the picker pre-fills
+  // and resets exactly what discovery showed.
+  private _overrideId(role: Role): string | undefined {
+    const t = OVERRIDE_TARGET[role];
+    return t.surface === 'vehicle'
+      ? this._config.entities?.[t.key]
+      : this._config.energy?.entities?.[t.key];
+  }
+
+  /** True iff the override key is PRESENT at its surface (drives Reset-to-auto visibility). */
+  private _hasOverride(role: Role): boolean {
+    return this._overrideId(role) !== undefined;
+  }
+
+  // Write (or, when `value` is undefined, DELETE) a role's override at its surface, via
+  // a whole-config REPLACE (`_emit`, never `_patch`) so a delete actually propagates and
+  // unknown/future keys ride the spread intact (R9). Clones the nested `entities`/`energy`
+  // containers (never mutating `_config` in place) and prunes empties byte-for-byte — an
+  // emptied `entities`/`energy.entities` → delete, an emptied `energy` → delete — so a
+  // Reset restores today's config exactly (SM-C4 / zero-diff). Mirrors `_commitNodes`'
+  // prune ladder. Sibling `energy.nodes` + unknown energy sub-keys survive the `{ ...energy }`
+  // spread.
+  private _writeOverride(role: Role, value: string | undefined): void {
+    const t = OVERRIDE_TARGET[role];
+    const next: TeslaCardConfig = { ...this._config };
+    if (t.surface === 'vehicle') {
+      const entities = { ...(next.entities ?? {}) };
+      if (value) entities[t.key] = value;
+      else delete entities[t.key];
+      if (Object.keys(entities).length > 0) next.entities = entities;
+      else delete next.entities;
+    } else {
+      const energy = { ...(next.energy ?? {}) };
+      const ents = { ...(energy.entities ?? {}) };
+      if (value) ents[t.key] = value;
+      else delete ents[t.key];
+      if (Object.keys(ents).length > 0) energy.entities = ents;
+      else delete energy.entities;
+      if (Object.keys(energy).length > 0) next.energy = energy;
+      else delete next.energy;
+    }
+    this._emit(next);
+  }
+
+  // `@value-changed` from the picker: persist the picked id (an explicit override is
+  // honest — we do NOT prune it even when it equals the auto-resolved id), then announce
+  // the settled three-state of the pick via the polite live region (honest dead-pick,
+  // AC3 — the pick is saved REGARDLESS of liveness; honesty ≠ refusal). A cleared pick
+  // (no id) falls through to a delete (the picker's own reset path).
+  private _remapEntity(d: DiscoveryRow, ev: CustomEvent): void {
+    const raw = (ev.detail as { value?: unknown } | undefined)?.value;
+    const id = typeof raw === 'string' && raw ? raw : undefined;
+    this._writeOverride(d.role, id);
+    // Label off the per-instance seam (D15) — `title ?? NODE_LABELS[role]` — so the
+    // announcement disambiguates "Solar · South Array" additively when 9.7 lands; bare
+    // (title-less) today, so the announced label is unchanged.
+    const label = d.title ?? NODE_LABELS[d.role];
+    this._remapAnnounce = id
+      ? `${label}, ${STRINGS.editor.remapMapped} — ${this._discoStateWord(this._liveness(id))}`
+      : '';
+  }
+
+  // Reset-to-auto (AC4 / D-9.11-4): DELETE the override key (restoring live auto-discovery)
+  // and clear the announcement. A removed key, never a blanked value (R9-clean, zero-diff).
+  private _resetAuto(role: Role): void {
+    this._writeOverride(role, undefined);
+    this._remapAnnounce = '';
+  }
+
+  /** The per-role permissive picker filter (present rows); the `— not found` row uses none. */
+  private _filterFor(role: Role): readonly unknown[] {
+    return OVERRIDE_TARGET[role].surface === 'vehicle' ? VEHICLE_FILTER : ENERGY_FILTER;
   }
 
   /**
@@ -642,6 +759,35 @@ export class TeslaCardEditor extends LitElement implements LovelaceCardEditor {
     `;
   }
 
+  // Step 2 — Confirm & remap (Story 9.11, AC1). The FULL list of every PRESENT role's
+  // `entity-picker-row`, shown at once (the wizard's full-list layout — same picker
+  // component as the accordion, different presentation). PRESENT-ONLY: the onboarding
+  // wizard never shows a `— not found` row (Priya never sees a Wall Connector she does
+  // not own); the absent-row manual map lives only in the normal-form summary. Reuses
+  // the shared `_renderPicker` + write path; the polite live region announces a pick.
+  private _renderConfirm(): TemplateResult {
+    const present = this._discover().filter((d) => d.state !== 'absent');
+    return html`
+      <span class="wiz-h">${STRINGS.wizard.confirm.heading}</span>
+      <span class="wiz-sub">${STRINGS.wizard.confirm.subhead}</span>
+      <ul class="disco confirm-list" role="list">
+        ${present.map(
+          (d) => html`
+            <li class="confirm-row ${d.state}">
+              <div class="summary-row-head">
+                <span class="disco-mark" aria-hidden="true">${this._discoMark(d.state)}</span>
+                <span class="disco-name">${d.title ?? NODE_LABELS[d.role]}</span>
+                <span class="disco-state">${this._discoStateWord(d.state)}</span>
+              </div>
+              ${this._renderPicker(d)}
+            </li>
+          `
+        )}
+      </ul>
+      ${this._renderAnnounce()}
+    `;
+  }
+
   // Step 5 — Finish (AC3). An honest confirmation of the card that will be created —
   // NO confetti, NO "Success!", and NO fabricated telemetry (the live generic-EV hero
   // preview is Story 9.12's seam; this frame never invents SoC/range, honouring the
@@ -662,7 +808,7 @@ export class TeslaCardEditor extends LitElement implements LovelaceCardEditor {
       case 'detect':
         return this._renderDetect();
       case 'confirm':
-        return this._renderStub(STRINGS.wizard.confirm.heading, STRINGS.wizard.confirm.subhead);
+        return this._renderConfirm();
       case 'appearance':
         return this._renderStub(
           STRINGS.wizard.appearance.heading,
@@ -747,8 +893,70 @@ export class TeslaCardEditor extends LitElement implements LovelaceCardEditor {
   // Which role's remap chevron is expanded (`''` = none). 9.10 ships the affordance
   // + a stable `aria-expanded` seam; the 9.11 per-entity picker drops into the slot.
   @state() private _remapOpen = '';
-  private _toggleRemap(role: Role): void {
-    this._remapOpen = this._remapOpen === role ? '' : role;
+  // The polite live-region message announced after a pick (AC3) — "Solar, mapped —
+  // unavailable". Empty ⇒ the region is silent. Cleared on Reset and on collapse.
+  @state() private _remapAnnounce = '';
+  // Toggle the accordion picker for a role. On EXPAND, move focus to the revealed
+  // `ha-selector` (keyboard/SR, AC cross-cutting); on COLLAPSE, return focus to the
+  // chevron and silence the live region. `ha-selector` is inert in jsdom — the optional
+  // `.focus?.()` is a safe no-op there.
+  private async _toggleRemap(role: Role): Promise<void> {
+    const wasOpen = this._remapOpen === role;
+    this._remapOpen = wasOpen ? '' : role;
+    if (wasOpen) this._remapAnnounce = '';
+    await this.updateComplete;
+    if (wasOpen) {
+      const chev = this.shadowRoot?.querySelector(
+        `.remap-chevron[data-role="${role}"]`
+      ) as HTMLElement | null;
+      chev?.focus?.();
+    } else {
+      const sel = this.shadowRoot?.querySelector('.remap-panel ha-selector') as HTMLElement | null;
+      sel?.focus?.();
+    }
+  }
+
+  // The polite live region the pick announcement settles into (`role="status"` /
+  // `aria-live="polite"`, never assertive, never icon-only). Visually present (not
+  // `display:none`) so it is a real announced surface. Shared by both surfaces (the
+  // accordion summary + the wizard Confirm list) — only one renders at a time.
+  private _renderAnnounce(): TemplateResult {
+    return html`<span class="remap-live" role="status" aria-live="polite">${this._remapAnnounce}</span>`;
+  }
+
+  // The `entity-picker-row` body shared by BOTH layouts (DESIGN.md:442): the accordion
+  // beneath a summary row AND the wizard Step-2 full list. A native `<ha-selector>`
+  // (HA-frontend custom element, registered globally by the Lovelace runtime — NO JS
+  // import, so the import-allowlist holds) plus a Reset-to-auto button shown only when
+  // an override is set. PRESENT rows use the per-role permissive filter, pre-filled with
+  // the resolved id; an ABSENT (`— not found`) row uses an UNFILTERED selector with no
+  // pre-fill (the map-a-miss escape, D-9.11-2). Per-instance label off `title ??
+  // NODE_LABELS` (D15 seam — bare today, additive for 9.7).
+  private _renderPicker(d: DiscoveryRow): TemplateResult {
+    const label = d.title ?? NODE_LABELS[d.role];
+    const absent = d.state === 'absent';
+    const selector = absent ? { entity: {} } : { entity: { filter: this._filterFor(d.role) } };
+    return html`
+      <div class="remap-panel">
+        <ha-selector
+          .hass=${this.hass}
+          .selector=${selector}
+          .value=${absent ? undefined : d.entityId}
+          @value-changed=${(e: Event) => this._remapEntity(d, e as CustomEvent)}
+        ></ha-selector>
+        ${this._hasOverride(d.role)
+          ? html`<button
+              type="button"
+              class="reset-auto"
+              aria-label=${`${STRINGS.editor.resetAuto} ${label}`}
+              @click=${() => this._resetAuto(d.role)}
+            >
+              ${this._icon(mdiRestore)}
+              <span>${STRINGS.editor.resetAuto}</span>
+            </button>`
+          : nothing}
+      </div>
+    `;
   }
 
   // The persistent "Detected on your system" section pinned at the TOP of the normal
@@ -764,6 +972,7 @@ export class TeslaCardEditor extends LitElement implements LovelaceCardEditor {
         ${empty
           ? this._renderNothingFound()
           : html`<ul class="disco" role="list">${disco.map((d) => this._renderSummaryRow(d))}</ul>`}
+        ${this._renderAnnounce()}
       </div>
     `;
   }
@@ -774,22 +983,33 @@ export class TeslaCardEditor extends LitElement implements LovelaceCardEditor {
   // (9.11's manual-map seam). The "not found" word + chevron sit at `text-dim` (≥4.5:1),
   // never `text-mute` (the D5 contrast defect) — see styles.
   private _renderSummaryRow(d: DiscoveryRow): TemplateResult {
-    const label = NODE_LABELS[d.role];
+    const label = d.title ?? NODE_LABELS[d.role];
     const open = this._remapOpen === d.role;
+    // A present row's chevron RE-maps ("Remap Solar"); an absent (`— not found`) row's
+    // chevron is the map-a-miss affordance ("Map Wall connector manually", D-9.11-2) —
+    // there is nothing to re-map, so the verb is honest about a first mapping.
+    const chevronLabel =
+      d.state === 'absent'
+        ? `${STRINGS.editor.mapManuallyPrefix} ${label} ${STRINGS.editor.mapManuallySuffix}`
+        : `${STRINGS.editor.remap} ${label}`;
     return html`
       <li class="disco-row summary-row ${d.state}">
-        <span class="disco-mark" aria-hidden="true">${this._discoMark(d.state)}</span>
-        <span class="disco-name">${label}</span>
-        <span class="disco-state">${this._discoStateWord(d.state)}</span>
-        <button
-          type="button"
-          class="remap-chevron"
-          aria-label=${`${STRINGS.editor.remap} ${label}`}
-          aria-expanded=${open ? 'true' : 'false'}
-          @click=${() => this._toggleRemap(d.role)}
-        >
-          ${this._icon(mdiChevronRight)}
-        </button>
+        <div class="summary-row-head">
+          <span class="disco-mark" aria-hidden="true">${this._discoMark(d.state)}</span>
+          <span class="disco-name">${label}</span>
+          <span class="disco-state">${this._discoStateWord(d.state)}</span>
+          <button
+            type="button"
+            class="remap-chevron"
+            data-role=${d.role}
+            aria-label=${chevronLabel}
+            aria-expanded=${open ? 'true' : 'false'}
+            @click=${() => this._toggleRemap(d.role)}
+          >
+            ${this._icon(open ? mdiChevronDown : mdiChevronRight)}
+          </button>
+        </div>
+        ${open ? this._renderPicker(d) : nothing}
       </li>
     `;
   }
@@ -1239,6 +1459,90 @@ export class TeslaCardEditor extends LitElement implements LovelaceCardEditor {
       width: 20px;
       height: 20px;
       fill: currentColor;
+    }
+    /* ── Per-entity remap accordion (Story 9.11) ──────────────────────────────
+       The summary row becomes a COLUMN when its picker is open: the head (mark +
+       name + state + chevron) keeps its inline layout, the picker panel sits
+       BENEATH it (expand-in-place, D-9.11-1 — the at-a-glance list stays visible).
+       The panel reuses the wizard's opacity fade and cuts under reduced-motion. */
+    .summary-row {
+      flex-direction: column;
+      align-items: stretch;
+      gap: 0;
+    }
+    .summary-row-head {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .remap-panel {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      margin: 6px 0 2px;
+      animation: wiz-fade 180ms var(--tc-ease, ease);
+    }
+    @media (prefers-reduced-motion: reduce) {
+      .remap-panel {
+        animation: none;
+      }
+    }
+    /* The wizard Confirm full-list rows reuse the same head + panel layout. */
+    .confirm-row {
+      display: flex;
+      flex-direction: column;
+      gap: 0;
+      font-size: 13px;
+    }
+    .confirm-row .disco-name {
+      flex: 1;
+      font-weight: 600;
+    }
+    .confirm-row .disco-state {
+      font-size: 12px;
+      color: var(--tc-text-dim, var(--secondary-text-color, #9aa7b8));
+    }
+    .confirm-row.online .disco-mark {
+      color: var(--tc-green, #34d399);
+    }
+    .confirm-row.unavailable .disco-mark,
+    .confirm-row.no_data .disco-mark {
+      color: var(--tc-amber, #fbbf24);
+    }
+    ha-selector {
+      display: block;
+    }
+    /* Reset-to-auto — a real labelled button, only present when an override is set,
+       dim (≥4.5:1 text-dim, never the dimmer text-mute), ≥44px hit target. */
+    .reset-auto {
+      display: inline-flex;
+      align-items: center;
+      align-self: flex-start;
+      gap: 6px;
+      min-height: 44px;
+      padding: 0 10px;
+      border: none;
+      border-radius: 8px;
+      background: transparent;
+      color: var(--tc-text-dim, var(--secondary-text-color, #9aa7b8));
+      font: inherit;
+      font-size: 12px;
+      font-weight: 600;
+      cursor: pointer;
+    }
+    .reset-auto .ico {
+      width: 18px;
+      height: 18px;
+      fill: currentColor;
+    }
+    /* Polite live region — visually present (NOT display:none) so a pick's settled
+       three-state is a real announced surface, never icon-only (AC3). */
+    .remap-live {
+      font-size: 12px;
+      color: var(--tc-text-dim, var(--secondary-text-color, #9aa7b8));
+    }
+    .remap-live:empty {
+      display: none;
     }
     .wiz-result {
       display: flex;
