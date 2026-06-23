@@ -289,6 +289,20 @@ export class TcMyHome extends LitElement implements LovelaceCard {
     return { type: 'custom:tc-my-home' };
   }
 
+  // The standalone Scene card reuses the vehicle card's lazy editor: tc-my-home
+  // embeds a full `tesla-card` vehicle cell and consumes the same vehicle + energy +
+  // Scene-node config, so `tesla-card-editor` is its editor too — its Scene-nodes
+  // section IS the My-Home customization GUI. The editor is type-blind (never reads
+  // `_config.type`), which is WHY a `custom:tc-my-home` config round-trips intact —
+  // but it also means the guided wizard's copy/Tune step and the appearance preview
+  // stay vehicle-framed here. Acceptable because the Scene embeds that vehicle; revisit
+  // if a Scene-specific editor variant is wanted. Mirrors `TeslaCard.getConfigElement`;
+  // the import is lazy so loading the bundle never registers the editor (lazy-by-contract).
+  public static async getConfigElement(): Promise<HTMLElement> {
+    await import('../editor');
+    return document.createElement('tesla-card-editor');
+  }
+
   // ── model binding (AC1, AC2) — the UNCHANGED Epic-4 pipeline ────────────────
 
   protected override willUpdate(changed: PropertyValues): void {

@@ -265,6 +265,39 @@ describe('AC4 — registration + honest degradation', () => {
     expect(el.getCardSize()).toBeGreaterThan(0);
   });
 
+  test('getConfigElement is STATIC async and resolves a tesla-card-editor (shared visual editor)', async () => {
+    expect(typeof TcMyHome.getConfigElement).toBe('function');
+    expect('getConfigElement' in TcMyHome.prototype).toBe(false);
+    const el = await TcMyHome.getConfigElement();
+    expect(el).toBeInstanceOf(HTMLElement);
+    expect(el.localName).toBe('tesla-card-editor');
+  });
+
+  test('the shared editor round-trips a custom:tc-my-home config without clobbering type', async () => {
+    // The whole reason reusing the vehicle editor is safe: editing a Scene card must
+    // emit `config-changed` with the SAME `custom:tc-my-home` type — never rewritten to
+    // `custom:tesla-card` or dropped. Drive the plain `name` <input> (the real
+    // `_text → _emit` path) and inspect the emitted config. `setup_complete: true` opens
+    // the normal form (not the wizard) so the name field renders.
+    const editor = (await TcMyHome.getConfigElement()) as HTMLElement & {
+      setConfig(c: TeslaCardConfig): void;
+      updateComplete: Promise<unknown>;
+    };
+    document.body.appendChild(editor);
+    editor.setConfig({ type: 'custom:tc-my-home', setup_complete: true } as TeslaCardConfig);
+    await editor.updateComplete;
+    let emitted: TeslaCardConfig | undefined;
+    editor.addEventListener('config-changed', (e) => {
+      emitted = (e as CustomEvent<{ config: TeslaCardConfig }>).detail.config;
+    });
+    const name = editor.shadowRoot?.querySelector('input[type="text"]') as HTMLInputElement;
+    expect(name, 'normal form should render a text input').toBeTruthy();
+    name.value = 'Garage';
+    name.dispatchEvent(new Event('change'));
+    expect(emitted?.type).toBe('custom:tc-my-home');
+    editor.remove();
+  });
+
   test('setConfig(null) throws; unknown keys are tolerated (forward-compatible)', () => {
     const el = document.createElement('tc-my-home') as Scene;
     expect(() => el.setConfig(null as unknown as TeslaCardConfig)).toThrow();
