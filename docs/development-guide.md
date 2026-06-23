@@ -1,12 +1,12 @@
 # tesla-card — Development Guide
 
-**Part:** `[card]` · **Path:** `tesla-card/` (separate nested git repo) · **Date:** 2026-06-14
-**Last reviewed:** 2026-06-19 (Epic 4 retro doc audit)
+**Repo:** `tesla-card/` (public, standalone git repo) · **Date:** 2026-06-23 (Epic 9 doc regeneration)
 
 How to build, verify, preview, and release the card. Verification is **gate-based** (`typecheck` +
 the **8-gate `npm run lint` chain** + `build`) **and**, since Epic 1, a co-located **Vitest** unit
-suite (`npm run test`, `src/**/*.test.ts` incl. jsdom element tests) that complements the gates —
-it does not replace them. The demo harness (§3) provides visual verification.
+suite (`npm run test`, `src/**/*.test.ts` — Vitest env `node` by default, jsdom opt-in per file via
+`// @vitest-environment jsdom`) that complements the gates — it does not replace them. The demo
+harness (§3) provides visual verification.
 
 ---
 
@@ -30,7 +30,8 @@ Runtime dependencies are only `lit` + `@mdi/js`; keep it that way.
 |---|---|
 | `npm run typecheck` | `tsc --noEmit` — full strict type-check. **Must stay clean.** |
 | `npm run build` | `rollup -c` — bundles `src/tesla-card.ts` → `dist/tesla-card.js`. **Must emit the bundle.** |
-| `npm run test` | `vitest run` — the co-located Vitest unit suite (`src/**/*.test.ts`, jsdom). **Must stay green.** |
+| `npm run test` | `vitest run` — the co-located Vitest unit suite (`src/**/*.test.ts`; 65 files / ~1,562 tests). **Must stay green.** |
+| `npm run dev` | `vite` — dev server for live work (no rebuild needed) |
 | `npm run lint` | the 8-gate node-script chain (`no-bare-hass-states` → `no-cycle` → `trade-dress-denylist` → `import-allowlist` → `no-network-egress` → `version-sync` → `token-defined` → `no-planning-artifacts`) — **not** ESLint; all merge-blocking. `version-sync` (Story 7.4) asserts `package.json` `version` == `src/const.ts` `CARD_VERSION` and `hacs.json.filename` == the rollup output basename (`tesla-card.js`). `token-defined` (Epic-8 follow-up) flags any `var(--tc-X, …)` whose `--tc-X` is never defined in `styles.ts`; `no-planning-artifacts` blocks BMAD/planning files from the public repo. |
 | `npm run watch` | `rollup -c --watch` — rebuild on change (terser skipped; sourcemaps on) |
 | `npm run demo` | builds, then echoes a reminder to open `demo/index.html` (does **not** start a server) |
@@ -76,7 +77,16 @@ npm run build
    consuming panel for shared widgets like `tc-slider`).
 5. To switch tabs, dispatch `fireEvent(this, 'open-panel', { panel })`.
 
-If you add a configurable option, surface it in `src/editor.ts` and `TeslaCardConfig` (`types.ts`).
+If you add a configurable option, surface it in `src/editor.ts` and `TeslaCardConfig` (`types.ts`),
+and keep it **additive / zero-diff-when-absent** (the R9 forward-compat spread; reset/clear DELETES the
+key, never blanks it). Write a card-side render test for every config key the editor writes.
+
+**Adding a new energy node TYPE** (the `generator` precedent, Story 9.14) is a **registry +
+component-metadata edit, never a `flow/balance.ts`/`buildFlowModel`-math edit (AR-6).** Add the role to
+`data/registry.ts` `ROLES`, then let the typecheck cascade enumerate the role-keyed tables to fill
+(`FUNCTION_KEYS`/`BUS_ORIENTATION`/`POWER_KEY`/`NODE_COLOR`/`NODE_ICON`/`NODE_XY` + a new accent token in
+`styles.ts` if needed) and add the `tc-<role>` ecosystem card. Because `ENERGY_ROLES = Object.keys(POWER_KEY)`,
+the node auto-flows through binding→model→balance→ribbon→bus by construction.
 
 ---
 
@@ -84,19 +94,21 @@ If you add a configurable option, surface it in `src/editor.ts` and `TeslaCardCo
 
 Two workflows run on push / PR (full guide: [`docs/ci.md`](./ci.md)), Node 20 from `.nvmrc`:
 
-**`.github/workflows/validate.yml`** — packaging + build gate:
+**`.github/workflows/validate.yml`** ("Validate") — packaging + build + structural gates:
 
-- **`hacs` job** — `hacs/action@main` with `category: plugin` (HACS metadata validation).
-- **`build` job** — `npm ci` → `npm run typecheck` → `npm run build` → `test -s dist/tesla-card.js`
-  (bundle-exists check).
+- **`HACS` job** — `hacs/action@main` (HACS metadata validation).
+- **`Type-check & build` job** — `npm ci` → `npm run typecheck` → `npm run build` →
+  `test -s dist/tesla-card.js` (bundle-exists check).
+- **`Structural gates (lint)` job** — `npm ci` → `npm run lint` (the **8-gate** structural chain).
 
-**`.github/workflows/test.yml`** — the quality pipeline:
+**`.github/workflows/test.yml`** ("Test Pipeline") — the quality pipeline:
 
-- **`lint`** — `typecheck` + `typecheck:e2e` (strict tsc is this project's linter).
-- **`test`** — Playwright E2E against the demo harness (browser-cached); uploads the HTML
+- **`Type-check`** — `typecheck` + `typecheck:e2e` (strict tsc is this project's linter).
+- **`Unit (Vitest)`** — `npm run test` (the co-located unit suite).
+- **`E2E (Playwright)`** — Playwright against the demo harness (browser-cached); uploads the HTML
   report + traces on failure.
-- **`burn-in`** (PRs / weekly / manual) — repeats the suite with retries off to surface flakiness.
-- **`report`** — writes a stage-results summary to the run page.
+- **`Burn-In (flaky detection)`** (PRs / weekly / manual) — repeats the suite with retries off.
+- **`Report`** — writes a stage-results summary to the run page.
 
 Mirror the whole gate locally with `npm run ci:local`; repeat-stress it with `npm run test:e2e:burn-in`.
 
@@ -116,16 +128,16 @@ Mirror the whole gate locally with `npm run ci:local`; repeat-stress it with `np
 4. `hacs.json` `filename` must equal the released asset name (`tesla-card.js`).
 
 > ⚠️ **Never commit `dist/`** — it's gitignored and built in CI.
-> ⚠️ For HACS distribution the card lives at `github.com/mlmeehan/tesla-card`; the card is a
-> **separate nested git repo** — commit card changes *inside* `tesla-card/`, not the parent.
+> ⚠️ For HACS distribution the card lives at `github.com/mlmeehan/tesla-card` — its **own standalone
+> public repo**. BMAD planning artifacts belong in the sibling private `tesla-card-planning/` repo
+> (gate-blocked here by `no-planning-artifacts`).
 
 ---
 
 ## 7. Consuming the card in Home Assistant
 
-Once released/installed, the card is registered as a Lovelace **resource** (in this repo,
-resources are centralized in `configuration.yaml`'s `lovelace.resources`, see the `[HA]` docs) and
-used in a dashboard as:
+Once installed via HACS (or added manually), the card is registered as a Lovelace **resource**
+(HACS does this automatically for plugins) and used in a dashboard as:
 
 ```yaml
 type: custom:tesla-card
@@ -135,8 +147,10 @@ name: Model Y
 #   battery_level: sensor.my_tesla_battery_level
 ```
 
-See the repo-wide [integration overview](../../docs/project-overview.md#6-how-the-two-parts-relate).
+For the full user-facing options table and entity-resolution behaviour, see the card
+[`README.md`](../README.md); for the no-YAML setup experience, use the GUI editor (the card's
+**Edit** pencil in Lovelace) — no YAML required.
 
 ---
 
-_Generated by the BMAD `document-project` workflow (deep scan, 2026-06-14)._
+_Generated by the BMAD `document-project` workflow (exhaustive scan, 2026-06-23 — Epic 9 regeneration)._

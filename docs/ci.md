@@ -1,6 +1,6 @@
 # tesla-card — CI Pipeline
 
-**Part:** `[card]` · **Path:** `tesla-card/` (separate nested git repo) · **Last Updated:** 2026-06-15
+**Repo:** `tesla-card/` (public, standalone git repo) · **Last Updated:** 2026-06-23
 **Platform:** GitHub Actions · **Runtime:** Node 20 (`.nvmrc`)
 
 How the card's continuous-integration pipeline is structured, what gates a change must
@@ -16,19 +16,21 @@ Three workflows under `.github/workflows/`. E2E is owned by **`test.yml`** so it
 
 | Workflow | Triggers | Jobs (check names) | Purpose |
 |---|---|---|---|
-| **`validate.yml`** | push · PR · weekly cron · dispatch | `HACS`, `Type-check & build` | HACS packaging validation + bundle build gate |
-| **`test.yml`** | push→`main` · PR · weekly cron · dispatch | `Type-check`, `E2E (Playwright)`, `Burn-In (flaky detection)`, `Report` | The quality pipeline |
+| **`validate.yml`** ("Validate") | push · PR · weekly cron · dispatch | `HACS`, `Type-check & build`, `Structural gates (lint)` | HACS packaging validation + bundle build gate + the 8 structural lint gates |
+| **`test.yml`** ("Test Pipeline") | push→`main` · PR · weekly cron · dispatch | `Type-check`, `Unit (Vitest)`, `E2E (Playwright)`, `Burn-In (flaky detection)`, `Report` | The quality pipeline |
 | **`release.yml`** | `release: published` | `Build & attach bundle` | Builds + attaches `dist/tesla-card.js` to the release |
 
 ### `test.yml` stages
 
 ```
-lint (Type-check) ──> test (E2E Playwright) ──> burn-in (PR/cron/dispatch) ──> report (always)
+lint (Type-check) ──> unit (Vitest) ──> test (E2E Playwright) ──> burn-in (PR/cron/dispatch) ──> report (always)
 ```
 
 - **lint** — `npm run typecheck` + `npm run typecheck:e2e`. This project has no ESLint;
   strict `tsc` is its linter. Covers both the bundle (`tsconfig.json`) and the E2E suite
-  (`tests/tsconfig.json`).
+  (`tests/tsconfig.json`). The **8 structural lint gates** (`npm run lint`) run in `validate.yml`'s
+  `Structural gates (lint)` job, not here.
+- **unit** — `npm run test` (the co-located Vitest unit suite — 65 files / ~1,562 tests).
 - **test** — `npm run test:e2e` (Playwright drives the offline `demo/` harness). On CI the
   config auto-enables `retries:2`, `workers:2`, `forbidOnly`. Uploads `playwright-report/`
   + `test-results/` (HTML report, JUnit XML, traces/videos) on `!cancelled()`.
@@ -46,11 +48,15 @@ Top-level `concurrency: cancel-in-progress` cancels superseded runs on the same 
 A change is green when **every** job above passes:
 
 - **Type gate** (`Type-check`) — strict TS, bundle + E2E.
+- **Unit gate** (`Unit (Vitest)`) — the co-located Vitest unit suite must pass.
 - **E2E gate** (`E2E (Playwright)`) — 100% of the suite must pass (no partial-pass threshold;
   Playwright exits non-zero on any failure → the job fails). `@visual` specs are excluded
   from the default gate (opt in with `VISUAL=1`).
 - **Flake gate** (`Burn-In`) — on PRs, the suite must survive `--repeat-each` with retries off.
-- **Packaging gate** (`validate.yml`) — `HACS` + `Type-check & build` (bundle emitted).
+- **Packaging + structural gate** (`validate.yml`) — `HACS` + `Type-check & build` (bundle emitted)
+  + `Structural gates (lint)` (the 8-gate `npm run lint` chain: `no-bare-hass-states` → `no-cycle` →
+  `trade-dress-denylist` → `import-allowlist` → `no-network-egress` → `version-sync` → `token-defined`
+  → `no-planning-artifacts`).
 
 ### Enforce as required checks (recommended)
 
@@ -61,10 +67,12 @@ gh api -X PUT repos/mlmeehan/tesla-card/branches/main/protection \
   -H "Accept: application/vnd.github+json" \
   -f 'required_status_checks[strict]=true' \
   -f 'required_status_checks[contexts][]=Type-check' \
+  -f 'required_status_checks[contexts][]=Unit (Vitest)' \
   -f 'required_status_checks[contexts][]=E2E (Playwright)' \
   -f 'required_status_checks[contexts][]=Burn-In (flaky detection)' \
   -f 'required_status_checks[contexts][]=HACS' \
   -f 'required_status_checks[contexts][]=Type-check & build' \
+  -f 'required_status_checks[contexts][]=Structural gates (lint)' \
   -f 'enforce_admins=false' \
   -f 'required_pull_request_reviews=' \
   -f 'restrictions='
