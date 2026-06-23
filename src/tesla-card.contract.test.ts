@@ -143,6 +143,22 @@ describe('AC3 — one bundle load registers the seven elements as DISTINCT custo
     expect(vehicle?.name).toBe(STRINGS.card.name);
   });
 
+  test("every getStubConfig seed carries the `custom:` type prefix (picker-clobber guard)", () => {
+    // HA's card picker spreads getStubConfig() OVER the `custom:<tag>` type it
+    // assigns, so any bare `type` a seed returns clobbers the prefix and the
+    // picker reports "Unknown type: <tag>". A seed may omit `type` entirely
+    // (HA keeps its own); but if it sets one, it MUST be `custom:`-prefixed.
+    for (const tag of AC3_TAGS) {
+      const ctor = customElements.get(tag) as
+        | (CustomElementConstructor & { getStubConfig?: () => TeslaCardConfig })
+        | undefined;
+      if (typeof ctor?.getStubConfig !== 'function') continue;
+      const stub = ctor.getStubConfig();
+      if (stub?.type === undefined) continue;
+      expect(stub.type, `${tag} getStubConfig type`).toMatch(/^custom:/);
+    }
+  });
+
   test('the editor is NOT registered on load, then IS after getConfigElement (lazy)', async () => {
     // Lazy-by-contract (NFR-1 / 7.2): loading the bundle entry must NOT register
     // the editor (captured at module load, before any getConfigElement ran).

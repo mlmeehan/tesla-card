@@ -283,7 +283,10 @@ export class TcMyHome extends LitElement implements LovelaceCard {
   }
 
   public static getStubConfig(): TeslaCardConfig {
-    return { type: 'tc-my-home' };
+    // HA's card picker spreads this seed OVER the `custom:tc-my-home` type it
+    // assigns, so the seed MUST carry the `custom:` prefix — a bare `tc-my-home`
+    // here clobbers it and the picker reports "Unknown type encountered: tc-my-home".
+    return { type: 'custom:tc-my-home' };
   }
 
   // ── model binding (AC1, AC2) — the UNCHANGED Epic-4 pipeline ────────────────

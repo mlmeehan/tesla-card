@@ -259,7 +259,7 @@ describe('AC3/AC4 — teardown leaves nothing pending', () => {
 describe('AC4 — registration + honest degradation', () => {
   test('registered custom element with the card contract', () => {
     expect(customElements.get('tc-my-home')).toBe(TcMyHome);
-    expect(TcMyHome.getStubConfig()).toEqual({ type: 'tc-my-home' });
+    expect(TcMyHome.getStubConfig()).toEqual({ type: 'custom:tc-my-home' });
     const el = document.createElement('tc-my-home') as Scene;
     el.setConfig(CONFIG);
     expect(el.getCardSize()).toBeGreaterThan(0);
