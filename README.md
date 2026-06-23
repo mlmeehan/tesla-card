@@ -50,6 +50,18 @@ a live energy-flow overlay.
 | ![Media](docs/screenshot-media.png) | ![Asleep](docs/screenshot-asleep.png) | ![Energy](docs/screenshot-energy.png) |
 | **Media** player | Graceful **asleep** state | Live **energy** flow |
 
+## Requirements
+
+- **Home Assistant 2024.4.0** or newer (the minimum supported version, pinned in
+  `hacs.json`).
+- The **Fleet / energy** features (live charging, the My Home scene, Powerwall
+  controls) effectively need **2024.8+** with the `tesla_fleet` (or Teslemetry)
+  integration providing the entities.
+
+> The GUI editor uses Home Assistant's built-in `ha-form`/`ha-selector` components.
+> These are not part of a guaranteed-stable public API; the editor is verified
+> against HA 2024.4+ and may need updates if HA changes these internals.
+
 ## Installation
 
 ### HACS (recommended)

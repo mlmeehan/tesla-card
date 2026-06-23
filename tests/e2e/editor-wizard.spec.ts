@@ -469,3 +469,91 @@ test.describe('Story 9.12 appearance pickers (real browser)', () => {
     await expect(ed.paintSwatch('black')).toBeFocused(); // focus rode the selection
   });
 });
+
+// ── Story 9.13 — Tune step (real browser) ──────────────────────────────────────
+// Harness gap (carried from 9.11/9.12): the Tune widgets are `ha-selector`s, which
+// are UNREGISTERED in the demo build — their bodies render zero-height, so the
+// interactive SET/prune/conversion behaviour is covered in jsdom (editor.test.ts /
+// panel-tyres.test.ts / powerwall.test.ts). Here we assert only what the browser can
+// honestly show: section PRESENCE, step REACHABILITY, the per-card-global LABELS, and
+// that SKIPPING the step writes no Tune key (zero-diff).
+test.describe('Story 9.13 Tune step (real browser)', () => {
+  test('the normal form pins a Tune section with its per-card-global labels', async ({ page }) => {
+    const ed = new TeslaEditorPage(page);
+    await ed.openAt('done');
+    await expect(ed.tuneSection).toBeAttached();
+    // The visible labels are real DOM even though the ha-selectors are inert.
+    await expect(ed.tuneLabels.first()).toBeVisible();
+    await expect(ed.tuneHidePowerwall).toBeAttached();
+    await expect(ed.tuneHidePowerwall).toHaveAttribute('aria-label', /Powerwall/);
+  });
+
+  test('the wizard Step-4 (Tune) is reachable and hosts the same Tune component', async ({
+    page,
+  }) => {
+    const ed = new TeslaEditorPage(page);
+    await ed.open(); // fresh wizard at Detect
+    await ed.clickNext(); // Detect → Confirm
+    await ed.clickNext(); // Confirm → Appearance
+    await ed.clickNext(); // Appearance → Tune (Step 4)
+    await expect(ed.step(3)).toHaveClass(/current/);
+    await expect(ed.tuneSection).toBeAttached();
+    await expect(ed.tuneUnits).toBeAttached();
+  });
+
+  test('skipping the Tune step writes no Tune key (fully skippable, zero-diff)', async ({
+    page,
+  }) => {
+    const ed = new TeslaEditorPage(page);
+    await ed.open();
+    await ed.clickNext(); // Detect → Confirm
+    await ed.clickNext(); // Confirm → Appearance
+    await ed.clickNext(); // Appearance → Tune
+    await ed.footerBtn('secondary').click(); // Skip Tune → Finish
+    await ed.clickNext(); // Done.
+    const cfg = await ed.lastConfig();
+    expect(cfg).not.toBeNull();
+    // No Tune key injected by skipping — absent ⇒ today's behaviour byte-for-byte.
+    expect(cfg!.tyres).toBeUndefined();
+    expect((cfg!.energy as { hide_powerwall_controls?: unknown } | undefined)?.hide_powerwall_controls).toBeUndefined();
+  });
+
+  // a11y cross-cutting #2 (EXPERIENCE.md:247-252): the ≥44×44 touch-target floor is
+  // a wall-kiosk hard requirement and is NOT assumed of the native widget — the
+  // `.tune-row` wrapper enforces it. The selector body is inert in the demo, but the
+  // ROW geometry is real DOM, so the browser can honestly verify the floor here.
+  test('every Tune control clears the ≥44px touch-target floor', async ({ page }) => {
+    const ed = new TeslaEditorPage(page);
+    await ed.openAt('done');
+    await expect(ed.tuneSection).toBeAttached();
+    const rows = ed.tuneRows;
+    const count = await rows.count();
+    // tyre units + recommended + margin + 4 hide toggles + Powerwall visibility = 8 rows.
+    expect(count).toBeGreaterThanOrEqual(8);
+    for (let i = 0; i < count; i++) {
+      const box = await rows.nth(i).boundingBox();
+      expect(box, `Tune row ${i} should be laid out`).not.toBeNull();
+      expect(box!.height, `Tune row ${i} height`).toBeGreaterThanOrEqual(44);
+    }
+  });
+
+  // a11y cross-cutting #1: every Tune widget is labelled by role/instance (per-card
+  // global, NEVER D15-instance-suffixed) and the group is an aria-labelled landmark.
+  // The labels/roles are real DOM on the otherwise-inert selectors.
+  test('the Tune group and each widget expose a per-card-global accessible name', async ({
+    page,
+  }) => {
+    const ed = new TeslaEditorPage(page);
+    await ed.openAt('done');
+    // The section is a labelled group landmark.
+    await expect(ed.tuneSection).toHaveAttribute('role', 'group');
+    await expect(ed.tuneSection).toHaveAttribute('aria-label', /.+/);
+    // Each pinned widget carries its own accessible name (not a bare "combobox").
+    await expect(ed.tuneUnits).toHaveAttribute('aria-label', /.+/);
+    await expect(ed.tuneRecommended).toHaveAttribute('aria-label', /.+/);
+    await expect(ed.tuneMargin).toHaveAttribute('aria-label', /.+/);
+    await expect(ed.tuneHidePowerwall).toHaveAttribute('aria-label', /Powerwall/);
+    // The hide toggles are labelled too (per-card global — no instance suffix).
+    await expect(ed.tuneBool('hide_panels')).toHaveAttribute('aria-label', /.+/);
+  });
+});

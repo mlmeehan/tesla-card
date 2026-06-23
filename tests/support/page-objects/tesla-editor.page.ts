@@ -176,6 +176,41 @@ export class TeslaEditorPage {
     return this.editor.locator('.appearance .reset-auto');
   }
 
+  // ── Story 9.13 — Tune step (pinned ha-selector widget set) ───────────────────
+  /** The pinned "Tune" section (normal form) / wizard Step-4 body. */
+  get tuneSection(): Locator {
+    return this.editor.locator('.tune');
+  }
+
+  /** The per-row visible labels (real DOM even though the ha-selectors are inert in the demo). */
+  get tuneLabels(): Locator {
+    return this.editor.locator('.tune .tune-lbl');
+  }
+
+  /** A Tune hide-toggle ha-selector by its key (inert in the demo — assert attached/label only). */
+  tuneBool(key: string): Locator {
+    return this.editor.locator(`.tune .tune-bool[data-key="${key}"]`);
+  }
+
+  /** The tyre-units / threshold / Powerwall-visibility ha-selectors (inert in the demo). */
+  get tuneUnits(): Locator {
+    return this.editor.locator('.tune .tune-units');
+  }
+  get tuneRecommended(): Locator {
+    return this.editor.locator('.tune .tune-recommended');
+  }
+  get tuneMargin(): Locator {
+    return this.editor.locator('.tune .tune-margin');
+  }
+  get tuneHidePowerwall(): Locator {
+    return this.editor.locator('.tune .tune-hide-powerwall');
+  }
+
+  /** Every Tune control row — wraps its (inert) selector with the ≥44px touch floor. */
+  get tuneRows(): Locator {
+    return this.editor.locator('.tune .tune-row');
+  }
+
   /** Click the emphatic primary control (Next, or Done. on the Finish step). */
   async clickNext(): Promise<void> {
     await this.footerBtn('primary').click();

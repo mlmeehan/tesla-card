@@ -545,6 +545,25 @@ export const STRINGS = {
       resetDefault: 'Reset to default',
       announcePrefix: 'Preview',
     },
+    // ── Tune controls (Story 9.13, D-9.13-1d) ─────────────────────────────────
+    // The "Tune" group: tyre-pressure units + thresholds, the panel/card hide
+    // toggles (re-homed here from their old standalone checkboxes), and Powerwall
+    // control visibility — each on its pinned `ha-selector` widget. British English,
+    // calm/plain/honest voice (no hype). `announcePrefix` composes the polite
+    // live-region update after a Tune change. Labels are per-card globals — NEVER
+    // suffixed with a D15 instance title (that disambiguation is the entity pickers'
+    // alone). The number field's unit + min/max announcement ("Recommended pressure,
+    // bar, range 1.5–4") is composed in `editor.ts` `_renderTune` from the chosen unit
+    // and the `tuneNumberRanges` bounds — no separate string key needed.
+    tune: {
+      heading: 'Tune',
+      tyreUnitsLabel: 'Tyre pressure units',
+      tyreUnitsAuto: 'Auto (sensor unit)',
+      recommendedLabel: 'Recommended pressure',
+      marginLabel: 'Warn margin',
+      hidePowerwallControls: 'Hide Powerwall controls',
+      announcePrefix: 'Tune',
+    },
   },
 
   // Guided first-run wizard (Story 9.9 / CAP-5 — the no-YAML first-run flow).

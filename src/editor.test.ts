@@ -44,6 +44,27 @@ function captureEmit(el: EditorEl): { get(): Record<string, unknown> | undefined
 
 const $ = (el: EditorEl, sel: string) => el.shadowRoot?.querySelector(sel);
 
+// ── Story 9.13 Tune helpers ────────────────────────────────────────────────────
+// The Tune widgets are pinned `ha-selector`s — inert UNDEFINED elements in jsdom, so
+// we read the bound `.value`/`.selector` properties and drive a synthetic
+// `value-changed` (the 9.11/9.12 convention). The `.tune-lbl` spans are real DOM.
+const tuneSection = (el: EditorEl) => el.shadowRoot!.querySelector('.tune') as HTMLElement | null;
+const tuneSel = (el: EditorEl, cls: string) =>
+  el.shadowRoot!.querySelector(`.tune .${cls}`) as unknown as { selector?: unknown; value?: unknown } | null;
+const tuneBool = (el: EditorEl, key: string) =>
+  el.shadowRoot!.querySelector(`.tune .tune-bool[data-key="${key}"]`) as unknown as {
+    selector?: { boolean?: unknown };
+    value?: unknown;
+  };
+const tuneBoolValue = (el: EditorEl, key: string): unknown => tuneBool(el, key).value;
+async function tuneFire(el: EditorEl, selectorEl: Element, value: unknown): Promise<void> {
+  selectorEl.dispatchEvent(new CustomEvent('value-changed', { detail: { value }, bubbles: false }));
+  await el.updateComplete;
+}
+async function tuneBoolPick(el: EditorEl, key: string, value: boolean): Promise<void> {
+  await tuneFire(el, el.shadowRoot!.querySelector(`.tune .tune-bool[data-key="${key}"]`)!, value);
+}
+
 beforeAll(() => {
   expect(customElements.get('tesla-card-editor')).toBeTruthy();
 });
@@ -68,19 +89,15 @@ describe('AC1 — editor renders + reflects all four field groups', () => {
     const select = $(el, 'select') as HTMLSelectElement;
     expect(select.value).toBe('climate');
 
-    // The top-level toggles render OUTSIDE the Scene-nodes `.group` (which adds the
-    // per-node show toggles, Story 9.4) — scope to them. Since Story 9.10 there are
-    // FOUR: the three hide toggles + the detected-but-hidden advisory toggle.
-    const checks = Array.from(
-      el.shadowRoot!.querySelectorAll('input[type="checkbox"]')
-    ).filter((c) => !(c as HTMLElement).closest('.group')) as HTMLInputElement[];
-    expect(checks.length).toBe(4); // quick_actions, panels, commands, notify_hidden_detected
-    // hide_panels is the 2nd checkbox in render order; only it is true.
-    expect(checks[0].checked).toBe(false); // hide_quick_actions
-    expect(checks[1].checked).toBe(true); // hide_panels
-    expect(checks[2].checked).toBe(false); // hide_commands
-    // notify_hidden_detected DEFAULTS ON (absent ⇒ checked — Story 9.10, AC8).
-    expect(checks[3].checked).toBe(true);
+    // Story 9.13: the four hide toggles migrated to pinned `ha-selector` `boolean`
+    // widgets, re-homed in the Tune group. They are inert UNDEFINED elements in jsdom;
+    // their resolved checked state is the bound `.value` property (per the 9.12 hex
+    // selector). hide_panels was set true; the rest default off, except
+    // notify_hidden_detected which DEFAULTS ON (absent ⇒ true — Story 9.10, AC8).
+    expect(tuneBoolValue(el, 'hide_quick_actions')).toBe(false);
+    expect(tuneBoolValue(el, 'hide_panels')).toBe(true);
+    expect(tuneBoolValue(el, 'hide_commands')).toBe(false);
+    expect(tuneBoolValue(el, 'notify_hidden_detected')).toBe(true);
     el.remove();
   });
 
@@ -137,19 +154,16 @@ describe('AC4 — an edit emits a valid TeslaCardConfig', () => {
     el.remove();
   });
 
-  test('toggling a hide checkbox emits the boolean', async () => {
+  test('toggling a hide flag (Tune ha-selector boolean) emits the boolean', async () => {
     const el = makeEditor();
     el.setConfig({ type: 'custom:tesla-card', setup_complete: true } as TeslaCardConfig);
     await el.updateComplete;
     const cap = captureEmit(el);
 
-    const checks = el.shadowRoot?.querySelectorAll(
-      'input[type="checkbox"]'
-    ) as NodeListOf<HTMLInputElement>;
-    checks[1].checked = true; // hide_panels
-    checks[1].dispatchEvent(new Event('change'));
+    await tuneBoolPick(el, 'hide_panels', true);
 
     expect(cap.get()?.hide_panels).toBe(true);
+    expect(cap.get()?.type).toBe('custom:tesla-card');
     el.remove();
   });
 
@@ -397,18 +411,17 @@ describe('AC4 — text-field hygiene + event wiring contract', () => {
     el.remove();
   });
 
-  test('un-toggling a hide checkbox emits an explicit false (carried, not dropped)', async () => {
+  test('un-toggling a hide flag back to its default REMOVES the key (Story 9.13 delete-on-default, R9 zero-diff)', async () => {
     const el = makeEditor();
     el.setConfig({ type: 'custom:tesla-card', hide_commands: true } as TeslaCardConfig);
     await el.updateComplete;
     const cap = captureEmit(el);
 
-    const checks = el.shadowRoot?.querySelectorAll(
-      'input[type="checkbox"]'
-    ) as NodeListOf<HTMLInputElement>;
-    checks[2].checked = false; // hide_commands → off
-    checks[2].dispatchEvent(new Event('change'));
-    expect(cap.get()?.hide_commands).toBe(false);
+    // hide_commands defaults OFF: setting it back to false (the default) deletes the
+    // key — a removed key, NEVER a blanked value (the migrated clone+prune writer).
+    await tuneBoolPick(el, 'hide_commands', false);
+    expect(cap.get()).toBeDefined();
+    expect('hide_commands' in (cap.get() ?? {})).toBe(false);
     el.remove();
   });
 });
@@ -1637,11 +1650,12 @@ describe('Story 9.10 AC8 — the global detected-but-hidden toggle round-trips',
     el.hass = ONLINE_HASS;
     el.setConfig(CONFIGURED);
     await el.updateComplete;
-    const toggle = Array.from(el.shadowRoot!.querySelectorAll('.form > .check input[type="checkbox"]')).pop() as HTMLInputElement;
-    expect(toggle.checked).toBe(true); // default-on
+    // Story 9.13: the toggle is now the Tune `notify_hidden_detected` ha-selector
+    // boolean. Defaults ON (absent ⇒ true). Unchecking writes false (≠ the ON
+    // default ⇒ an explicit opt-out key is kept, not pruned).
+    expect(tuneBoolValue(el, 'notify_hidden_detected')).toBe(true); // default-on
     const cap = captureEmit(el);
-    toggle.checked = false;
-    toggle.dispatchEvent(new Event('change'));
+    await tuneBoolPick(el, 'notify_hidden_detected', false);
     expect(cap.get()?.notify_hidden_detected).toBe(false);
     el.remove();
   });
@@ -2217,5 +2231,193 @@ describe('Story 9.12 — LIGHT_TOKENS import wiring', () => {
   test('the editor imports the shared LIGHT_TOKENS (no divergent copy)', () => {
     expect(Object.keys(LIGHT_TOKENS).length).toBeGreaterThan(0);
     expect(LIGHT_TOKENS['--tc-text']).toBe('#101725');
+  });
+});
+
+// ── Story 9.13 — Tune step (pinned ha-selector widget set; un-stubs Story 9.9) ──
+// Two homes, one component (D-9.12-1 precedent): the pinned "Tune" section renders in
+// BOTH the normal form AND the wizard's Step 4 (no longer a `_renderStub`). The
+// ha-selector widgets (select/number/boolean) are inert UNDEFINED elements in jsdom —
+// we assert their bound `.selector`/`.value` and drive a synthetic `value-changed`.
+const TUNE_BASE = { type: 'custom:tesla-card', setup_complete: true } as TeslaCardConfig;
+
+describe('Story 9.13 AC-D — Tune lives in BOTH homes (un-stubs the wizard Step 4)', () => {
+  test('the normal form renders a pinned Tune section', async () => {
+    const el = makeEditor();
+    el.setConfig(TUNE_BASE);
+    await el.updateComplete;
+    expect(tuneSection(el)).toBeTruthy();
+    expect(tuneSel(el, 'tune-units')).toBeTruthy();
+    expect(tuneSel(el, 'tune-recommended')).toBeTruthy();
+    expect(tuneSel(el, 'tune-margin')).toBeTruthy();
+    expect(tuneSel(el, 'tune-hide-powerwall')).toBeTruthy();
+    el.remove();
+  });
+
+  test('the wizard Step 4 renders the SAME Tune component (not a stub)', async () => {
+    const el = makeEditor();
+    el.hass = ONLINE_HASS;
+    el.setConfig({ type: 'custom:tesla-card' } as TeslaCardConfig);
+    await el.updateComplete;
+    // Detect → Confirm → Appearance → Tune (step index 3).
+    await clickPrimary(el); // leave Detect
+    await clickPrimary(el); // leave Confirm
+    await clickPrimary(el); // leave Appearance → on Tune
+    expect(stepEls(el)[3].classList.contains('current')).toBe(true);
+    expect(tuneSection(el)).toBeTruthy();
+    expect(tuneBool(el, 'hide_panels')).toBeTruthy();
+    el.remove();
+  });
+});
+
+describe('Story 9.13 AC-D — pinned widget bindings', () => {
+  test('tyre units is a select selector (Auto/psi/bar dropdown)', async () => {
+    const el = makeEditor();
+    el.setConfig(TUNE_BASE);
+    await el.updateComplete;
+    const sel = tuneSel(el, 'tune-units')!.selector as { select?: { mode?: string; options?: unknown[] } };
+    expect(sel.select?.mode).toBe('dropdown');
+    expect(sel.select?.options?.length).toBe(3); // Auto, psi, bar
+    el.remove();
+  });
+
+  test('tyre thresholds are number selectors (mode:box) with a unit reflecting the chosen units', async () => {
+    const el = makeEditor();
+    el.setConfig({ ...TUNE_BASE, tyres: { units: 'bar' } } as TeslaCardConfig);
+    await el.updateComplete;
+    const rec = tuneSel(el, 'tune-recommended')!.selector as { number?: { mode?: string; unit_of_measurement?: string } };
+    expect(rec.number?.mode).toBe('box');
+    expect(rec.number?.unit_of_measurement).toBe('bar');
+    el.remove();
+  });
+
+  test('the hide toggles + Powerwall visibility are boolean selectors', async () => {
+    const el = makeEditor();
+    el.setConfig(TUNE_BASE);
+    await el.updateComplete;
+    expect((tuneBool(el, 'hide_panels').selector as { boolean?: unknown }).boolean).toBeDefined();
+    expect((tuneSel(el, 'tune-hide-powerwall')!.selector as { boolean?: unknown }).boolean).toBeDefined();
+    el.remove();
+  });
+});
+
+describe('Story 9.13 AC-D — Tune writers (SET writes the key; reset/default deletes it, R9 zero-diff)', () => {
+  test('picking a tyre unit writes config.tyres.units; Auto deletes the key (prunes tyres)', async () => {
+    const el = makeEditor();
+    el.setConfig(TUNE_BASE);
+    await el.updateComplete;
+    const cap = captureEmit(el);
+    await tuneFire(el, el.shadowRoot!.querySelector('.tune .tune-units')!, 'bar');
+    expect(cap.get()?.tyres).toEqual({ units: 'bar' });
+    // Auto ('') ⇒ delete units ⇒ tyres (now empty) pruned entirely.
+    await tuneFire(el, el.shadowRoot!.querySelector('.tune .tune-units')!, '');
+    expect('tyres' in (cap.get() ?? {})).toBe(false);
+    el.remove();
+  });
+
+  test('a tyre unit change PRESERVES existing native-unit thresholds (units is display-only)', async () => {
+    const el = makeEditor();
+    el.setConfig({ ...TUNE_BASE, tyres: { recommended: 2.4, margin: 0.3 } } as TeslaCardConfig);
+    await el.updateComplete;
+    const cap = captureEmit(el);
+    await tuneFire(el, el.shadowRoot!.querySelector('.tune .tune-units')!, 'psi');
+    expect(cap.get()?.tyres).toEqual({ recommended: 2.4, margin: 0.3, units: 'psi' });
+    el.remove();
+  });
+
+  test('a threshold number writes the key; clearing it deletes the key', async () => {
+    const el = makeEditor();
+    el.setConfig(TUNE_BASE);
+    await el.updateComplete;
+    const cap = captureEmit(el);
+    await tuneFire(el, el.shadowRoot!.querySelector('.tune .tune-recommended')!, 2.5);
+    expect((cap.get()?.tyres as { recommended?: number }).recommended).toBe(2.5);
+    await tuneFire(el, el.shadowRoot!.querySelector('.tune .tune-recommended')!, undefined);
+    expect('tyres' in (cap.get() ?? {})).toBe(false);
+    el.remove();
+  });
+
+  test('Powerwall control visibility writes energy.hide_powerwall_controls; un-set prunes energy', async () => {
+    const el = makeEditor();
+    el.setConfig(TUNE_BASE);
+    await el.updateComplete;
+    const cap = captureEmit(el);
+    await tuneFire(el, el.shadowRoot!.querySelector('.tune .tune-hide-powerwall')!, true);
+    expect((cap.get()?.energy as { hide_powerwall_controls?: boolean }).hide_powerwall_controls).toBe(true);
+    await tuneFire(el, el.shadowRoot!.querySelector('.tune .tune-hide-powerwall')!, false);
+    expect('energy' in (cap.get() ?? {})).toBe(false); // pruned (false = default)
+    el.remove();
+  });
+
+  test('hiding Powerwall controls keeps a sibling energy override intact (clone+prune)', async () => {
+    const el = makeEditor();
+    el.setConfig({ ...TUNE_BASE, energy: { hide: true } } as TeslaCardConfig);
+    await el.updateComplete;
+    const cap = captureEmit(el);
+    await tuneFire(el, el.shadowRoot!.querySelector('.tune .tune-hide-powerwall')!, true);
+    expect(cap.get()?.energy).toEqual({ hide: true, hide_powerwall_controls: true });
+    el.remove();
+  });
+});
+
+describe('Story 9.13 AC-D — zero-diff + a11y', () => {
+  test('omitting every Tune key leaves a bare config byte-identical (no Tune key injected on render)', async () => {
+    const el = makeEditor();
+    let emitted = false;
+    el.addEventListener('config-changed', () => {
+      emitted = true;
+    });
+    el.setConfig(TUNE_BASE);
+    await el.updateComplete;
+    // Rendering the Tune section must not write any key (FR-33 / SM-C4 zero-diff).
+    expect(emitted).toBe(false);
+    expect(el._config).toEqual({ type: 'custom:tesla-card', setup_complete: true });
+    el.remove();
+  });
+
+  test('every Tune widget carries an accessible name (per-card-global label, not D15-suffixed)', async () => {
+    const el = makeEditor();
+    el.setConfig(TUNE_BASE);
+    await el.updateComplete;
+    const units = el.shadowRoot!.querySelector('.tune .tune-units') as HTMLElement;
+    expect(units.getAttribute('aria-label')).toBe(STRINGS.editor.tune.tyreUnitsLabel);
+    const pw = el.shadowRoot!.querySelector('.tune .tune-hide-powerwall') as HTMLElement;
+    expect(pw.getAttribute('aria-label')).toBe(STRINGS.editor.tune.hidePowerwallControls);
+    // The label is the bare global string — NEVER suffixed with an instance title.
+    expect(pw.getAttribute('aria-label')).not.toContain('·');
+    el.remove();
+  });
+
+  test('the threshold number fields announce unit + min/max range when a unit is chosen (a11y #3)', async () => {
+    const el = makeEditor();
+    el.setConfig({ ...TUNE_BASE, tyres: { units: 'bar' } } as TeslaCardConfig);
+    await el.updateComplete;
+    const rec = el.shadowRoot!.querySelector('.tune .tune-recommended') as HTMLElement;
+    const mar = el.shadowRoot!.querySelector('.tune .tune-margin') as HTMLElement;
+    // "Recommended pressure, bar, range 1.5–4" — unit AND the bounds are announced.
+    expect(rec.getAttribute('aria-label')).toContain('bar');
+    expect(rec.getAttribute('aria-label')).toContain('range');
+    expect(mar.getAttribute('aria-label')).toContain('range');
+    el.remove();
+  });
+
+  test('Auto units leave the range OUT of the threshold announcement (permissive range not meaningful)', async () => {
+    const el = makeEditor();
+    el.setConfig(TUNE_BASE); // no units ⇒ Auto
+    await el.updateComplete;
+    const rec = el.shadowRoot!.querySelector('.tune .tune-recommended') as HTMLElement;
+    expect(rec.getAttribute('aria-label')).toBe(STRINGS.editor.tune.recommendedLabel);
+    el.remove();
+  });
+
+  test('a Tune change announces the resolved state via the polite live region', async () => {
+    const el = makeEditor();
+    el.setConfig(TUNE_BASE);
+    await el.updateComplete;
+    await tuneFire(el, el.shadowRoot!.querySelector('.tune .tune-units')!, 'bar');
+    const live = el.shadowRoot!.querySelector('.tune .remap-live') as HTMLElement;
+    expect(live.getAttribute('aria-live')).toBe('polite');
+    expect(live.textContent).toContain('bar');
+    el.remove();
   });
 });

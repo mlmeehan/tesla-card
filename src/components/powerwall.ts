@@ -317,8 +317,13 @@ export class TcPowerwall extends EcosystemCard implements LovelaceCard {
         : nothing;
 
     const hasControls = reserveAvail || (modeAvail && options.length > 0);
+    // Story 9.13 (Tune): the user can hide the write controls even when present
+    // (`energy.hide_powerwall_controls`). Absent/false ⇒ today's present-gated
+    // behaviour, byte-for-byte (SM-C4 zero-diff). A pure visibility gate — no
+    // balance/sign change (AR-6 / FR-33).
+    const hideControls = this.config?.energy?.hide_powerwall_controls === true;
     // Mockup order: operation-mode block → backup-reserve block.
-    const controls = hasControls ? html`${modeCtl}${reserveCtl}` : nothing;
+    const controls = hasControls && !hideControls ? html`${modeCtl}${reserveCtl}` : nothing;
 
     // Detail stat-grid: the cumulative charge/discharge energy totals (kWh) only
     // — reserve + mode are now the live controls above (no double-render). All

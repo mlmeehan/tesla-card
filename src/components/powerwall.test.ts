@@ -430,3 +430,32 @@ describe('Story 8.4 — AC3 hide-when-missing + AC4 a11y floor', () => {
     }
   });
 });
+
+// ── Story 9.13 (Tune) — Powerwall control visibility gate ──────────────────────
+// `energy.hide_powerwall_controls` hides the Story-8.4 write controls EVEN when the
+// entities are present (a pure visibility gate — no balance/sign change). Absent /
+// false ⇒ today's present-gated behaviour, byte-for-byte (SM-C4 / FR-33 zero-diff).
+describe('Story 9.13 — Powerwall control visibility (energy.hide_powerwall_controls)', () => {
+  test('hide_powerwall_controls:true hides the write controls even when the entities resolve', async () => {
+    const el = await mount(makeHass(states(detailFx)), {
+      type: 'custom:tesla-card',
+      energy: { hide_powerwall_controls: true },
+    } as TeslaCardConfig);
+    expect(sr(el).querySelector('tc-slider')).toBeNull(); // reserve control hidden
+    expect(sr(el).querySelectorAll('.seg').length).toBe(0); // mode control hidden
+  });
+
+  test('absent ⇒ controls show when present (zero-diff with today)', async () => {
+    const el = await mount(makeHass(states(detailFx)), CONFIG);
+    expect(sr(el).querySelector('tc-slider')).not.toBeNull();
+    expect(sr(el).querySelectorAll('.seg').length).toBeGreaterThan(0);
+  });
+
+  test('hide_powerwall_controls:false is the same as absent (controls show)', async () => {
+    const el = await mount(makeHass(states(detailFx)), {
+      type: 'custom:tesla-card',
+      energy: { hide_powerwall_controls: false },
+    } as TeslaCardConfig);
+    expect(sr(el).querySelector('tc-slider')).not.toBeNull();
+  });
+});

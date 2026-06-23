@@ -173,6 +173,14 @@ export interface EnergyConfig {
    * omit ⇒ today's auto-detect Scene (SM-C4). See {@link NodeCustomization}.
    */
   nodes?: NodeCustomization;
+  /**
+   * Hide the Powerwall write-controls region (Story 8.4 `operation_mode` select +
+   * `backup_reserve` slider) even when the entities are present (Story 9.13 / Tune).
+   * The controls are otherwise PRESENT-gated (shown only when their entities resolve).
+   * ABSENT / `false` ⇒ today's present-gated behaviour (controls show when present) —
+   * a removed key, never a blanked value (R9 / SM-C4 zero-diff).
+   */
+  hide_powerwall_controls?: boolean;
 }
 
 /**
@@ -192,6 +200,17 @@ export interface TyresConfig {
    * fixed absolute PSI threshold.
    */
   margin?: number;
+  /**
+   * DISPLAY-ONLY preference for the four corner read-outs (Story 9.13 / Tune):
+   * `'psi'` or `'bar'`. ABSENT ⇒ the sensor's NATIVE unit, exactly today's render
+   * (SM-C4 / FR-33 zero-diff — never assumed). When set, each live corner reading
+   * is converted from its native unit to the chosen unit for DISPLAY only; the
+   * low-pressure comparison still runs in the native unit, so `recommended`/`margin`
+   * REMAIN STORED IN THE NATIVE UNIT (the invariant above is unchanged) and only the
+   * presentation honours `units`. An unrecognised native unit cannot be converted, so
+   * the native value is shown unchanged (honest — never fabricated, never mislabelled).
+   */
+  units?: 'psi' | 'bar';
 }
 
 /**

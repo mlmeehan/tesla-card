@@ -37,6 +37,37 @@ function defaultMargin(u: string): number {
   return 4; // psi (and the conservative fallback)
 }
 
+/** Exact bar↔psi factor (the ONE conversion constant — Story 9.13 / Tune). */
+const PSI_PER_BAR = 14.5038;
+
+/**
+ * DISPLAY-ONLY unit conversion for a corner read-out (Story 9.13). `pref` is the
+ * `config.tyres.units` display preference. ABSENT ⇒ the native value/unit verbatim,
+ * byte-for-byte today's render (SM-C4 / FR-33 zero-diff). When set, the native value
+ * is converted to the chosen unit FOR DISPLAY ONLY (the low-pressure comparison still
+ * runs in native unit upstream). An unrecognised native unit — or an absent value —
+ * cannot be converted honestly, so the native value/unit is shown unchanged (never a
+ * fabricated number, never a mislabelled one). `isBar` drives the decimal precision.
+ */
+function displayPressure(
+  value: number | undefined,
+  nativeUnit: string,
+  pref: 'psi' | 'bar' | undefined
+): { value: number | undefined; unit: string; isBar: boolean } {
+  if (!pref) return { value, unit: nativeUnit, isBar: /bar/i.test(nativeUnit) };
+  const from = /bar/i.test(nativeUnit)
+    ? 'bar'
+    : /kpa/i.test(nativeUnit)
+      ? 'kpa'
+      : /psi/i.test(nativeUnit)
+        ? 'psi'
+        : undefined;
+  if (value === undefined || from === undefined)
+    return { value, unit: nativeUnit, isBar: /bar/i.test(nativeUnit) };
+  const bar = from === 'bar' ? value : from === 'psi' ? value / PSI_PER_BAR : value / 100;
+  return { value: pref === 'bar' ? bar : bar * PSI_PER_BAR, unit: pref, isBar: pref === 'bar' };
+}
+
 /** One corner's raw read — computed once per render BEFORE the peer baseline, so
  *  the baseline can be derived from the fresh subset (see `render`). */
 interface CornerRead {
@@ -100,16 +131,20 @@ export class TcPanelTyres extends TcBase {
    * stands on stale data (that is the vehicle's assertion, not ours).
    */
   private _view(read: CornerRead, now: number, recommended: number | undefined, margin: number): CornerView {
+    // The computed low-pressure check runs in the NATIVE unit (value/recommended/
+    // margin all native) — `units` is a DISPLAY preference and never moves the warn
+    // threshold (Story 9.13). Conversion happens ONLY for the rendered value/unit.
     const computedLow =
       read.fresh &&
       read.value !== undefined &&
       recommended !== undefined &&
       read.value < recommended - margin;
+    const disp = displayPressure(read.value, read.unit, this.config.tyres?.units);
     return {
       c: read.c,
-      value: read.value,
-      unit: read.unit,
-      isBar: read.isBar,
+      value: disp.value,
+      unit: disp.unit,
+      isBar: disp.isBar,
       warn: read.tpms || computedLow,
       stale: read.stale,
       ageHint: read.stale ? formatAgeHint(read.lastUpdated, now) : undefined,

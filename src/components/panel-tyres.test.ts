@@ -333,3 +333,45 @@ describe('AC3 — missing degrades NaN-safe; stale shows last-known + staleness,
     expect(sr(el).querySelector('.car svg')).not.toBeNull();
   });
 });
+
+// ── Story 9.13 (Tune) — display-only unit conversion (config.tyres.units) ───────
+// `units` converts the rendered corner read-out to psi/bar FOR DISPLAY ONLY. The
+// low-pressure comparison stays in the native unit (units never moves the warn
+// threshold). Absent ⇒ native value/unit verbatim (SM-C4 / FR-33 zero-diff). The ONE
+// factor: 1 bar = 14.5038 psi. An unrecognised native unit cannot be converted, so
+// the native value is shown unchanged (honest — never fabricated/mislabelled).
+describe('Story 9.13 — tyre display-unit conversion (config.tyres.units)', () => {
+  test('absent units ⇒ native render unchanged (zero-diff): bar fixture shows 2.9 bar', async () => {
+    const el = await mount(makeHass(awakeStates()));
+    expect(cornerByPos(el, 'fl').textContent).toContain('2.9');
+    expect(cornerByPos(el, 'fl').textContent).toContain('bar');
+  });
+
+  test('units:psi converts a bar-native reading to psi (2.9 bar → 42 psi, 0-dp)', async () => {
+    const el = await mount(makeHass(awakeStates()), { tyres: { units: 'psi' } });
+    const fl = cornerByPos(el, 'fl');
+    expect(fl.textContent).toContain('42'); // 2.9 × 14.5038 = 42.06 → 0-dp
+    expect(fl.textContent).toContain('psi');
+    expect(fl.textContent).not.toContain('bar');
+  });
+
+  test('units:bar converts a psi-native reading to bar (42 psi → 2.9 bar, 1-dp)', async () => {
+    const el = await mount(makeHass(psiStates({ fl: '42', fr: '40', rl: '42', rr: '42' })), {
+      tyres: { units: 'bar' },
+    });
+    const fl = cornerByPos(el, 'fl');
+    expect(fl.textContent).toContain('2.9'); // 42 / 14.5038 = 2.896 → 1-dp
+    expect(fl.textContent).toContain('bar');
+  });
+
+  test('units is display-only: a low corner still warns (comparison stays native) while shown in psi', async () => {
+    const states = awakeStates();
+    states[ID.rr].state = '2.3'; // < peer max 2.9 − 0.3 margin (native bar) ⇒ computed warn
+    states[ID.warnRR].state = 'off'; // TPMS off — the COMPUTED check is the lever
+    const el = await mount(makeHass(states), { tyres: { units: 'psi' } });
+    const rr = cornerByPos(el, 'rr');
+    expect(rr.classList.contains('warn')).toBe(true); // warn fires in native unit
+    expect(rr.textContent).toContain('psi'); // displayed converted
+    expect(rr.textContent).toContain('33'); // 2.3 × 14.5038 = 33.4 → 0-dp
+  });
+});

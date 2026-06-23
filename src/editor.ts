@@ -15,6 +15,7 @@ import type {
   HomeAssistant,
   TeslaCardConfig,
   AppearanceConfig,
+  TyresConfig,
   LovelaceCardEditor,
   PanelId,
   NodeCustomization,
@@ -43,6 +44,25 @@ const WIZARD_STEPS: { key: StepKey; label: string; skipDefault: string }[] = [
   { key: 'finish', label: STRINGS.wizard.steps.finish, skipDefault: STRINGS.wizard.finish.skipDefault },
 ];
 const FINISH_STEP = WIZARD_STEPS.length - 1;
+
+// Sensible `ha-selector` `number` bounds for the tyre thresholds, keyed by the
+// chosen display unit (Story 9.13). `unit_of_measurement` reflects the chosen unit
+// so the native widget announces it (a11y: "Recommended pressure, 2.4 bar"); Auto /
+// native leaves the unit undefined (we cannot know the sensor's native unit without
+// a `hass.states` read — AR-1) and uses a permissive fine-step range that covers
+// both bar and psi. Thresholds are stored in the NATIVE unit (TyresConfig invariant);
+// these bounds only constrain the edit widget.
+function tuneNumberRanges(units: 'psi' | 'bar' | undefined): {
+  unit: string | undefined;
+  rec: { min: number; max: number; step: number };
+  margin: { min: number; max: number; step: number };
+} {
+  if (units === 'bar')
+    return { unit: 'bar', rec: { min: 1.5, max: 4, step: 0.1 }, margin: { min: 0, max: 1, step: 0.1 } };
+  if (units === 'psi')
+    return { unit: 'psi', rec: { min: 20, max: 60, step: 1 }, margin: { min: 0, max: 15, step: 1 } };
+  return { unit: undefined, rec: { min: 0, max: 100, step: 0.1 }, margin: { min: 0, max: 20, step: 0.1 } };
+}
 
 /**
  * A node's honest discovery result (CAP-4 / Story 9.10 AC5). FOUR states now: the
@@ -231,13 +251,6 @@ export class TeslaCardEditor extends LitElement implements LovelaceCardEditor {
     if (v) next[key] = v;
     else delete next[key];
     this._emit(next);
-  }
-
-  private _bool(
-    key: 'hide_quick_actions' | 'hide_panels' | 'hide_commands' | 'notify_hidden_detected',
-    e: Event
-  ): void {
-    this._patch({ [key]: (e.target as HTMLInputElement).checked });
   }
 
   // ── My-Home Scene node customization (Story 9.4) ─────────────────────────────
@@ -774,16 +787,6 @@ export class TeslaCardEditor extends LitElement implements LovelaceCardEditor {
     `;
   }
 
-  // Steps 2/3/4 — skippable containers the siblings enrich (Confirm→9.11,
-  // Appearance→9.12, Tune→9.13). Each renders a heading + subhead now so the wizard
-  // flows end-to-end; the footer's Skip applies the (zero-diff) sensible default.
-  private _renderStub(heading: string, subhead: string): TemplateResult {
-    return html`
-      <span class="wiz-h">${heading}</span>
-      <span class="wiz-sub">${subhead}</span>
-    `;
-  }
-
   // Step 2 — Confirm & remap (Story 9.11, AC1). The FULL list of every PRESENT role's
   // `entity-picker-row`, shown at once (the wizard's full-list layout — same picker
   // component as the accordion, different presentation). PRESENT-ONLY: the onboarding
@@ -837,7 +840,7 @@ export class TeslaCardEditor extends LitElement implements LovelaceCardEditor {
       case 'appearance':
         return this._renderAppearance();
       case 'tune':
-        return this._renderStub(STRINGS.wizard.tune.heading, STRINGS.wizard.tune.subhead);
+        return this._renderTune();
       case 'finish':
         return this._renderFinish();
     }
@@ -1393,12 +1396,228 @@ export class TeslaCardEditor extends LitElement implements LovelaceCardEditor {
     `;
   }
 
+  // ── Tune controls (Story 9.13, D-9.13-1d) ───────────────────────────────────
+  // The "Tune" group — tyre units + thresholds, the panel/card hide toggles
+  // (re-homed here from their old standalone checkboxes), and Powerwall control
+  // visibility — each on its PINNED `ha-selector` widget (no JS import; the element
+  // is registered globally by the Lovelace runtime). The SAME method renders in the
+  // wizard Step 4 AND the normal form (two homes, one component — D-9.12-1 precedent).
+  // The polite live region announces the resolved Tune state after a change.
+  @state() private _tuneAnnounce = '';
+
+  // Tyre display-unit preference — clone the `tyres` container, set/delete `units`,
+  // prune an emptied container (mirror `_setTheme`). Auto/reset ⇒ delete the key, so
+  // today's native-unit render is restored byte-for-byte (SM-C4 / FR-33 zero-diff).
+  private _setTyresUnits(value: 'psi' | 'bar' | undefined): void {
+    const next = { ...this._config };
+    const tyres = this._cloneTyres(next);
+    if (value) tyres.units = value;
+    else delete tyres.units;
+    this._commitTyres(next, tyres);
+    this._announceTune();
+  }
+
+  // A tyre threshold (recommended | margin) — stored in the sensor's NATIVE unit
+  // (the TyresConfig invariant is unchanged; `units` governs DISPLAY only). Empty /
+  // non-finite ⇒ delete the key (reset = a removed key, never a blanked value, R9).
+  private _setTyresNum(key: 'recommended' | 'margin', value: number | undefined): void {
+    const next = { ...this._config };
+    const tyres = this._cloneTyres(next);
+    if (value !== undefined && Number.isFinite(value)) tyres[key] = value;
+    else delete tyres[key];
+    this._commitTyres(next, tyres);
+    this._announceTune();
+  }
+
+  // Defensive clone of `config.tyres` (a garbage non-object is replaced, mirroring
+  // `_setTheme`/`_commitNodes`).
+  private _cloneTyres(next: TeslaCardConfig): TyresConfig {
+    return next.tyres && typeof next.tyres === 'object' && !Array.isArray(next.tyres)
+      ? { ...next.tyres }
+      : {};
+  }
+
+  private _commitTyres(next: TeslaCardConfig, tyres: TyresConfig): void {
+    if (Object.keys(tyres).length > 0) next.tyres = tyres;
+    else delete next.tyres;
+    this._emit(next);
+  }
+
+  // A top-level hide flag. `hide_*` default OFF (false); `notify_hidden_detected`
+  // defaults ON (true). Clone+prune delete-on-DEFAULT — setting a key back to its
+  // default REMOVES it, so an unconfigured config stays byte-for-byte today's (R9).
+  private _setHideFlag(
+    key: 'hide_panels' | 'hide_quick_actions' | 'hide_commands' | 'notify_hidden_detected',
+    value: boolean
+  ): void {
+    const next = { ...this._config };
+    const dflt = key === 'notify_hidden_detected'; // true for notify, false for hide_*
+    if (value === dflt) delete next[key];
+    else next[key] = value;
+    this._emit(next);
+    this._announceTune();
+  }
+
+  // Powerwall control visibility — clone `config.energy`, set/delete the gate, prune
+  // an emptied `energy` (mirror `_writeOverride`). Sibling energy keys ride the spread.
+  private _setHidePowerwall(value: boolean): void {
+    const next = { ...this._config };
+    const energy = { ...(next.energy ?? {}) };
+    if (value) energy.hide_powerwall_controls = true;
+    else delete energy.hide_powerwall_controls;
+    if (Object.keys(energy).length > 0) next.energy = energy;
+    else delete next.energy;
+    this._emit(next);
+    this._announceTune();
+  }
+
+  // Read the settled `value-changed`; coerce to the pinned `'psi'|'bar'` set (any
+  // other value — the Auto option's '' — clears the key).
+  private _onTyresUnits(ev: CustomEvent): void {
+    const raw = (ev.detail as { value?: unknown } | undefined)?.value;
+    this._setTyresUnits(raw === 'psi' || raw === 'bar' ? raw : undefined);
+  }
+
+  private _onTyresNum(key: 'recommended' | 'margin', ev: CustomEvent): void {
+    const raw = (ev.detail as { value?: unknown } | undefined)?.value;
+    this._setTyresNum(key, typeof raw === 'number' && Number.isFinite(raw) ? raw : undefined);
+  }
+
+  // Compose the polite Tune announce (read AFTER `_emit` updated `_config`): the
+  // resolved unit (naming what Auto inherits) + the Powerwall-controls visibility.
+  private _announceTune(): void {
+    const c = this._config;
+    const T = STRINGS.editor.tune;
+    const unitsWord = c.tyres?.units ?? T.tyreUnitsAuto;
+    const pwWord = c.energy?.hide_powerwall_controls ? T.hidePowerwallControls : '';
+    this._tuneAnnounce = `${T.announcePrefix}, ${unitsWord}${pwWord ? `, ${pwWord}` : ''}`;
+  }
+
+  // One labelled boolean toggle on the pinned `ha-selector` `boolean` widget. The
+  // visible `.tune-lbl` IS the per-card-global label (NEVER D15-instance-suffixed);
+  // the selector also carries the accessible name. `value` is the resolved checked
+  // state; the writer applies delete-on-default.
+  private _renderTuneBool(
+    key: 'hide_panels' | 'hide_quick_actions' | 'hide_commands' | 'notify_hidden_detected',
+    label: string,
+    checked: boolean
+  ): TemplateResult {
+    return html`
+      <div class="tune-row">
+        <span class="tune-lbl">${label}</span>
+        <ha-selector
+          class="tune-bool"
+          data-key=${key}
+          .hass=${this.hass}
+          .selector=${{ boolean: {} }}
+          .value=${checked}
+          aria-label=${label}
+          @value-changed=${(e: Event) =>
+            this._setHideFlag(key, !!(e as CustomEvent).detail?.value)}
+        ></ha-selector>
+      </div>
+    `;
+  }
+
+  // The pinned "Tune" section — the SAME component the wizard Step 4 renders (two
+  // homes, one component, D-9.12-1). Every widget is a PURE config writer (no
+  // `hass.states` read — AR-1 boundary holds).
+  private _renderTune(): TemplateResult {
+    const c = this._config;
+    const T = STRINGS.editor.tune;
+    const units = c.tyres?.units; // undefined ⇒ Auto / native (zero-diff)
+    const r = tuneNumberRanges(units);
+    // a11y obligation #3 (EXPERIENCE.md:247-252): the number field announces its
+    // unit AND min/max range ("Recommended pressure, bar, range 1.5–4"). Only when a
+    // unit is chosen — Auto leaves both off (the permissive range is not meaningful to
+    // announce, and the native widget reads the value itself). En-dash for the range.
+    const numAria = (label: string, range: { min: number; max: number }): string =>
+      r.unit ? `${label}, ${r.unit}, range ${range.min}–${range.max}` : label;
+    const recAria = numAria(T.recommendedLabel, r.rec);
+    const marAria = numAria(T.marginLabel, r.margin);
+    return html`
+      <div class="group tune" role="group" aria-label=${T.heading}>
+        <span class="group-heading">${T.heading}</span>
+
+        <div class="tune-row">
+          <span class="tune-lbl">${T.tyreUnitsLabel}</span>
+          <ha-selector
+            class="tune-units"
+            .hass=${this.hass}
+            .selector=${{
+              select: {
+                mode: 'dropdown',
+                options: [
+                  { value: '', label: T.tyreUnitsAuto },
+                  { value: 'psi', label: 'psi' },
+                  { value: 'bar', label: 'bar' },
+                ],
+              },
+            }}
+            .value=${units ?? ''}
+            aria-label=${T.tyreUnitsLabel}
+            @value-changed=${(e: Event) => this._onTyresUnits(e as CustomEvent)}
+          ></ha-selector>
+        </div>
+
+        <div class="tune-row">
+          <span class="tune-lbl">${T.recommendedLabel}</span>
+          <ha-selector
+            class="tune-recommended"
+            .hass=${this.hass}
+            .selector=${{
+              number: { min: r.rec.min, max: r.rec.max, step: r.rec.step, unit_of_measurement: r.unit, mode: 'box' },
+            }}
+            .value=${c.tyres?.recommended}
+            aria-label=${recAria}
+            @value-changed=${(e: Event) => this._onTyresNum('recommended', e as CustomEvent)}
+          ></ha-selector>
+        </div>
+
+        <div class="tune-row">
+          <span class="tune-lbl">${T.marginLabel}</span>
+          <ha-selector
+            class="tune-margin"
+            .hass=${this.hass}
+            .selector=${{
+              number: { min: r.margin.min, max: r.margin.max, step: r.margin.step, unit_of_measurement: r.unit, mode: 'box' },
+            }}
+            .value=${c.tyres?.margin}
+            aria-label=${marAria}
+            @value-changed=${(e: Event) => this._onTyresNum('margin', e as CustomEvent)}
+          ></ha-selector>
+        </div>
+
+        ${this._renderTuneBool('hide_quick_actions', STRINGS.editor.hideQuickActions, !!c.hide_quick_actions)}
+        ${this._renderTuneBool('hide_panels', STRINGS.editor.hidePanels, !!c.hide_panels)}
+        ${this._renderTuneBool('hide_commands', STRINGS.editor.hideCommands, !!c.hide_commands)}
+        ${this._renderTuneBool('notify_hidden_detected', STRINGS.editor.notifyHiddenDetected, c.notify_hidden_detected !== false)}
+
+        <div class="tune-row">
+          <span class="tune-lbl">${T.hidePowerwallControls}</span>
+          <ha-selector
+            class="tune-hide-powerwall"
+            .hass=${this.hass}
+            .selector=${{ boolean: {} }}
+            .value=${!!c.energy?.hide_powerwall_controls}
+            aria-label=${T.hidePowerwallControls}
+            @value-changed=${(e: Event) =>
+              this._setHidePowerwall(!!(e as CustomEvent).detail?.value)}
+          ></ha-selector>
+        </div>
+
+        <span class="remap-live" role="status" aria-live="polite">${this._tuneAnnounce}</span>
+      </div>
+    `;
+  }
+
   private _renderNormalForm(): TemplateResult {
     const c = this._config;
     return html`
       <div class="form">
         ${this._renderDiscoverySummary()}
         ${this._renderAppearance()}
+        ${this._renderTune()}
         <label class="field">
           <span>${STRINGS.editor.vehicleName}</span>
           <input
@@ -1417,44 +1636,6 @@ export class TeslaCardEditor extends LitElement implements LovelaceCardEditor {
             placeholder=${STRINGS.editor.imagePlaceholder}
             @change=${(e: Event) => this._text(e, 'image')}
           />
-        </label>
-
-        <label class="check">
-          <input
-            type="checkbox"
-            .checked=${!!c.hide_quick_actions}
-            @change=${(e: Event) => this._bool('hide_quick_actions', e)}
-          />
-          <span>${STRINGS.editor.hideQuickActions}</span>
-        </label>
-        <label class="check">
-          <input
-            type="checkbox"
-            .checked=${!!c.hide_panels}
-            @change=${(e: Event) => this._bool('hide_panels', e)}
-          />
-          <span>${STRINGS.editor.hidePanels}</span>
-        </label>
-        <label class="check">
-          <input
-            type="checkbox"
-            .checked=${!!c.hide_commands}
-            @change=${(e: Event) => this._bool('hide_commands', e)}
-          />
-          <span>${STRINGS.editor.hideCommands}</span>
-        </label>
-        <!-- Story 9.10 (AC8): the global opt-out for the card-side detected-but-hidden
-             advisory. Default-ON (the advisory works out of the box), so the box is
-             checked unless the config explicitly sets false. The established checkbox
-             pattern (the HA-native ha-switch widget-set pin is formally 9.13's) —
-             announces on/off, with a 44px hit target via .check input. -->
-        <label class="check">
-          <input
-            type="checkbox"
-            .checked=${c.notify_hidden_detected !== false}
-            @change=${(e: Event) => this._bool('notify_hidden_detected', e)}
-          />
-          <span>${STRINGS.editor.notifyHiddenDetected}</span>
         </label>
 
         ${this._renderSceneNodes()}
@@ -1528,6 +1709,24 @@ export class TeslaCardEditor extends LitElement implements LovelaceCardEditor {
     }
     .group-heading:not(:first-child) {
       margin-top: 6px;
+    }
+    /* Tune (Story 9.13): one labelled row per pinned ha-selector widget. The label
+       sits beside the control; the control keeps its native ≥44px touch target
+       (verified on the wall-kiosk surface, never assumed). */
+    .tune-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      min-height: 44px;
+    }
+    .tune-lbl {
+      font-size: 13px;
+      color: var(--primary-text-color, #e1e1e1);
+    }
+    .tune-row ha-selector {
+      flex: 0 0 auto;
+      min-width: 120px;
     }
     .hint {
       font-size: 12px;
