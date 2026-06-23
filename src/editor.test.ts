@@ -2533,15 +2533,19 @@ describe('Story 10.1 AC3 — Scene-honest Tune relabel (regroup, not suppress)',
   });
 });
 
-describe('Story 10.1 AC4 — Appearance preview branch (live <tc-my-home> vs car hero)', () => {
-  test('My-Home mounts a live <tc-my-home> (no car hero); vehicle mounts the car hero (no tc-my-home)', async () => {
+// #3 (sprint-change-proposal-2026-06-23) — SUPERSEDES Story 10.1 AC4 / D-10.1-2/F-1.
+// The My-Home path renders NO in-editor preview (HA's native card-editor split-pane is
+// authoritative); the vehicle card keeps its own car-hero preview unchanged.
+describe('#3 — My-Home Appearance step renders no in-editor preview (vehicle keeps its hero)', () => {
+  test('My-Home mounts NO preview (no appearance-preview, no tc-my-home); vehicle mounts the car hero', async () => {
     const my = makeEditor();
     my.hass = ONLINE_HASS;
     my.setConfig(myHomeForm());
     await my.updateComplete;
-    const myPrev = my.shadowRoot!.querySelector('.appearance-preview')!;
-    expect(myPrev.querySelector('.preview-stage.myhome tc-my-home')).toBeTruthy();
-    expect(myPrev.querySelector('.car-img')).toBeFalsy(); // not the lone car hero
+    const myAppearance = my.shadowRoot!.querySelector('.appearance')!;
+    expect(myAppearance.querySelector('.appearance-preview')).toBeFalsy(); // no in-editor preview
+    expect(myAppearance.querySelector('tc-my-home')).toBeFalsy();
+    expect(myAppearance.querySelector('.swatch')).toBeTruthy(); // pickers still render
 
     const veh = makeEditor();
     veh.hass = ONLINE_HASS;
@@ -2554,14 +2558,14 @@ describe('Story 10.1 AC4 — Appearance preview branch (live <tc-my-home> vs car
     veh.remove();
   });
 
-  test('the no-hass guard shows a calm note, not a mounted card', async () => {
+  test('My-Home shows no preview regardless of hass (no edit-time mount at all)', async () => {
     const el = makeEditor();
     el.hass = undefined;
     el.setConfig(myHomeForm());
     await el.updateComplete;
-    const prev = el.shadowRoot!.querySelector('.appearance-preview')!;
-    expect(prev.querySelector('tc-my-home')).toBeFalsy();
-    expect(prev.querySelector('.preview-empty')).toBeTruthy();
+    const appearance = el.shadowRoot!.querySelector('.appearance')!;
+    expect(appearance.querySelector('.appearance-preview')).toBeFalsy();
+    expect(appearance.querySelector('tc-my-home')).toBeFalsy();
     el.remove();
   });
 });

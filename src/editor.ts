@@ -35,14 +35,6 @@ import { STRINGS } from './strings';
 // honest sentence the footer's Skip announces (never a bare "Skip"). The deep
 // per-step CONTENT is owned by siblings (Confirm→9.11, Appearance→9.12, Tune→9.13);
 // this list is the frame's spine.
-// Story 10.1 — the minimal structural shape of the cached `<tc-my-home>` the My-Home
-// Appearance preview mounts. Typed structurally (NOT an `import` of the component) so the
-// editor adds no static `components/my-home` edge — `no-cycle` forbids that back-edge.
-type PreviewCardEl = HTMLElement & {
-  setConfig?(c: TeslaCardConfig): void;
-  hass?: HomeAssistant;
-};
-
 type StepKey = 'detect' | 'confirm' | 'appearance' | 'tune' | 'finish';
 const WIZARD_STEPS: { key: StepKey; label: string; skipDefault: string }[] = [
   { key: 'detect', label: STRINGS.wizard.steps.detect, skipDefault: STRINGS.wizard.detect.skipDefault },
@@ -1311,42 +1303,19 @@ export class TeslaCardEditor extends LitElement implements LovelaceCardEditor {
     </button>`;
   }
 
-  // Story 10.1 — the My-Home live preview is a CACHED real `<tc-my-home>` element,
-  // configured imperatively. `TcMyHome` reads its `_config` via `setConfig` (not the
-  // Lit `.config` property), so a `.config` bind would leave it unconfigured/empty — we
-  // create the element once, render it as a node in the template, and (re)`setConfig` it
-  // in `updated()` ONLY when the config identity changes (mirrors `my-home.ts`'s own
-  // embed guard — re-`setConfig`-ing every hass tick would reset the live card's state).
-  private _previewCard?: PreviewCardEl;
-  private _previewCfg?: TeslaCardConfig;
-
-  private _ensurePreviewCard(): HTMLElement {
-    if (!this._previewCard)
-      this._previewCard = document.createElement('tc-my-home') as PreviewCardEl;
-    return this._previewCard;
-  }
-
-  // Keep the cached preview card configured + live. Runs after every render but only
-  // RE-`setConfig`s on a real config change (identity guard) — a paint/theme pick emits a
-  // fresh `_config`, so the preview re-resolves (paint reflects on the embedded vehicle);
-  // `hass` refreshes every tick so freshness stays honest. No-op off the My-Home path.
-  protected override updated(): void {
-    const el = this._previewCard;
-    if (!el || !this._isMyHome || !this.hass) return;
-    if (this._previewCfg !== this._config && typeof el.setConfig === 'function') {
-      el.setConfig({ ...this._config });
-      this._previewCfg = this._config;
-    }
-    el.hass = this.hass;
-  }
-
   // The full-card live preview (D-9.12-4): the real recolorable generic-EV hero
   // (`carView`) re-skinned to the resolved paint, the whole frame flipped
   // light/dark via the SAME LIGHT_TOKENS the card host uses, and a mini tab strip
   // with the chosen default panel active. No fabricated telemetry — `charge:
   // 'parked'`, no SoC/range (the Finish-step honesty discipline carries over).
-  // The My-Home variant (Story 10.1) swaps the hero for a scaled live composed Scene.
-  private _renderPreview(): TemplateResult {
+  //
+  // My-Home path: NO in-editor preview (sprint-change-proposal-2026-06-23.md #3 —
+  // supersedes Story 10.1 AC4 / D-10.1-2/F-1). HA's native card-editor split-pane
+  // preview is authoritative, so the embedded scaled `<tc-my-home>` mount was redundant.
+  // The vehicle card keeps its hero+tabs preview below — the SAME render, now de-nested
+  // straight into the return (the former `_isMyHome` stage ternary is gone).
+  private _renderPreview(): TemplateResult | typeof nothing {
+    if (this._isMyHome) return nothing;
     const c = this._config;
     const paint = resolvePaint(this.hass, c);
     const light = this._resolvedAppTheme() === 'light';
@@ -1357,23 +1326,10 @@ export class TeslaCardEditor extends LitElement implements LovelaceCardEditor {
           .map(([k, v]) => `${k}: ${v}`)
           .join('; ')
       : '';
-    // Story 10.1 (AC4): on a My-Home card the full-card preview is a scaled-down LIVE
-    // instance of the composed Scene — a `<tc-my-home>` TAG (already defined in this
-    // flow; NO module import, so no cycle and the lazy-by-contract invariant holds, AC8/
-    // AC9b). It reuses the real render (source/load cards + the Gateway bus) and inherits
-    // the card's freshness discipline (it shows "—"/asleep honestly, never a fabricated
-    // kW) + paint (the embedded vehicle cell uses `config.paint`) + reduced-motion. The
-    // theme wrapper flips the whole preview card. Guarded for an absent edit-time `hass`
-    // (the resolvers tolerate `undefined`, but a calm note is the honest empty state).
-    const stage = this._isMyHome
-      ? html`
-          <div class="preview-stage myhome">
-            ${this.hass
-              ? html`<div class="myhome-scale">${this._ensurePreviewCard()}</div>`
-              : html`<span class="preview-empty">${STRINGS.editor.appearance.previewUnavailable}</span>`}
-          </div>
-        `
-      : html`
+    return html`
+      <div class="preview-wrap">
+        <span class="preview-lead">${STRINGS.editor.appearance.livePreview}</span>
+        <div class="appearance-preview ${light ? 'light' : ''}" style=${tokenStyle || nothing}>
           <div class="preview-stage">${carView({ paint, name, charge: 'parked' })}</div>
           <div class="preview-tabs" role="tablist" aria-label=${STRINGS.editor.appearance.panelLabel}>
             ${this._presentPanels().map(
@@ -1385,12 +1341,6 @@ export class TeslaCardEditor extends LitElement implements LovelaceCardEditor {
               >`
             )}
           </div>
-        `;
-    return html`
-      <div class="preview-wrap">
-        <span class="preview-lead">${STRINGS.editor.appearance.livePreview}</span>
-        <div class="appearance-preview ${light ? 'light' : ''}" style=${tokenStyle || nothing}>
-          ${stage}
         </div>
       </div>
     `;
@@ -2560,31 +2510,6 @@ export class TeslaCardEditor extends LitElement implements LovelaceCardEditor {
       color: var(--tc-text, #f1f5f9);
       background: color-mix(in srgb, var(--tc-blue, #38bdf8) 16%, transparent);
       box-shadow: inset 0 0 0 1px var(--tc-border, rgba(255, 255, 255, 0.09));
-    }
-    /* Story 10.1 — the My-Home live preview is a scaled-down REAL <tc-my-home>. The
-       transform shrinks it; the clip container trims the unscaled box's reserved space.
-       Geometry is verified in e2e (jsdom can't lay the bus out). */
-    .preview-stage.myhome {
-      display: block;
-      overflow: hidden;
-      padding: 0;
-    }
-    .myhome-scale {
-      transform: scale(0.62);
-      transform-origin: top center;
-      /* Reclaim the height the transform scales away so the card below doesn't float on
-         a large gap (the box still reserves unscaled height — pull the slack back up). */
-      margin-bottom: -34%;
-    }
-    .myhome-scale tc-my-home {
-      display: block;
-    }
-    .preview-empty {
-      display: block;
-      padding: 24px 8px;
-      text-align: center;
-      font-size: 12.5px;
-      color: var(--tc-text-mute, var(--secondary-text-color, #64748b));
     }
     /* Story 10.1 — Compose step: one block per node = its map row (head + picker) then
        its arrange controls, stacked. A hairline separates nodes for scannability. */

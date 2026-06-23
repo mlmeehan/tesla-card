@@ -537,11 +537,9 @@ export const STRINGS = {
       paintDefault: 'default paint',
       // Story 10.1 (My-Home variant): the default panel is the EMBEDDED vehicle's
       // opening tab (the Scene itself has no tab bar). `panelLabelMyHome` /
-      // `panelNoteMyHome` reframe the present-gated picker; `previewUnavailable` is the
-      // calm note when the live composed preview has no `hass` yet (edit-time guard).
+      // `panelNoteMyHome` reframe the present-gated picker.
       panelLabelMyHome: "Vehicle's opening tab",
       panelNoteMyHome: 'The embedded vehicle card opens on this tab.',
-      previewUnavailable: 'Live preview will appear once the card is connected.',
       hexLabel: 'Custom hex',
       hexNote: 'Any colour is accepted exactly as typed — never blocked or changed.',
       themeAuto: 'Auto',

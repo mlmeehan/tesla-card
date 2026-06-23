@@ -176,20 +176,13 @@ export class TeslaEditorPage {
     return this.editor.locator('.appearance .reset-auto');
   }
 
-  // ── Story 10.1 — Scene-aware (My-Home) editor variant ────────────────────────
-  /** The live composed-Scene preview card mounted in the My-Home Appearance preview. */
-  get previewSceneCard(): Locator {
-    return this.editor.locator('.appearance .preview-stage.myhome tc-my-home');
-  }
-
-  /** The Gateway bus overlay inside the live preview card (pierces tc-my-home's shadow). */
-  get previewSceneBus(): Locator {
-    return this.previewSceneCard.locator('.scene-bus, svg.bus, .gateway-bus');
-  }
-
-  /** The embedded vehicle cell (a nested tesla-card) inside the live preview Scene. */
-  get previewVehicleCell(): Locator {
-    return this.previewSceneCard.locator('tesla-card');
+  // ── Scene-aware (My-Home) editor variant ─────────────────────────────────────
+  /** Any composed `<tc-my-home>` mounted in the appearance preview. Asserted ABSENT on
+   *  BOTH paths now (sprint-change-proposal-2026-06-23 #3 removed the My-Home in-editor
+   *  preview; the vehicle path never had one). Meaningful guard: `.appearance-preview`
+   *  (the vehicle path DOES emit it) proves this selector can match a real preview. */
+  get previewComposedCard(): Locator {
+    return this.editor.locator('.appearance tc-my-home');
   }
 
   /** The lone car hero of the vehicle-card preview (absent in the My-Home variant). */
