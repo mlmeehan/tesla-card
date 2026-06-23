@@ -129,4 +129,16 @@ describe('no-bare-hass.states gate — end to end on the committed repo', () => 
     const out = execFileSync('node', [GATE], { cwd: CARD_ROOT, encoding: 'utf8' });
     expect(out).toContain(`ok ${RULE}`);
   });
+
+  // Story 9.10 — the DELIBERATE editor-discovery AR-1 exception is a TRACKED baseline
+  // entry (not a silent suppression): `src/editor.ts` genuinely reads `hass.states`/
+  // `hass.entities` for discovery now, so it must appear in the gate's baseline list
+  // (recorded in architecture.md D7 + the UX decision log). The self-invalidation guard
+  // in the gate then KEEPS it honest — if the editor ever stops breaching, the gate
+  // forces the entry's removal.
+  test('the editor-discovery exception (src/editor.ts) is a tracked baseline entry', () => {
+    const out = execFileSync('node', [GATE], { cwd: CARD_ROOT, encoding: 'utf8' });
+    expect(out).toContain('baseline:');
+    expect(out).toContain('src/editor.ts');
+  });
 });

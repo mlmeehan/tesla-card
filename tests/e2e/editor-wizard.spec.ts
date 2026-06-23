@@ -186,3 +186,35 @@ test.describe('Story 9.9 wizard — trade-dress chrome', () => {
     expect(chrome).not.toContain('HOME ASSISTANT');
   });
 });
+
+// Story 9.10 — normal-form discovery summary, REAL-BROWSER E2E. The summary's logic is
+// pinned in jsdom (src/editor.test.ts); this covers only what jsdom structurally cannot:
+// the section renders pinned at the top of the live normal form, and its remap chevrons
+// clear the computed ≥44×44 target floor. (The detected-but-hidden ADVISORY is a
+// card-layer surface gated on `energy.nodes.hide`, which the demo harness exposes no
+// param for — it is covered by the my-home jsdom suite's 8 advisory tests.)
+test.describe('Story 9.10 discovery summary (real browser)', () => {
+  test('the "Detected on your system" summary pins at the top of the normal form', async ({ page }) => {
+    const ed = new TeslaEditorPage(page);
+    await ed.openAt('done'); // completed ⇒ normal form
+    await expect(ed.discoverySummary).toBeVisible();
+    // Pinned at the top: the summary is the first child of the form.
+    const firstClass = await ed.normalForm.evaluate((f) => f.firstElementChild?.className ?? '');
+    expect(firstClass).toContain('disco-summary');
+    // The demo's awake car + energy site resolves several roles → real rows render.
+    expect(await ed.summaryRows.count()).toBeGreaterThan(0);
+  });
+
+  test('every remap chevron clears the ≥44×44 touch/keyboard target floor', async ({ page }) => {
+    const ed = new TeslaEditorPage(page);
+    await ed.openAt('done');
+    const n = await ed.remapChevrons.count();
+    expect(n).toBeGreaterThan(0);
+    for (let i = 0; i < n; i++) {
+      const box = await ed.remapChevrons.nth(i).boundingBox();
+      expect(box, `chevron ${i} has a layout box`).not.toBeNull();
+      expect(box!.width).toBeGreaterThanOrEqual(44);
+      expect(box!.height).toBeGreaterThanOrEqual(44);
+    }
+  });
+});

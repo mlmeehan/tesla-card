@@ -435,6 +435,26 @@ export const STRINGS = {
       /** The re-clamp toggle (back to the calm hidden state). */
       showFewer: 'Show fewer',
     },
+    /**
+     * Story 9.10 (AC7/AC8/AC9) — the calm "detected-but-hidden" advisory the card
+     * surfaces when discovery finds a LIVE entity for an instance whose card the
+     * user hid (`energy.nodes.hide`). Honest, never nagging: states a fact + offers
+     * the off switch, never the red alarm role, never animation, never auto-rearrange.
+     * Per-instance, labelled by card title. The live region is named; the inline
+     * dismiss is disambiguated per instance.
+     */
+    hiddenNotice: {
+      /** The named live region (`role="status"` / `aria-live="polite"`). */
+      region: 'Detected-but-hidden notice',
+      /** The per-instance line tail — composed `${label} ${detectedSuffix}` →
+       *  "Solar · South Array detected — its card is hidden." (`label` is the
+       *  title-disambiguated role name, joined by the Scene's `${role} · ${title}`). */
+      detectedSuffix: 'detected — its card is hidden.',
+      /** The inline dismiss button name — composed `${dismiss} ${label} ${noticeWord}`
+       *  → "Dismiss Solar · South Array notice" (disambiguated per instance). */
+      dismiss: 'Dismiss',
+      noticeWord: 'notice',
+    },
   },
 
   editor: {
@@ -470,6 +490,19 @@ export const STRINGS = {
     // The normal-form action that re-opens the wizard (explicit, distinct from the
     // bare-config auto-trigger). An `@mdi/js` named-path icon sits alongside it.
     runGuidedSetup: 'Run guided setup',
+    // ── Normal-form discovery summary (Story 9.10) ────────────────────────────
+    // The persistent "Detected on your system" section pinned at the top of the
+    // normal form. Role names reuse `NODE_LABELS` (energy.nodes.* + nodeVehicle);
+    // the four state words reuse `STRINGS.wizard.detect.{online,unavailable,noData,
+    // notFound}` (one shared vocabulary with the wizard Step-1 checklist). The
+    // remap-chevron is a labelled button — composed `${remap} ${role}` ("Remap Solar")
+    // — the 9.11 per-entity-remap entry seam (9.10 ships the affordance only).
+    detectedHeading: 'Detected on your system',
+    remap: 'Remap',
+    // ── Detected-but-hidden global toggle (Story 9.10, D-9.10-3) ──────────────
+    // Opts out of the card-side advisory entirely. A real on/off switch in the
+    // editor; the card reads `notify_hidden_detected` to gate the banner.
+    notifyHiddenDetected: 'Notify me about detected-but-hidden products',
   },
 
   // Guided first-run wizard (Story 9.9 / CAP-5 — the no-YAML first-run flow).
@@ -510,9 +543,15 @@ export const STRINGS = {
     detect: {
       heading: 'Detect & discover',
       subhead: 'Looking for your vehicle and energy devices.',
-      // The three honest discovery states (CAP-4) — announced in TEXT, never hue-only.
+      // The four honest discovery states (CAP-4 / Story 9.10) — announced in TEXT,
+      // never hue-only. `noData` (`unknown` state) is a sibling of `unavailable`:
+      // SAME amber ⚠ marker, a distinct "no data yet" sub-label (connected, no value
+      // yet — not absent, not dead). `online` attests REACHABLE, never AWAKE (a
+      // sleeping car with a present-but-stale state object still reads ✓ — freshness
+      // stays the card's job, never overstated in discovery).
       online: 'online',
       unavailable: 'unavailable',
+      noData: 'no data yet',
       notFound: 'not found',
       // Empty/fail state — never a fake "all set", never an endless spinner.
       emptyTitle: 'Nothing detected yet',

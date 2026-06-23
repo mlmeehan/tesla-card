@@ -144,6 +144,27 @@ describe('centralized strings — voice contract (Story 2.5)', () => {
     expect(`${STRINGS.climate.seats.fl} ${STRINGS.climate.heater}`).toBe('Front L heater');
   });
 
+  test('Story 9.10: discovery summary + advisory copy (four-state vocab, calm/honest)', () => {
+    // The fourth discovery state (`no_data`) is a distinct, honest word — connected
+    // but no value yet — never overstating freshness; `online` stays "online"
+    // (reachable, not awake). Single-sourced beside the wizard's three states.
+    expect(STRINGS.wizard.detect.noData).toBe('no data yet');
+    expect(STRINGS.wizard.detect.online).toBe('online');
+    // The normal-form summary heading + remap chevron prefix.
+    expect(STRINGS.editor.detectedHeading).toBe('Detected on your system');
+    expect(STRINGS.editor.remap).toBe('Remap');
+    expect(`${STRINGS.editor.remap} ${STRINGS.energy.nodes.solar}`).toBe('Remap Solar');
+    // The detected-but-hidden advisory composes a calm, honest sentence (a fact +
+    // the off switch) — never the red alarm role, never hype.
+    const n = STRINGS.scene.hiddenNotice;
+    expect(n.region).toBe('Detected-but-hidden notice');
+    expect(`${STRINGS.energy.nodes.solar} · South Array ${n.detectedSuffix}`).toBe(
+      'Solar · South Array detected — its card is hidden.'
+    );
+    expect(`${n.dismiss} ${STRINGS.energy.nodes.solar} ${n.noticeWord}`).toBe('Dismiss Solar notice');
+    expect(STRINGS.editor.notifyHiddenDetected).toBe('Notify me about detected-but-hidden products');
+  });
+
   test('Story 5.7: closures panel gains the honest three-state copy', () => {
     // The honesty-first panel needs an `unknown` state word, an honest status
     // line for unconfirmable closures, and a neutral lock name — never a false

@@ -1170,8 +1170,15 @@ test.describe('tc-my-home Scene — Story 9.2: a hidden node renders identically
     const absentFp = await sceneFingerprint(page);
     const absentTrunk = await trunkLine(page);
 
-    // (b) Solar PRESENT but HIDDEN by config — the Story 9.2 consumption path.
-    await mountScene(page, { config: { energy: { nodes: { hide: ['solar'] } } } });
+    // (b) Solar PRESENT but HIDDEN by config — the Story 9.2 consumption path. The
+    // Story 9.10 detected-but-hidden advisory is DISABLED here (`notify_hidden_detected:
+    // false`): it deliberately surfaces a hidden-but-LIVE node (so it is NOT zero-diff vs
+    // absent — that is its whole point), which would add an amber strip above the grid and
+    // shift the live trunk geometry. Disabling it isolates the Story 9.2 LAYOUT-tier
+    // invariant (hidden == absent at the roster/legs/trunk geometry) this test proves.
+    await mountScene(page, {
+      config: { energy: { nodes: { hide: ['solar'] } }, notify_hidden_detected: false },
+    });
     await waitForTrunk(page);
     const hiddenFp = await sceneFingerprint(page);
     const hiddenTrunk = await trunkLine(page);
@@ -1915,5 +1922,126 @@ test.describe('tc-my-home Scene — Story 9.15: cross-row promotion follows live
     // Degrades to today's canonical packing — no crash, no blank (consoleGuard asserts clean).
     expect(await sourceOrderByX(page)).toEqual(['solar', 'powerwall', 'grid']);
     await expect(cells(page)).toHaveCount(5);
+  });
+});
+
+// ── Story 9.10 — detected-but-hidden advisory, REAL-BROWSER E2E ─────────────────
+//
+// The advisory's LOGIC (the opposite-of-hide probe, per-instance keying, dismiss
+// scopes, the default-on/off toggle) is exhaustively pinned in jsdom
+// (src/components/my-home.test.ts, the Story 9.10 AC7/AC8/AC9 block). This layer
+// covers ONLY what jsdom structurally cannot — and what the dev story flagged as
+// "add a card-render e2e for the advisory if a DOM path is reachable": it IS reachable,
+// because the demo's AWAKE solar is genuinely LIVE and `mountScene` accepts an
+// `energy.nodes.hide` config (the same seam the 9.2 block drives at :1198). The
+// real-browser-only proofs:
+//   • the amber strip lays out ABOVE the grid with a real, non-zero box (jsdom = 0-rects)
+//   • the dismiss button clears the computed ≥44×44 target floor (AC9 — jsdom asserts
+//     the CSS *string*, never layout)
+//   • a REAL click dismisses just that instance (jsdom clicks a detached node)
+//   • the strip carries NO animation in a live engine (AC7/AC9 "never animates")
+// All under the auto console-error guard ⇒ also a "renders cleanly in a real browser" proof.
+const advisory = (page: Page) => scene(page).locator('.hidden-advisory');
+const advisoryRows = (page: Page) => scene(page).locator('.hidden-advisory-row');
+const advisoryDismiss = (page: Page) => scene(page).locator('.hidden-advisory-dismiss');
+
+test.describe('tc-my-home Scene — Story 9.10: detected-but-hidden advisory (real browser)', () => {
+  test.beforeEach(async ({ demo }) => {
+    // AWAKE / charging: solar is genuinely LIVE in this scenario, so hiding it is the
+    // hidden-AND-live case the advisory exists for.
+    await demo.open(AWAKE.open);
+  });
+
+  test('AC7 — hiding LIVE solar surfaces one calm amber strip ABOVE the grid, a named role=status region', async ({
+    page,
+  }) => {
+    // Default toggle (notify_hidden_detected absent ⇒ ON): the advisory must fire.
+    await mountScene(page, { config: { energy: { nodes: { hide: ['solar'] } } } });
+    await waitForTrunk(page);
+
+    await expect(advisory(page)).toHaveCount(1);
+    await expect(advisoryRows(page)).toHaveCount(1); // exactly one hidden-and-live instance
+
+    // A named live region, polite (never assertive) — announced, not alarmed.
+    await expect(advisory(page)).toHaveAttribute('role', 'status');
+    await expect(advisory(page)).toHaveAttribute('aria-live', 'polite');
+    await expect(advisory(page)).toHaveAttribute('aria-label', 'Detected-but-hidden notice');
+
+    // Labelled by the role name in WORDS (honest, never glyph/hue alone), stating the fact.
+    const txt = (await advisoryRows(page).first().textContent()) ?? '';
+    expect(txt).toMatch(/Solar/i);
+    expect(txt).toMatch(/detected — its card is hidden\./);
+
+    // Real layout the jsdom suite cannot see: a non-zero strip laid out strictly ABOVE
+    // the card grid (it mounts before the ribbon, at the top of the Scene).
+    const ab = await advisory(page).boundingBox();
+    const gb = await grid(page).boundingBox();
+    expect(ab, 'advisory has a live box').not.toBeNull();
+    expect(ab!.height).toBeGreaterThan(0);
+    expect(ab!.y).toBeLessThan(gb!.y); // above the grid
+  });
+
+  test('AC9 — the dismiss button clears the computed ≥44×44 touch/keyboard floor and is per-instance labelled', async ({
+    page,
+  }) => {
+    await mountScene(page, { config: { energy: { nodes: { hide: ['solar'] } } } });
+    await waitForTrunk(page);
+    await expect(advisoryDismiss(page)).toHaveCount(1);
+
+    // Computed layout (NOT the CSS source string jsdom checks) clears the a11y floor.
+    const box = await advisoryDismiss(page).boundingBox();
+    expect(box, 'dismiss has a layout box').not.toBeNull();
+    expect(box!.width).toBeGreaterThanOrEqual(44);
+    expect(box!.height).toBeGreaterThanOrEqual(44);
+
+    // Disambiguated per instance, in reading order (AC9): "Dismiss Solar … notice".
+    await expect(advisoryDismiss(page)).toHaveAttribute('aria-label', /Dismiss .*Solar.* notice/);
+  });
+
+  test('AC8 — a real click on dismiss collapses the advisory (session-scoped, the card stays hidden)', async ({
+    page,
+  }) => {
+    await mountScene(page, { config: { energy: { nodes: { hide: ['solar'] } } } });
+    await waitForTrunk(page);
+    await expect(advisory(page)).toHaveCount(1);
+
+    await advisoryDismiss(page).click();
+    await expect(advisory(page)).toHaveCount(0); // collapsed to nothing — never auto-un-hides
+
+    // The card stays hidden: the dismiss silences the notice, it does not restore the cell.
+    await expect(scene(page).locator('.scene-cell[data-node="solar"]')).toHaveCount(0);
+  });
+
+  test('AC7/AC9 — the strip never animates (no transition/animation in a live engine)', async ({
+    page,
+  }) => {
+    await mountScene(page, { config: { energy: { nodes: { hide: ['solar'] } } } });
+    await waitForTrunk(page);
+    const motion = await advisory(page).evaluate((el) => {
+      const cs = getComputedStyle(el);
+      return { animationName: cs.animationName, transition: cs.transitionDuration };
+    });
+    expect(motion.animationName).toBe('none'); // honesty contract — never animates for attention
+    expect(motion.transition).toBe('0s');
+  });
+
+  test('AC8 — the global toggle off (notify_hidden_detected:false) suppresses the advisory entirely', async ({
+    page,
+  }) => {
+    await mountScene(page, {
+      config: { energy: { nodes: { hide: ['solar'] } }, notify_hidden_detected: false },
+    });
+    await waitForTrunk(page);
+    await expect(advisory(page)).toHaveCount(0); // opted out ⇒ no compute, no banner (zero-diff)
+  });
+
+  test('AC7 — hiding an ABSENT node raises no advisory (presence ≠ a phantom)', async ({ page }) => {
+    // Drop solar's live sensor AND hide it: hidden-but-NOT-live ⇒ nothing to surface.
+    await mountScene(page, {
+      dropSlug: 'solar_power',
+      config: { energy: { nodes: { hide: ['solar'] } } },
+    });
+    await waitForTrunk(page);
+    await expect(advisory(page)).toHaveCount(0);
   });
 });

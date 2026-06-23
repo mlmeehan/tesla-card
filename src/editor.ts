@@ -4,6 +4,7 @@ import { keyed } from 'lit/directives/keyed.js';
 import {
   mdiChevronUp,
   mdiChevronDown,
+  mdiChevronRight,
   mdiCheck,
   mdiCheckCircle,
   mdiAlertCircleOutline,
@@ -19,8 +20,7 @@ import type {
 } from './types';
 import { ROLES, type Role } from './data/registry';
 import { resolveEntities } from './data/resolve';
-import { resolveEnergyEntities, stateById } from './data/energy';
-import { UNAVAILABLE_STATES } from './helpers';
+import { resolveEnergyEntities } from './data/energy';
 import { STRINGS } from './strings';
 
 // ── Guided first-run wizard (Story 9.9) ───────────────────────────────────────
@@ -38,8 +38,27 @@ const WIZARD_STEPS: { key: StepKey; label: string; skipDefault: string }[] = [
 ];
 const FINISH_STEP = WIZARD_STEPS.length - 1;
 
-/** A node's honest three-state discovery result (CAP-4 / AC2). */
-type DiscoState = 'online' | 'unavailable' | 'absent';
+/**
+ * A node's honest discovery result (CAP-4 / Story 9.10 AC5). FOUR states now: the
+ * `no_data` (`unknown`) sibling of `unavailable` joins the 9.9 three — a registered
+ * entity that is connected but has no value yet (amber ⚠, "no data yet" sub-label).
+ *   • `online`      — registered + reachable (✓; reachable, NOT necessarily awake)
+ *   • `unavailable` — registered, integration can't reach it (⚠)
+ *   • `no_data`     — registered, connected, `unknown` value (⚠ + "no data yet")
+ *   • `absent`      — not found (—)
+ */
+type DiscoState = 'online' | 'unavailable' | 'no_data' | 'absent';
+
+/** One discovery row — the shared seam shape both the wizard Step-1 checklist and the
+ *  normal-form summary consume (Story 9.10). `instanceId` is the bare `role` today; the
+ *  per-instance remap picker (9.11) widens it. `entityId` is the resolved id (or absent). */
+interface DiscoveryRow {
+  role: Role;
+  instanceId: string;
+  title?: string;
+  state: DiscoState;
+  entityId?: string;
+}
 
 const PANELS: { id: PanelId; name: string }[] = [
   { id: 'climate', name: STRINGS.tabs.climate },
@@ -146,7 +165,10 @@ export class TeslaCardEditor extends LitElement implements LovelaceCardEditor {
     this._emit(next);
   }
 
-  private _bool(key: 'hide_quick_actions' | 'hide_panels' | 'hide_commands', e: Event): void {
+  private _bool(
+    key: 'hide_quick_actions' | 'hide_panels' | 'hide_commands' | 'notify_hidden_detected',
+    e: Event
+  ): void {
     this._patch({ [key]: (e.target as HTMLInputElement).checked });
   }
 
@@ -445,26 +467,24 @@ export class TeslaCardEditor extends LitElement implements LovelaceCardEditor {
     this._wizardOverride = true;
   };
 
-  // Honest reachability probe (AC2 three-state). Routes the read through `data/`
-  // (`stateById` → freshness reader) — NEVER a bare `editor.ts` hass.states lookup
-  // (AR-1). An id absent from hass ⇒ `absent` (— not found); a present-but-
-  // unavailable/unknown state ⇒ `unavailable` (⚠); else `online` (✓).
-  private _probe(id?: string): DiscoState {
-    const raw = stateById(this.hass, id);
-    if (raw === undefined) return 'absent';
-    return UNAVAILABLE_STATES.includes(raw) ? 'unavailable' : 'online';
-  }
-
-  // Discover every Scene role's three-state status via the EXISTING boundary-safe
-  // resolvers (vehicle → `resolveEntities`, energy products → `resolveEnergyEntities`),
-  // exactly as `getStubConfig` probes — the entity reads happen inside `src/data/`
-  // (AR-1). No hard-coded entity ids: the probe ids come from the registry-keyed
-  // resolvers. (The dialect-ambiguity summary + the formal AR-1 boundary-decision-log
-  // entry are Story 9.10's; 9.9 consumes the existing boundary-safe path.)
-  private _discovery(): { role: Role; state: DiscoState }[] {
+  // ── Editor discovery seam (Story 9.10 — relax AR-1, registry + liveness) ──────
+  // The ONE discovery function both the wizard Step-1 checklist (`_renderDetect`) and
+  // the normal-form summary (`_renderDiscoverySummary`) consume, so they cannot drift
+  // (EXPERIENCE.md:147). Key→entity resolution stays through the UNCHANGED `data/`
+  // resolvers (AC1/AC3 — no hard-coded ids); liveness + presence are read from the
+  // editor's OWN `hass` via the public surface (the DECIDED AR-1 relaxation, D-9.10-4 /
+  // architecture.md D7 / the no-bare-hass-states baseline entry). Persists only resolved
+  // ids — re-scans every editor open (no baked snapshot). One bare row per role (the
+  // per-instance remap picker is 9.11; `instanceId` is the bare role today).
+  private _discover(): DiscoveryRow[] {
     const c = this._config;
-    const vehicle = resolveEntities(this.hass, c);
-    const energy = resolveEnergyEntities(this.hass, c);
+    // Defensive (AR-15 / FR-24): a partial `hass` with no `states` map (the editor
+    // preview can supply one) is treated as no-hass — the `data/` resolvers' `find`
+    // would otherwise `Object.keys(undefined)`-throw. `_liveness` reads `hass.states`
+    // optionally, so it stays safe regardless.
+    const hass = this.hass?.states ? this.hass : undefined;
+    const vehicle = resolveEntities(hass, c);
+    const energy = resolveEnergyEntities(hass, c);
     const idFor: Record<Role, string | undefined> = {
       vehicle: vehicle.status ?? vehicle.battery_level,
       solar: energy.solar_power,
@@ -474,15 +494,73 @@ export class TeslaCardEditor extends LitElement implements LovelaceCardEditor {
       wall_connector: energy.wc_power,
       generator: energy.generator_power,
     };
-    return ROLES.map((role) => ({ role, state: this._probe(idFor[role]) }));
+    return ROLES.map((role) => {
+      const entityId = idFor[role];
+      return { role, instanceId: role, state: this._liveness(entityId), entityId };
+    });
+  }
+
+  /**
+   * Honest four-state liveness for a resolved id (AC5). The DELIBERATE, LOGGED AR-1
+   * relaxation (Story 9.10): read the editor's OWN `hass` directly via the public
+   * surface — `hass.states[id]` for liveness, the `hass.entities` registry for presence
+   * — NEVER a Home-Assistant-frontend `src/data/*` import. Registry presence ≠ liveness:
+   * a registered-but-dead entity reads ⚠ (`unavailable`), never a false ✓ (the radical-
+   * honesty rule). `unknown` ⇒ `no_data` (connected, no value yet). `online` attests
+   * REACHABLE, not awake — a sleeping car with a present-but-stale state object is still ✓.
+   */
+  private _liveness(entityId?: string): DiscoState {
+    if (!entityId) return 'absent';
+    const st = this.hass?.states?.[entityId]?.state;
+    if (st === undefined) {
+      // Resolved id (e.g. a config override) not in `states`: registered ⇒ dead (⚠),
+      // else genuinely absent. The entity-registry map is the authoritative signal.
+      return this._registered(entityId) ? 'unavailable' : 'absent';
+    }
+    if (st === 'unavailable') return 'unavailable';
+    if (st === 'unknown') return 'no_data';
+    return 'online';
+  }
+
+  /**
+   * Registry presence for a resolved id whose state is NOT in `hass.states` — read from
+   * the editor's own `hass` (public surface — the logged AR-1 relaxation). The HA-
+   * recommended chain is `hass.config.components → hass.devices → hass.entities`; the
+   * entity-registry map (`hass.entities`, keyed by entity_id) is the DECISIVE per-entity
+   * signal (loaded-integration set + device registry corroborate). Used ONLY to tell a
+   * registered-but-dead entity (⚠ `unavailable`) from a genuinely absent one (—): a
+   * config override pointing at a registered entity that is momentarily down still reads
+   * ⚠, never a false —. When NO registry map is supplied (older HA / a bare editor
+   * preview) we cannot confirm registration, so an id absent from `hass.states` is
+   * `absent` — discovery never INVENTS a product it can't see (the honesty contract).
+   * The richer WS-escalation fields (`config_entry_id`/`disabled_by`/`unique_id`) the
+   * four-state output does not need, so no `callWS` escalation is performed (flagged).
+   */
+  private _registered(entityId: string): boolean {
+    const entities = this.hass?.entities;
+    if (entities && typeof entities === 'object') return entityId in entities;
+    return false; // no registry map → can't confirm presence → treat as absent
   }
 
   private _discoStateWord(s: DiscoState): string {
-    return s === 'online'
-      ? STRINGS.wizard.detect.online
-      : s === 'unavailable'
-        ? STRINGS.wizard.detect.unavailable
-        : STRINGS.wizard.detect.notFound;
+    switch (s) {
+      case 'online':
+        return STRINGS.wizard.detect.online;
+      case 'unavailable':
+        return STRINGS.wizard.detect.unavailable;
+      case 'no_data':
+        return STRINGS.wizard.detect.noData;
+      case 'absent':
+        return STRINGS.wizard.detect.notFound;
+    }
+  }
+
+  // The discovery mark for a state — ✓ online · ⚠ unavailable/no-data (same amber
+  // marker, AC5) · — absent. `aria-hidden` (the row announces role+state in words).
+  private _discoMark(s: DiscoState): TemplateResult {
+    if (s === 'online') return this._icon(mdiCheckCircle);
+    if (s === 'absent') return html`<span class="disco-dash">—</span>`;
+    return this._icon(mdiAlertCircleOutline); // unavailable AND no_data → amber ⚠
   }
 
   // The advancing 5-node labelled stepper (the biggest reconcile fix — NEVER the
@@ -524,7 +602,7 @@ export class TeslaCardEditor extends LitElement implements LovelaceCardEditor {
   // calm honest message + the manual-selection fallback (never a fake "all set",
   // never an endless spinner). The empty body is a labelled live region.
   private _renderDetect(): TemplateResult {
-    const disco = this._discovery();
+    const disco = this._discover();
     const empty = disco.every((d) => d.state === 'absent');
     if (empty) {
       return html`
@@ -544,13 +622,7 @@ export class TeslaCardEditor extends LitElement implements LovelaceCardEditor {
         ${disco.map(
           ({ role, state }) => html`
             <li class="disco-row ${state}" aria-label=${`${NODE_LABELS[role]}, ${this._discoStateWord(state)}`}>
-              <span class="disco-mark" aria-hidden="true">
-                ${state === 'online'
-                  ? this._icon(mdiCheckCircle)
-                  : state === 'unavailable'
-                    ? this._icon(mdiAlertCircleOutline)
-                    : html`<span class="disco-dash">—</span>`}
-              </span>
+              <span class="disco-mark" aria-hidden="true">${this._discoMark(state)}</span>
               <span class="disco-name" aria-hidden="true">${NODE_LABELS[role]}</span>
               <span class="disco-state" aria-hidden="true">${this._discoStateWord(state)}</span>
             </li>
@@ -655,7 +727,7 @@ export class TeslaCardEditor extends LitElement implements LovelaceCardEditor {
     // Next is gated only on the Detect EMPTY/fail state (nothing found): there is
     // nothing to confirm, so the user must take the manual route.
     const nextDisabled =
-      this._step === 0 && this._discovery().every((d) => d.state === 'absent');
+      this._step === 0 && this._discover().every((d) => d.state === 'absent');
     return html`
       <div class="wizard" role="dialog" aria-label=${STRINGS.wizard.title}>
         ${this._renderStepper()}
@@ -671,10 +743,77 @@ export class TeslaCardEditor extends LitElement implements LovelaceCardEditor {
     return this._wizardActive ? this._renderWizard() : this._renderNormalForm();
   }
 
+  // ── Normal-form discovery summary (Story 9.10, AC1/AC4/AC5/AC9) ──────────────
+  // Which role's remap chevron is expanded (`''` = none). 9.10 ships the affordance
+  // + a stable `aria-expanded` seam; the 9.11 per-entity picker drops into the slot.
+  @state() private _remapOpen = '';
+  private _toggleRemap(role: Role): void {
+    this._remapOpen = this._remapOpen === role ? '' : role;
+  }
+
+  // The persistent "Detected on your system" section pinned at the TOP of the normal
+  // form (AC4). Consumes the SAME shared seam as the wizard Step-1 checklist. When
+  // discovery resolves NOTHING, shows the SAME plain nothing-found face as wizard Step 1
+  // (calm message + a manual-selection route), never an empty section implying success.
+  private _renderDiscoverySummary(): TemplateResult {
+    const disco = this._discover();
+    const empty = disco.every((d) => d.state === 'absent');
+    return html`
+      <div class="group disco-summary" role="group" aria-label=${STRINGS.editor.detectedHeading}>
+        <span class="group-heading">${STRINGS.editor.detectedHeading}</span>
+        ${empty
+          ? this._renderNothingFound()
+          : html`<ul class="disco" role="list">${disco.map((d) => this._renderSummaryRow(d))}</ul>`}
+      </div>
+    `;
+  }
+
+  // One summary row: the four-state mark + role + state word (announced in WORDS — the
+  // name + state text are NOT aria-hidden, so a reader hears "Solar, online"), then a
+  // trailing labelled remap chevron (AC4/AC9). Absent rows are ALSO chevron-tappable
+  // (9.11's manual-map seam). The "not found" word + chevron sit at `text-dim` (≥4.5:1),
+  // never `text-mute` (the D5 contrast defect) — see styles.
+  private _renderSummaryRow(d: DiscoveryRow): TemplateResult {
+    const label = NODE_LABELS[d.role];
+    const open = this._remapOpen === d.role;
+    return html`
+      <li class="disco-row summary-row ${d.state}">
+        <span class="disco-mark" aria-hidden="true">${this._discoMark(d.state)}</span>
+        <span class="disco-name">${label}</span>
+        <span class="disco-state">${this._discoStateWord(d.state)}</span>
+        <button
+          type="button"
+          class="remap-chevron"
+          aria-label=${`${STRINGS.editor.remap} ${label}`}
+          aria-expanded=${open ? 'true' : 'false'}
+          @click=${() => this._toggleRemap(d.role)}
+        >
+          ${this._icon(mdiChevronRight)}
+        </button>
+      </li>
+    `;
+  }
+
+  // Nothing-found face — the SAME plain message + manual-selection route as wizard
+  // Step 1 (reuse, don't fork). "Select entities manually" re-enters the guided setup
+  // where the manual mapping lives (AC4). A labelled live region.
+  private _renderNothingFound(): TemplateResult {
+    return html`
+      <div class="wiz-empty disco-empty" role="status" aria-label=${STRINGS.wizard.detect.emptyTitle}>
+        <span class="wiz-h">${STRINGS.wizard.detect.emptyTitle}</span>
+        <span class="wiz-sub">${STRINGS.wizard.detect.emptyBody}</span>
+        <button type="button" class="wiz-btn primary" @click=${this._runGuidedSetup}>
+          ${STRINGS.wizard.detect.selectManually}
+        </button>
+      </div>
+    `;
+  }
+
   private _renderNormalForm(): TemplateResult {
     const c = this._config;
     return html`
       <div class="form">
+        ${this._renderDiscoverySummary()}
         <label class="field">
           <span>${STRINGS.editor.vehicleName}</span>
           <input
@@ -729,6 +868,19 @@ export class TeslaCardEditor extends LitElement implements LovelaceCardEditor {
             @change=${(e: Event) => this._bool('hide_commands', e)}
           />
           <span>${STRINGS.editor.hideCommands}</span>
+        </label>
+        <!-- Story 9.10 (AC8): the global opt-out for the card-side detected-but-hidden
+             advisory. Default-ON (the advisory works out of the box), so the box is
+             checked unless the config explicitly sets false. The established checkbox
+             pattern (the HA-native ha-switch widget-set pin is formally 9.13's) —
+             announces on/off, with a 44px hit target via .check input. -->
+        <label class="check">
+          <input
+            type="checkbox"
+            .checked=${c.notify_hidden_detected !== false}
+            @change=${(e: Event) => this._bool('notify_hidden_detected', e)}
+          />
+          <span>${STRINGS.editor.notifyHiddenDetected}</span>
         </label>
 
         ${this._renderSceneNodes()}
@@ -1037,7 +1189,10 @@ export class TeslaCardEditor extends LitElement implements LovelaceCardEditor {
     .disco-row.online .disco-mark {
       color: var(--tc-green, #34d399);
     }
-    .disco-row.unavailable .disco-mark {
+    /* unavailable AND no_data share the amber ⚠ marker (Story 9.10 AC5 — no_data is a
+       sibling of unavailable, same colour, distinguished only by its "no data yet" word). */
+    .disco-row.unavailable .disco-mark,
+    .disco-row.no_data .disco-mark {
       color: var(--tc-amber, #fbbf24);
     }
     /* absent rows read visually distinct — dim + italic "not found" (never an empty
@@ -1053,6 +1208,37 @@ export class TeslaCardEditor extends LitElement implements LovelaceCardEditor {
       flex-direction: column;
       gap: 10px;
       align-items: flex-start;
+    }
+    /* ── Normal-form discovery summary (Story 9.10) ───────────────────────────
+       Reuses the .disco/.disco-row markup; the net-new bits are the trailing remap
+       chevron + the AC9 contrast floor. The summary's state word + chevron sit at
+       --tc-text-dim (≥4.5:1), NEVER the dimmer --tc-text-mute (3.69:1 — the D5
+       contrast defect must not re-creep); the absent row keeps FULL opacity so its
+       "not found" word stays ≥4.5:1 (only the dash glyph reads dim). */
+    .summary-row .disco-state {
+      color: var(--tc-text-dim, #9aa7b8);
+    }
+    .summary-row.absent {
+      opacity: 1;
+    }
+    .remap-chevron {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      /* ≥44×44 keyboard/touch target (AC9), no motion */
+      min-width: 44px;
+      min-height: 44px;
+      padding: 0;
+      border: none;
+      border-radius: 8px;
+      background: transparent;
+      color: var(--tc-text-dim, #9aa7b8);
+      cursor: pointer;
+    }
+    .remap-chevron .ico {
+      width: 20px;
+      height: 20px;
+      fill: currentColor;
     }
     .wiz-result {
       display: flex;

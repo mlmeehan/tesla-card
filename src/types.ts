@@ -324,6 +324,17 @@ export interface TeslaCardConfig {
   /** Hide the command buttons (wake/honk/flash/…) under the panels. */
   hide_commands?: boolean;
   /**
+   * Whether the My-Home Scene surfaces the calm "detected-but-hidden" advisory
+   * (Story 9.10 / CAP-5, D-9.10-3). When the card detects a LIVE entity for an
+   * instance the user hid (`energy.nodes.hide`), it shows one per-instance amber
+   * advisory (never the red alarm role, never auto-un-hides). Additive, optional,
+   * snake_case (F4), R9-tolerated — `setConfig` never throws on it. **Default-on:**
+   * absent / any non-`false` value ⇒ the advisory shows (so its whole purpose works
+   * out of the box); set `false` to opt out entirely (the editor's global toggle
+   * writes this). Read ONLY by `tc-my-home`; the energy roles ignore it.
+   */
+  notify_hidden_detected?: boolean;
+  /**
    * Guided first-run wizard state marker (Story 9.9 / CAP-5). Additive, optional,
    * snake_case (F4), R9-tolerated — `setConfig` never throws on it. Three states:
    *   • `true`  — setup finished; the editor opens as the NORMAL form forever (until

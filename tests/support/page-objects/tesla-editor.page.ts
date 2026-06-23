@@ -78,6 +78,22 @@ export class TeslaEditorPage {
     return this.editor.locator('.run-setup');
   }
 
+  // ── Story 9.10 — normal-form discovery summary ───────────────────────────────
+  /** The "Detected on your system" section (pinned at the top of the normal form). */
+  get discoverySummary(): Locator {
+    return this.editor.locator('.disco-summary');
+  }
+
+  /** The summary's per-role discovery rows. */
+  get summaryRows(): Locator {
+    return this.editor.locator('.disco-summary .disco-row');
+  }
+
+  /** The summary's per-role remap chevron buttons (the 9.11 entry seam). */
+  get remapChevrons(): Locator {
+    return this.editor.locator('.disco-summary .remap-chevron');
+  }
+
   /** The trade-dress disclaimer line in the wizard chrome. */
   get disclaimer(): Locator {
     return this.editor.locator('.wiz-disclaimer');

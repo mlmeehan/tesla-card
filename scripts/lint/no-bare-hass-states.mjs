@@ -46,6 +46,14 @@ const BASELINE = [
   // this entry returns, so it stays gone.
   'src/helpers.ts', // → legacy (hass,config,EntityKey) state-read helpers fold into data/
   'src/tesla-card.ts', // → fold the parent's registry (hass.entities/devices) reads into data/ resolve
+  // Story 9.10 — the DELIBERATE, REVIEWED editor-discovery AR-1 exception (NOT a
+  // pre-migration debt that shrinks away). The editor's discovery seam reads its OWN
+  // hass directly — `hass.states` for liveness + the `hass.entities` registry for
+  // presence — via the public surface only (never a HA-frontend src/data/* import).
+  // Recorded as the system-of-record in architecture.md (Core Architectural Decisions
+  // → D7) + the UX decision log (.decision-log.md §Story 9.10 D-9.10-4). The card
+  // RUNTIME (my-home.ts, components, flow/) stays clean — only editor.ts is excepted.
+  'src/editor.ts',
 ];
 const BASELINE_SET = new Set(BASELINE);
 

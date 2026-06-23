@@ -207,6 +207,10 @@ export class TcMyHome extends LitElement implements LovelaceCard {
   private readonly _bus = new SceneBusRenderer();
   /** The ONE shared flow model, rebound on hass/config change in `willUpdate`. */
   private _model: FlowModel = { nodes: [], edges: [] };
+  /** Story 9.10 (AC7): the hidden-and-LIVE instances behind the detected-but-hidden
+   *  advisory, recomputed in `willUpdate` (read-only over the model — never balance).
+   *  Empty ⇒ no banner (zero-diff). */
+  private _hiddenLive: { id: string; role: EnergyRole; title?: string }[] = [];
 
   /** `_config` with `entities` filled by auto-resolution; passed to children. */
   private _resolvedConfig?: TeslaCardConfig;
@@ -255,6 +259,11 @@ export class TcMyHome extends LitElement implements LovelaceCard {
    *  card in an over-capacity band shows (the user tapped "Show all"). Default calm-clamped. */
   @state() private _showAllOverflow = false;
 
+  /** Story 9.10 (AC8): per-instance dismissed detected-but-hidden advisories — a
+   *  SESSION set of instance ids (a fresh open re-evaluates; never persisted, never
+   *  auto-un-hides). Reset in `setConfig` like {@link _showAllOverflow}. */
+  @state() private _dismissedHidden = new Set<string>();
+
   // ── LovelaceCard contract (AC4) ────────────────────────────────────────────
 
   public setConfig(config: TeslaCardConfig): void {
@@ -264,6 +273,9 @@ export class TcMyHome extends LitElement implements LovelaceCard {
     // A genuine reconfigure starts CALM-clamped: a stale "Show all" from a prior config's
     // overflow must not auto-expand a new config's band (Story 9.8, AC8).
     this._showAllOverflow = false;
+    // …and clears any per-instance advisory dismissals (Story 9.10): a new config
+    // re-evaluates which instances are hidden-and-live from scratch.
+    this._dismissedHidden = new Set<string>();
   }
 
   public getCardSize(): number {
@@ -289,8 +301,90 @@ export class TcMyHome extends LitElement implements LovelaceCard {
         // Cheap (resolve → NaN-safe read → balance); geometry is NOT touched here.
         this._model = bindFlowModel(this.hass, this._config, {}, this._hiddenRoles(this._config));
         this._bus.update(this._model);
+        // Story 9.10 (AC7): recompute the hidden-and-live set for the advisory. Read-only
+        // over the model (never balance/topology — AR-6/FR-33); `[]` when the toggle is
+        // off / nothing hidden / nothing live ⇒ no banner ⇒ zero-diff.
+        this._hiddenLive = this._computeHiddenLive(this._config);
       }
     }
+  }
+
+  /**
+   * Story 9.10 (AC7) — the hidden-and-LIVE instances behind the detected-but-hidden
+   * advisory. The "opposite-of-hide" probe: `flowInputsFrom` short-circuits hidden roles
+   * to absent BEFORE resolution, so the bound `_model` can't see them — bind an UN-HIDDEN
+   * model (`hide:[]`) purely for COMPARISON (never rendered as cards) and intersect its
+   * live present nodes with the hidden set, PER INSTANCE (id + title) so a hidden 2nd
+   * instance of a shown role still surfaces correctly named. Returns `[]` (no banner,
+   * zero-diff) when the global toggle is off, nothing is hidden, or nothing hidden is live.
+   * Vehicle is excluded: it is not a flow node and its liveness is the hero's awake/asleep
+   * job (a present-but-asleep car must not read "live" — the honesty contract).
+   */
+  private _computeHiddenLive(
+    cfg: TeslaCardConfig
+  ): { id: string; role: EnergyRole; title?: string }[] {
+    if (!this._notifyHiddenDetected(cfg)) return []; // toggle off ⇒ no compute, no banner
+    const hidden = new Set(this._hiddenRoles(cfg));
+    if (hidden.size === 0) return [];
+    const unhidden = bindFlowModel(this.hass, this._config, {}, []); // comparison only
+    const livePresent = new Set(unhidden.nodes.filter((n) => n.present).map((n) => n.id));
+    const out: { id: string; role: EnergyRole; title?: string }[] = [];
+    for (const role of ENERGY_ROLES) {
+      if (!hidden.has(role)) continue;
+      for (const inst of roleInstances(cfg, role)) {
+        if (livePresent.has(inst.id)) out.push({ id: inst.id, role, title: inst.title });
+      }
+    }
+    return out;
+  }
+
+  /** Whether the detected-but-hidden advisory is enabled (Story 9.10 / AC8). Default-ON:
+   *  absent / any non-`false` value ⇒ on (FR-24 tolerant); explicit `false` ⇒ off. */
+  private _notifyHiddenDetected(cfg: TeslaCardConfig): boolean {
+    return cfg.notify_hidden_detected !== false;
+  }
+
+  /** Dismiss one instance's advisory (Story 9.10, AC8). A NEW Set ref so the `@state`
+   *  change re-renders; session-only (never persisted), and NEVER auto-un-hides the card. */
+  private _dismissHidden(id: string): void {
+    const next = new Set(this._dismissedHidden);
+    next.add(id);
+    this._dismissedHidden = next;
+  }
+
+  /**
+   * Story 9.10 (AC7/AC9) — the calm detected-but-hidden advisory: one line per hidden-
+   * and-live instance, labelled by card title (`${role} · ${title}`), amber accent over a
+   * `{colors.surface}` strip. A NAMED live region (`role="status"` / `aria-live="polite"`,
+   * never assertive). Never auto-un-hides, never animates. Collapses to `nothing` when
+   * there are none / all dismissed / the toggle is off (zero-diff).
+   */
+  private _hiddenAdvisory(): TemplateResult | typeof nothing {
+    const items = this._hiddenLive.filter((i) => !this._dismissedHidden.has(i.id));
+    if (!items.length) return nothing;
+    const n = STRINGS.scene.hiddenNotice;
+    return html`
+      <div class="hidden-advisory" role="status" aria-live="polite" aria-label=${n.region}>
+        ${items.map((i) => {
+          const label = i.title
+            ? `${STRINGS.energy.nodes[i.role]} · ${i.title}`
+            : STRINGS.energy.nodes[i.role];
+          return html`
+            <div class="hidden-advisory-row">
+              <span class="hidden-advisory-text">${label} ${n.detectedSuffix}</span>
+              <button
+                type="button"
+                class="hidden-advisory-dismiss"
+                aria-label=${`${n.dismiss} ${label} ${n.noticeWord}`}
+                @click=${() => this._dismissHidden(i.id)}
+              >
+                <span aria-hidden="true">×</span>
+              </button>
+            </div>
+          `;
+        })}
+      </div>
+    `;
   }
 
   /**
@@ -542,6 +636,7 @@ export class TcMyHome extends LitElement implements LovelaceCard {
     // vehicle-only / empty model ⇒ `_bus.empty` ⇒ the overlay is omitted.
     return html`
       <div class="scene ${lit ? 'focus' : ''}" role="group" aria-label=${STRINGS.scene.label}>
+        ${this._hiddenAdvisory()}
         ${this._ribbon()}
         <div class="scene-grid">
           ${this._renderBand(source, 'source-row', lit, cfg)}
@@ -1499,6 +1594,48 @@ export class TcMyHome extends LitElement implements LovelaceCard {
          read relative to THIS box. */
       .scene {
         position: relative;
+      }
+
+      /* ── Detected-but-hidden advisory (Story 9.10, AC7/AC9) — a calm amber strip
+         above the ribbon. {colors.surface} strip + {colors.amber} accent (NEVER the
+         {colors.red} alarm role), no animation (reduced-motion-safe by construction).
+         Dismiss + text sit at --tc-text-dim (≥4.5:1). */
+      .hidden-advisory {
+        display: flex;
+        flex-direction: column;
+        gap: var(--tc-space-1, 4px);
+        margin-bottom: var(--tc-space-3, 12px);
+        padding: var(--tc-space-2, 8px) var(--tc-space-3, 12px);
+        border-radius: var(--tc-radius-md, 16px);
+        background: var(--tc-surface, rgba(255, 255, 255, 0.045));
+        border-left: 3px solid var(--tc-amber, #fbbf24);
+      }
+      .hidden-advisory-row {
+        display: flex;
+        align-items: center;
+        gap: var(--tc-space-2, 8px);
+      }
+      .hidden-advisory-text {
+        flex: 1;
+        font-size: 13px;
+        line-height: 1.4;
+        color: var(--tc-text-dim, #9aa7b8);
+      }
+      .hidden-advisory-dismiss {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        /* ≥44×44 keyboard/touch target (AC9), no motion */
+        min-width: 44px;
+        min-height: 44px;
+        padding: 0;
+        border: none;
+        border-radius: var(--tc-radius-sm, 12px);
+        background: transparent;
+        color: var(--tc-text-dim, #9aa7b8);
+        font-size: 20px;
+        line-height: 1;
+        cursor: pointer;
       }
 
       /* ── The summary ribbon (AC1b) — whole-home aggregates ABOVE the cards, so

@@ -67,16 +67,19 @@ describe('AC1 — editor renders + reflects all four field groups', () => {
     const select = $(el, 'select') as HTMLSelectElement;
     expect(select.value).toBe('climate');
 
-    // The three top-level hide toggles render OUTSIDE the Scene-nodes `.group`
-    // (which adds six per-node show toggles, Story 9.4) — scope to them.
+    // The top-level toggles render OUTSIDE the Scene-nodes `.group` (which adds the
+    // per-node show toggles, Story 9.4) — scope to them. Since Story 9.10 there are
+    // FOUR: the three hide toggles + the detected-but-hidden advisory toggle.
     const checks = Array.from(
       el.shadowRoot!.querySelectorAll('input[type="checkbox"]')
     ).filter((c) => !(c as HTMLElement).closest('.group')) as HTMLInputElement[];
-    expect(checks.length).toBe(3); // quick_actions, panels, commands
+    expect(checks.length).toBe(4); // quick_actions, panels, commands, notify_hidden_detected
     // hide_panels is the 2nd checkbox in render order; only it is true.
     expect(checks[0].checked).toBe(false); // hide_quick_actions
     expect(checks[1].checked).toBe(true); // hide_panels
     expect(checks[2].checked).toBe(false); // hide_commands
+    // notify_hidden_detected DEFAULTS ON (absent ⇒ checked — Story 9.10, AC8).
+    expect(checks[3].checked).toBe(true);
     el.remove();
   });
 
@@ -1450,6 +1453,195 @@ describe('Story 9.9 AC4 — reduced-motion cut + trade-dress + a11y floor (chrom
     expect(chrome).toContain(STRINGS.wizard.disclaimer);
     expect(chrome).not.toContain('©');
     expect(chrome).not.toContain('HOME ASSISTANT');
+    el.remove();
+  });
+});
+
+// ── Story 9.10 — normal-form "Detected on your system" discovery summary ───────
+// jsdom + label/role helpers. The summary rides the SAME shared seam as the wizard
+// Step-1 checklist (which stays green above); these pin the NORMAL-form surface: the
+// pinned-top placement, the four-state rows incl. no_data, the labelled remap chevron,
+// the nothing-found fallback, the registry-path presence read, and the global toggle.
+const summaryRows = (el: EditorEl) =>
+  Array.from(el.shadowRoot!.querySelectorAll('.disco-summary .disco-row'));
+/** A configured (non-bare) card opens the normal form. */
+const CONFIGURED = { type: 'custom:tesla-card', name: 'Y' } as TeslaCardConfig;
+
+describe('Story 9.10 AC4 — the summary is pinned at the TOP of the normal form', () => {
+  test('a configured card renders the "Detected on your system" section as the FIRST form child', async () => {
+    const el = makeEditor();
+    el.hass = ONLINE_HASS;
+    el.setConfig(CONFIGURED);
+    await el.updateComplete;
+    const form = el.shadowRoot!.querySelector('.form')!;
+    expect(form.firstElementChild!.classList.contains('disco-summary')).toBe(true);
+    const heading = form.querySelector('.disco-summary .group-heading')!;
+    expect(heading.textContent).toContain(STRINGS.editor.detectedHeading);
+    el.remove();
+  });
+
+  test('the summary lists all seven roles, three-/four-state — found vs absent (never an empty section)', async () => {
+    const el = makeEditor();
+    el.hass = ONLINE_HASS;
+    el.setConfig(CONFIGURED);
+    await el.updateComplete;
+    const rows = summaryRows(el);
+    expect(rows.length).toBe(7);
+    // Vehicle is online (✓) in ONLINE_HASS; Generator is absent (—).
+    const vehicle = rows.find((r) => r.textContent?.includes(STRINGS.editor.nodeVehicle))!;
+    expect(vehicle.classList.contains('online')).toBe(true);
+    const gen = rows.find((r) => r.textContent?.includes(STRINGS.energy.nodes.generator))!;
+    expect(gen.classList.contains('absent')).toBe(true);
+    el.remove();
+  });
+});
+
+describe('Story 9.10 AC5 — four-state vocabulary incl. no_data, announced in WORDS', () => {
+  test('an `unknown`-state entity reads no_data ("no data yet"), NOT a false online', async () => {
+    const el = makeEditor();
+    // Solar resolves to a seeded entity whose state is `unknown` (connected, no value yet).
+    el.hass = {
+      states: {
+        'sensor.my_home_solar_power': { entity_id: 'sensor.my_home_solar_power', state: 'unknown', attributes: {} },
+      },
+    } as unknown as HomeAssistant;
+    el.setConfig(CONFIGURED);
+    await el.updateComplete;
+    const solar = summaryRows(el).find((r) => r.textContent?.includes(STRINGS.energy.nodes.solar))!;
+    expect(solar.classList.contains('no_data')).toBe(true);
+    expect(solar.classList.contains('online')).toBe(false);
+    // Announced in WORDS (the row's visible text carries role + state — never hue-only).
+    expect(solar.textContent).toContain(STRINGS.energy.nodes.solar);
+    expect(solar.textContent).toContain(STRINGS.wizard.detect.noData);
+    el.remove();
+  });
+
+  test('a registered-but-unreachable entity reads ⚠ unavailable, never a false ✓', async () => {
+    const el = makeEditor();
+    el.hass = {
+      states: {
+        'sensor.my_home_solar_power': { entity_id: 'sensor.my_home_solar_power', state: 'unavailable', attributes: {} },
+      },
+    } as unknown as HomeAssistant;
+    el.setConfig(CONFIGURED);
+    await el.updateComplete;
+    const solar = summaryRows(el).find((r) => r.textContent?.includes(STRINGS.energy.nodes.solar))!;
+    expect(solar.classList.contains('unavailable')).toBe(true);
+    expect(solar.classList.contains('online')).toBe(false);
+    expect(solar.textContent).toContain(STRINGS.wizard.detect.unavailable);
+    el.remove();
+  });
+});
+
+describe('Story 9.10 AC2 — the registry path: presence read from hass.entities (relaxed AR-1)', () => {
+  // A config override points at an id ABSENT from `states` — presence is then decided by
+  // the entity-registry map (`hass.entities`): registered ⇒ ⚠ unavailable; unknown ⇒ —.
+  const OVERRIDE = {
+    type: 'custom:tesla-card',
+    name: 'Y',
+    energy: { entities: { solar_power: 'sensor.ghost_solar' } },
+  } as TeslaCardConfig;
+
+  test('an override id registered in hass.entities (but not in states) reads unavailable', async () => {
+    const el = makeEditor();
+    el.hass = {
+      states: {},
+      entities: { 'sensor.ghost_solar': { entity_id: 'sensor.ghost_solar' } },
+    } as unknown as HomeAssistant;
+    el.setConfig(OVERRIDE);
+    await el.updateComplete;
+    const solar = summaryRows(el).find((r) => r.textContent?.includes(STRINGS.energy.nodes.solar))!;
+    expect(solar.classList.contains('unavailable')).toBe(true);
+    el.remove();
+  });
+
+  test('the same override with NO registry map reads absent (discovery never invents a product)', async () => {
+    const el = makeEditor();
+    // A live vehicle keeps the summary from collapsing to the nothing-found face, so the
+    // solar row is present to assert — with NO registry map, the ghost override is absent.
+    el.hass = {
+      states: { 'binary_sensor.garage_model_y_status': { entity_id: 'binary_sensor.garage_model_y_status', state: 'on', attributes: {} } },
+    } as unknown as HomeAssistant;
+    el.setConfig(OVERRIDE);
+    await el.updateComplete;
+    const solar = summaryRows(el).find((r) => r.textContent?.includes(STRINGS.energy.nodes.solar))!;
+    expect(solar.classList.contains('absent')).toBe(true);
+    el.remove();
+  });
+});
+
+describe('Story 9.10 AC4/AC9 — remap chevron is a labelled focusable button + nothing-found fallback', () => {
+  test('every row carries a labelled remap chevron button with a toggling aria-expanded', async () => {
+    const el = makeEditor();
+    el.hass = ONLINE_HASS;
+    el.setConfig(CONFIGURED);
+    await el.updateComplete;
+    const chevrons = Array.from(
+      el.shadowRoot!.querySelectorAll('.disco-summary .remap-chevron')
+    ) as HTMLButtonElement[];
+    expect(chevrons.length).toBe(7);
+    expect(chevrons.every((b) => b.tagName === 'BUTTON' && b.type === 'button')).toBe(true);
+    const solar = chevrons.find((b) => b.getAttribute('aria-label') === `${STRINGS.editor.remap} ${STRINGS.energy.nodes.solar}`)!;
+    expect(solar).toBeTruthy();
+    expect(solar.getAttribute('aria-expanded')).toBe('false');
+    solar.click();
+    await el.updateComplete;
+    expect(solar.getAttribute('aria-expanded')).toBe('true');
+    el.remove();
+  });
+
+  test('nothing detected ⇒ the SAME plain nothing-found face as wizard Step 1, never an empty section', async () => {
+    const el = makeEditor();
+    el.hass = EMPTY_HASS;
+    el.setConfig(CONFIGURED);
+    await el.updateComplete;
+    expect(summaryRows(el).length).toBe(0);
+    const empty = el.shadowRoot!.querySelector('.disco-summary .wiz-empty')!;
+    expect(empty).toBeTruthy();
+    expect(empty.getAttribute('role')).toBe('status'); // labelled live region
+    expect(empty.textContent).toContain(STRINGS.wizard.detect.emptyBody);
+    expect(empty.querySelector('button')!.textContent?.trim()).toBe(STRINGS.wizard.detect.selectManually);
+    // The rest of the form still renders below the summary (the name field).
+    expect(el.shadowRoot!.querySelector('.form input[type="text"]')).toBeTruthy();
+    el.remove();
+  });
+
+  test('the summary re-derives per editor open — a hass change flips nothing-found → found', async () => {
+    const el = makeEditor();
+    el.hass = EMPTY_HASS;
+    el.setConfig(CONFIGURED);
+    await el.updateComplete;
+    expect(summaryRows(el).length).toBe(0);
+    el.hass = ONLINE_HASS; // a fresh registry snapshot
+    await el.updateComplete;
+    expect(summaryRows(el).length).toBe(7);
+    el.remove();
+  });
+
+  test('AC9 contrast floor: the summary state word + chevron sit at --tc-text-dim, never --tc-text-mute', () => {
+    const styles = String((customElements.get('tesla-card-editor') as unknown as { styles: unknown }).styles);
+    // The summary's state word + chevron use the ≥4.5:1 text-dim, and the absent row
+    // keeps FULL opacity (the D5 text-mute contrast defect must not re-creep).
+    expect(styles).toContain('.summary-row .disco-state');
+    expect(styles).toContain('.remap-chevron');
+    expect(styles).toContain('.summary-row.absent');
+    // No part of the summary/chevron resolves to the dimmer text-mute.
+    expect(/\.remap-chevron[^}]*text-mute/.test(styles)).toBe(false);
+  });
+});
+
+describe('Story 9.10 AC8 — the global detected-but-hidden toggle round-trips', () => {
+  test('the toggle defaults ON and emits notify_hidden_detected:false when unchecked', async () => {
+    const el = makeEditor();
+    el.hass = ONLINE_HASS;
+    el.setConfig(CONFIGURED);
+    await el.updateComplete;
+    const toggle = Array.from(el.shadowRoot!.querySelectorAll('.form > .check input[type="checkbox"]')).pop() as HTMLInputElement;
+    expect(toggle.checked).toBe(true); // default-on
+    const cap = captureEmit(el);
+    toggle.checked = false;
+    toggle.dispatchEvent(new Event('change'));
+    expect(cap.get()?.notify_hidden_detected).toBe(false);
     el.remove();
   });
 });

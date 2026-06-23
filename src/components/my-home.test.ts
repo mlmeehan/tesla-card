@@ -2481,3 +2481,102 @@ describe('Story 9.15 — cross-row promotion (additive energy.nodes.rows, render
     expect([...bandIds(el, cfg, 'source'), ...bandIds(el, cfg, 'load')]).not.toContain('vehicle');
   });
 });
+
+// ── Story 9.10 — detected-but-hidden advisory on the rendered card (AC7/AC8/AC9) ─
+// When discovery finds a LIVE entity for an instance whose card the user hid
+// (`energy.nodes.hide`), the Scene surfaces one calm, per-instance amber advisory —
+// labelled by card title, a NAMED live region, never auto-un-hiding, never animating.
+// Read-only over the model (AR-6/FR-33): zero-diff when nothing is hidden-and-live or
+// the global toggle is off. jsdom + role/label helpers (the established Scene tier).
+const advisory = (el: Scene) => sr(el).querySelector('.hidden-advisory');
+const advisoryRows = (el: Scene) => [...sr(el).querySelectorAll('.hidden-advisory-row')];
+const hiddenCfg = (...hide: Role[]): TeslaCardConfig => ({ type: 'tc-my-home', energy: { nodes: { hide } } });
+
+describe('Story 9.10 AC7 — a hidden-but-live instance raises one calm advisory', () => {
+  test('hiding a LIVE solar surfaces exactly one advisory, a named role=status/aria-live=polite region', async () => {
+    const el = await mount(makeHass(states(awakeFx)), hiddenCfg('solar'));
+    const banner = advisory(el)!;
+    expect(banner).toBeTruthy();
+    expect(banner.getAttribute('role')).toBe('status');
+    expect(banner.getAttribute('aria-live')).toBe('polite'); // never assertive
+    expect(banner.getAttribute('aria-label')).toBe(STRINGS.scene.hiddenNotice.region);
+    expect(advisoryRows(el).length).toBe(1);
+    const row = advisoryRows(el)[0];
+    expect(row.textContent).toContain(STRINGS.energy.nodes.solar);
+    expect(row.textContent).toContain(STRINGS.scene.hiddenNotice.detectedSuffix);
+  });
+
+  test('a shown (not hidden) instance raises no advisory — zero-diff', async () => {
+    const el = await mount(makeHass(states(awakeFx)), { type: 'tc-my-home' });
+    expect(advisory(el)).toBeFalsy();
+  });
+
+  test('a hidden-and-ABSENT instance raises no advisory (presence ≠ a phantom)', async () => {
+    // A hass whose only present energy roles are home+grid; hiding the ABSENT solar
+    // surfaces nothing (the un-hidden model never makes it live).
+    const el = await mount(subsetHass(['home', 'grid']), hiddenCfg('solar'));
+    expect(advisory(el)).toBeFalsy();
+  });
+});
+
+describe('Story 9.10 AC8 — dismiss scopes + the global toggle', () => {
+  test('per-instance dismiss removes only that instance; a sibling advisory stays', async () => {
+    // Hide two LIVE roles ⇒ two advisory rows; dismissing one leaves the other.
+    const el = await mount(makeHass(states(awakeFx)), hiddenCfg('solar', 'grid'));
+    expect(advisoryRows(el).length).toBe(2);
+    const solarRow = advisoryRows(el).find((r) => r.textContent?.includes(STRINGS.energy.nodes.solar))!;
+    (solarRow.querySelector('.hidden-advisory-dismiss') as HTMLButtonElement).click();
+    await el.updateComplete;
+    const rows = advisoryRows(el);
+    expect(rows.length).toBe(1);
+    expect(rows[0].textContent).toContain(STRINGS.energy.nodes.grid);
+    expect(rows[0].textContent).not.toContain(STRINGS.energy.nodes.solar);
+  });
+
+  test('the dismiss button is a real ≥44px focusable button, disambiguated per instance', async () => {
+    const el = await mount(makeHass(states(awakeFx)), hiddenCfg('solar'));
+    const btn = sr(el).querySelector('.hidden-advisory-dismiss') as HTMLButtonElement;
+    expect(btn.tagName).toBe('BUTTON');
+    expect(btn.type).toBe('button');
+    const n = STRINGS.scene.hiddenNotice;
+    expect(btn.getAttribute('aria-label')).toBe(`${n.dismiss} ${STRINGS.energy.nodes.solar} ${n.noticeWord}`);
+  });
+
+  test('the global toggle off (notify_hidden_detected:false) suppresses the advisory entirely', async () => {
+    const el = await mount(makeHass(states(awakeFx)), {
+      type: 'tc-my-home',
+      energy: { nodes: { hide: ['solar'] } },
+      notify_hidden_detected: false,
+    } as TeslaCardConfig);
+    expect(advisory(el)).toBeFalsy();
+  });
+});
+
+describe('Story 9.10 AC7 — per-instance keying (a hidden role with multiple live instances)', () => {
+  test('two live solar instances under a hidden solar each surface, labelled by title', async () => {
+    const s = states(awakeFx);
+    s['sensor.second_solar_power'] = {
+      entity_id: 'sensor.second_solar_power',
+      state: '3.1',
+      attributes: {},
+    } as HassEntity;
+    const el = await mount(makeHass(s), {
+      type: 'tc-my-home',
+      energy: {
+        nodes: {
+          hide: ['solar'],
+          instances: {
+            solar: [{ title: 'North' }, { title: 'South', entities: { solar_power: 'sensor.second_solar_power' } }],
+          },
+        },
+      },
+    } as TeslaCardConfig);
+    const rows = advisoryRows(el);
+    expect(rows.length).toBe(2);
+    const texts = rows.map((r) => r.textContent ?? '');
+    expect(texts.some((t) => t.includes('North'))).toBe(true);
+    expect(texts.some((t) => t.includes('South'))).toBe(true);
+    // Labelled by title (`Solar · North`), not a numeric :n badge.
+    expect(texts.every((t) => t.includes(`${STRINGS.energy.nodes.solar} ·`))).toBe(true);
+  });
+});
