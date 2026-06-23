@@ -7,7 +7,7 @@ Annotated structure of the tesla-card sub-project. For what each piece does at r
 
 > Regenerated after **Epic 8**. Supersedes the post-Epic-6 tree by adding the `data/history.ts`
 > recorder module and the `components/chart.ts` / `components/node-hero.ts` render helpers
-> (**49 source modules, 59 co-located test files**, 1171 tests).
+> (**51 source modules, 65 co-located test files**, 1562 tests).
 
 ---
 
@@ -24,13 +24,15 @@ tesla-card/                       # separate nested git repo (gitignored by the 
 ├── README.md · PUBLISHING.md · LICENSE     # user docs · release/version-sync checklist · MIT
 ├── .github/workflows/            # validate.yml (CI gates) · release.yml (asset attach + tag assertion, Node 20)
 ├── scripts/
-│   ├── lint/                     # the 6-gate lint chain (dep-light node scripts, NOT ESLint):
+│   ├── lint/                     # the 8-gate lint chain (dep-light node scripts, NOT ESLint):
 │   │   ├── no-bare-hass-states.mjs   #   only data/ may read hass.states
 │   │   ├── no-cycle.mjs              #   enforce data/ ← flow/ ← components/
 │   │   ├── trade-dress-denylist.mjs  #   no Tesla trade dress / brand hex (CONTENT_SKIP allowlist)
 │   │   ├── import-allowlist.mjs      #   restrict runtime imports to lit + @mdi/js (named paths)
 │   │   ├── no-network-egress.mjs     #   no fetch/XHR/WebSocket/beacon from the bundle
-│   │   └── version-sync.mjs          #   package.json version ↔ CARD_VERSION ↔ hacs.json filename
+│   │   ├── version-sync.mjs          #   package.json version ↔ CARD_VERSION ↔ hacs.json filename
+│   │   ├── token-defined.mjs         #   every var(--tc-X) fallback has --tc-X actually defined in styles.ts tokens
+│   │   └── no-planning-artifacts.mjs #   block BMAD/planning artifacts from the public repo
 │   ├── burn-in.sh · ci-local.sh  # e2e burn-in / local CI mirror
 ├── assets/                       # recolor SVG sources (tesla-front.svg, tesla-topdown.svg) + recolor-demo.html
 ├── demo/                         # mock-hass harness (no HA needed); ?panel=/scenario=/env=/recolor=
@@ -135,7 +137,7 @@ Co-located `*.test.ts` files (Vitest, **59** of them) sit beside their modules a
 | `src/styles.ts` | Single source of `--tc-*` tokens + machine-checkable contract maps |
 | `tsconfig.json` | `useDefineForClassFields: false` is load-bearing for Lit reactivity |
 | `rollup.config.mjs` | Single-file bundle config; inlines the lazy editor |
-| `scripts/lint/*.mjs` | The **6** merge-blocking lint gates (boundary, cycle, trade-dress, imports, egress, version-sync) |
+| `scripts/lint/*.mjs` | The **8** merge-blocking lint gates (boundary, cycle, trade-dress, imports, egress, version-sync, token-defined, no-planning-artifacts) |
 
 ---
 

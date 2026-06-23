@@ -56,7 +56,7 @@ Two design problems define the card's shape:
 | UI framework | Lit | `^3.2.1` | `LitElement`, `@customElement`, `@property`, `@state`, `css` |
 | Icons | `@mdi/js` | `^7.4.47` | MDI path strings, rendered as inline SVG (named-path imports only) |
 | Bundler | Rollup | `^4.30.1` | `@rollup/plugin-typescript`, `-node-resolve`, `-commonjs`, `-json`, `-terser` |
-| Unit tests | Vitest | `4.1.8` | co-located `src/**/*.test.ts` (jsdom) — **59 files, 1171 tests** |
+| Unit tests | Vitest | `4.1.8` | co-located `src/**/*.test.ts` (jsdom) — **65 files, 1562 tests** |
 | E2E / visual | Playwright | `^1.49.1` | `tests/e2e/*.spec.ts` against the demo harness |
 | Runtime helper | tslib | `^2.8.1` | TS decorator/helper runtime |
 | Build/CI runtime | Node | 20 | CI only — no Node runtime in production |
@@ -430,8 +430,8 @@ wiring (`body`/`paint`/`energy`/`tyres`) are YAML-only. **Clear-field rule:** cl
 - `dist/` is **git-ignored** and built in CI — never committed.
 
 **Verification gates** (all merge-blocking): `npm run typecheck` (strict, no-emit), `npm run test`
-(Vitest — 59 files / 1171 tests), `npm run lint` (the **6-gate** chain `no-bare-hass-states → no-cycle
-→ trade-dress-denylist → import-allowlist → no-network-egress → version-sync`), and `npm run build`. CI
+(Vitest — 65 files / 1562 tests), `npm run lint` (the **8-gate** chain `no-bare-hass-states → no-cycle
+→ trade-dress-denylist → import-allowlist → no-network-egress → version-sync → token-defined → no-planning-artifacts`), and `npm run build`. CI
 additionally runs `hacs/action` validation + a bundle-exists check and the Playwright e2e/visual suite.
 See [`ci.md`](./ci.md) and [`development-guide.md`](./development-guide.md).
 
