@@ -535,6 +535,13 @@ export const STRINGS = {
       paintRed: 'Red',
       paintGreen: 'Green',
       paintDefault: 'default paint',
+      // Story 10.1 (My-Home variant): the default panel is the EMBEDDED vehicle's
+      // opening tab (the Scene itself has no tab bar). `panelLabelMyHome` /
+      // `panelNoteMyHome` reframe the present-gated picker; `previewUnavailable` is the
+      // calm note when the live composed preview has no `hass` yet (edit-time guard).
+      panelLabelMyHome: "Vehicle's opening tab",
+      panelNoteMyHome: 'The embedded vehicle card opens on this tab.',
+      previewUnavailable: 'Live preview will appear once the card is connected.',
       hexLabel: 'Custom hex',
       hexNote: 'Any colour is accepted exactly as typed — never blocked or changed.',
       themeAuto: 'Auto',
@@ -563,6 +570,12 @@ export const STRINGS = {
       marginLabel: 'Warn margin',
       hidePowerwallControls: 'Hide Powerwall controls',
       announcePrefix: 'Tune',
+      // Story 10.1 (My-Home variant, D-10.1-3): the three vehicle-tab toggles
+      // (hide_quick_actions / hide_panels / hide_commands) are honest governors of the
+      // embedded `tesla-card` cell the Scene composes — RELABELED (not suppressed) under
+      // this real text heading so they read as the embedded car's controls, not Scene-wide.
+      embeddedVehicleHeading: 'Embedded vehicle cell',
+      embeddedVehicleSub: 'These control the vehicle card shown inside the Scene.',
     },
   },
 
@@ -578,6 +591,9 @@ export const STRINGS = {
     steps: {
       detect: 'Detect',
       confirm: 'Confirm',
+      // Story 10.1: the My-Home variant RELABELS the `confirm` step to "Compose"
+      // (same StepKey slot, content swapped). The five-step count never changes.
+      compose: 'Compose',
       appearance: 'Appearance',
       tune: 'Tune',
       finish: 'Finish',
@@ -625,6 +641,16 @@ export const STRINGS = {
       heading: 'Confirm & remap',
       subhead: 'These are the cards we will show. They look right by default.',
       skipDefault: 'keep the detected mapping',
+    },
+    // ── Step 2 (My-Home variant) — Compose (Story 10.1, D-10.1-1) ─────────────
+    // The Scene card's `confirm` step is RELABELED to Compose: map each node's entity
+    // (the 9.11 picker rows) AND arrange the Scene (hide / Source-Load row / reorder —
+    // the controls that exist today). Same StepKey slot, content swapped. Calm/honest
+    // voice. The vehicle wizard never sees this — it keeps its Confirm step.
+    compose: {
+      heading: 'Compose your Scene',
+      subhead: 'Map each card to its entities, then arrange the Scene.',
+      skipDefault: 'keep the detected cards and layout',
     },
     // ── Step 3 — Make it yours / appearance (container; pickers are Story 9.12) ─
     appearance: {

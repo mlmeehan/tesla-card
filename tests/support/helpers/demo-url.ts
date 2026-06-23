@@ -41,6 +41,7 @@ export interface DemoOptions {
   unavail?: ApertureName; // (apertures scenario) force one entity unavailable — degrade check
   editor?: boolean; // ?editor=1 — mount the real config editor (tesla-card-editor) instead of just the card
   setup?: SetupState; // editor starting config: bare⇒wizard@Detect · progress⇒wizard@Confirm · done⇒normal form
+  editortype?: 'vehicle' | 'my-home'; // Story 10.1 — editor's card type (my-home ⇒ Scene-aware variant)
 }
 
 const DEMO_PATH = '/demo/index.html';
@@ -66,6 +67,7 @@ export function buildDemoUrl(opts: DemoOptions = {}): string {
   if (opts.unavail) q.set('unavail', opts.unavail); // force one unavailable (degrade)
   if (opts.editor) q.set('editor', '1'); // mount the real config editor
   if (opts.setup) q.set('setup', opts.setup); // editor starting config state
+  if (opts.editortype === 'my-home') q.set('editortype', 'my-home'); // Story 10.1 Scene-aware variant
   const qs = q.toString();
   return qs ? `${DEMO_PATH}?${qs}` : DEMO_PATH;
 }

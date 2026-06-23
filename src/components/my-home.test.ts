@@ -298,6 +298,36 @@ describe('AC4 — registration + honest degradation', () => {
     editor.remove();
   });
 
+  test('Story 10.1 — a Scene-aware write path (node hide toggle) keeps the custom:tc-my-home type', async () => {
+    // The 10.1 reframing is render-only — every WRITE still funnels through the type-blind
+    // `_emit`. Exercise a Scene-node write (the show/hide checkbox → `_commitNodes`) and
+    // confirm the emitted config carries `type: custom:tc-my-home` AND the intended
+    // `energy.nodes.hide` mutation — the round-trip safety property holds on this path too.
+    const editor = (await TcMyHome.getConfigElement()) as HTMLElement & {
+      setConfig(c: TeslaCardConfig): void;
+      updateComplete: Promise<unknown>;
+      shadowRoot: ShadowRoot | null;
+    };
+    document.body.appendChild(editor);
+    editor.setConfig({ type: 'custom:tc-my-home', setup_complete: true } as TeslaCardConfig);
+    await editor.updateComplete;
+    let emitted: TeslaCardConfig | undefined;
+    editor.addEventListener('config-changed', (e) => {
+      emitted = (e as CustomEvent<{ config: TeslaCardConfig }>).detail.config;
+    });
+    // The first Scene-node show/hide checkbox in the normal form's "My Home Scene cards".
+    const check = editor.shadowRoot?.querySelector('.node-row .node-check input') as HTMLInputElement;
+    expect(check, 'normal form should render the Scene-node toggles').toBeTruthy();
+    check.click();
+    await editor.updateComplete;
+    expect(emitted?.type).toBe('custom:tc-my-home');
+    // Toggling the first node OFF on a bare (all-visible) config adds exactly that role to
+    // `hide` — assert the mutation actually landed, not merely that the key is an array.
+    expect(Array.isArray(emitted?.energy?.nodes?.hide)).toBe(true);
+    expect(emitted?.energy?.nodes?.hide?.length).toBeGreaterThan(0);
+    editor.remove();
+  });
+
   test('setConfig(null) throws; unknown keys are tolerated (forward-compatible)', () => {
     const el = document.createElement('tc-my-home') as Scene;
     expect(() => el.setConfig(null as unknown as TeslaCardConfig)).toThrow();

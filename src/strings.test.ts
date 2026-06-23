@@ -216,9 +216,13 @@ describe('centralized strings — voice contract (Story 2.5)', () => {
     // voice with no hype, exclamation, or celebration (reconcile divergence: no
     // "Success!"/confetti). The five stepper labels + the three honest discovery
     // state words + the "Done."/"Finish now"/"Run guided setup" actions are pinned.
+    // Story 10.1 adds the My-Home variant's `compose` relabel of the `confirm` step
+    // (same StepKey slot; the wizard COUNT stays five — only the `confirm` LABEL swaps
+    // to "Compose" on a `custom:tc-my-home`). The `steps` map carries both labels.
     expect(Object.values(STRINGS.wizard.steps)).toEqual([
       'Detect',
       'Confirm',
+      'Compose',
       'Appearance',
       'Tune',
       'Finish',

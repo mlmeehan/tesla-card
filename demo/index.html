@@ -403,12 +403,17 @@
       if (wantEditor) {
         card.style.display = 'none';
         const setupMode = params.get('setup') || 'bare';
+        // Story 10.1 — `&editortype=my-home` opens the editor on a `custom:tc-my-home`
+        // (Scene) config so the Scene-aware variant (Compose wizard step, live composed
+        // preview, "Embedded vehicle cell" Tune group) is drivable in a real browser.
+        // Default (or `vehicle`) keeps the vehicle card editor.
+        const editorType = params.get('editortype') === 'my-home' ? 'custom:tc-my-home' : 'custom:tesla-card';
         const editorConfig =
           setupMode === 'done'
-            ? { type: 'custom:tesla-card', name: 'Garage Y', setup_complete: true }
+            ? { type: editorType, name: 'Garage Y', setup_complete: true }
             : setupMode === 'progress'
-              ? { type: 'custom:tesla-card', setup_complete: false }
-              : { type: 'custom:tesla-card' };
+              ? { type: editorType, setup_complete: false }
+              : { type: editorType };
         await customElements.whenDefined('tesla-card');
         editor = await customElements.get('tesla-card').getConfigElement();
         editor.id = 'editor';

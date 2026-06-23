@@ -2421,3 +2421,182 @@ describe('Story 9.13 AC-D — zero-diff + a11y', () => {
     el.remove();
   });
 });
+
+// ── Story 10.1 — Scene-aware editor mode for the standalone My-Home card ───────
+// The shared editor reframes itself for a `custom:tc-my-home` config (the Scene card):
+// a Scene-framed wizard (Confirm → Compose), a live composed Appearance preview, an
+// "Embedded vehicle cell" Tune group, and a vehicle-tab-framed panel picker. The
+// VEHICLE card path is byte-unchanged (AC1) — every assertion pairs a My-Home check
+// with a `custom:tesla-card` zero-diff guard. jsdom asserts BRANCH SELECTION only for
+// the preview (the composed-Scene + bus geometry is e2e-gated — jsdom can't lay it out).
+const myHomeBare = () => ({ type: 'custom:tc-my-home' }) as TeslaCardConfig;
+const myHomeForm = () => ({ type: 'custom:tc-my-home', setup_complete: true }) as TeslaCardConfig;
+const vehicleBare = () => ({ type: 'custom:tesla-card' }) as TeslaCardConfig;
+const vehicleForm = () => ({ type: 'custom:tesla-card', setup_complete: true }) as TeslaCardConfig;
+
+describe('Story 10.1 AC2 — a bare My-Home config opens the Scene-framed wizard (Confirm → Compose)', () => {
+  test('the 2nd step is RELABELED "Compose" (My-Home) vs "Confirm" (vehicle), count stays 5', async () => {
+    const my = makeEditor();
+    my.hass = ONLINE_HASS;
+    my.setConfig(myHomeBare());
+    await my.updateComplete;
+    expect(wiz(my)).toBeTruthy();
+    expect(stepEls(my).length).toBe(5); // never a step added/removed
+    const myLabel = stepEls(my)[1].querySelector('.step-label')!.textContent;
+    expect(myLabel).toContain(STRINGS.wizard.steps.compose);
+    expect(stepEls(my)[1].getAttribute('aria-label')).toContain(STRINGS.wizard.steps.compose);
+
+    const veh = makeEditor();
+    veh.hass = ONLINE_HASS;
+    veh.setConfig(vehicleBare());
+    await veh.updateComplete;
+    expect(stepEls(veh)[1].querySelector('.step-label')!.textContent).toContain(STRINGS.wizard.steps.confirm);
+    my.remove();
+    veh.remove();
+  });
+
+  test('the Compose step renders the entity remap pickers AND the existing arrange controls', async () => {
+    const el = makeEditor();
+    el.hass = ONLINE_HASS;
+    el.setConfig(myHomeBare());
+    await el.updateComplete;
+    await clickPrimary(el); // Detect → Compose (step 2)
+    const body = el.shadowRoot!.querySelector('.wiz-body')!;
+    // Compose container present; vehicle Confirm list NOT present.
+    expect(body.querySelector('.compose')).toBeTruthy();
+    expect(body.querySelector('.confirm-list')).toBeFalsy();
+    // Map row: at least one inline entity picker (the 9.11 remap panel).
+    expect(body.querySelector('.compose-node .remap-panel')).toBeTruthy();
+    // Arrange controls reused from `_renderNodeRow`: hide checkbox + row select + move.
+    expect(body.querySelector('.compose-node .node-check input')).toBeTruthy();
+    expect(body.querySelector('.compose-node .row-select')).toBeTruthy();
+    expect(body.querySelector('.compose-node .move')).toBeTruthy();
+    el.remove();
+  });
+
+  test('the vehicle wizard keeps its Confirm step — no Compose container (AC1 zero-diff)', async () => {
+    const el = makeEditor();
+    el.hass = ONLINE_HASS;
+    el.setConfig(vehicleBare());
+    await el.updateComplete;
+    await clickPrimary(el); // Detect → Confirm
+    const body = el.shadowRoot!.querySelector('.wiz-body')!;
+    expect(body.querySelector('.confirm-list')).toBeTruthy();
+    expect(body.querySelector('.compose')).toBeFalsy();
+    el.remove();
+  });
+
+  test('AC6 — each Compose arrange control keeps its existing aria-label + a ≥44px move target', async () => {
+    const el = makeEditor();
+    el.hass = ONLINE_HASS;
+    el.setConfig(myHomeBare());
+    await el.updateComplete;
+    await clickPrimary(el);
+    const body = el.shadowRoot!.querySelector('.wiz-body')!;
+    // Solar is a source; its hide checkbox + row select carry their labels (unchanged).
+    const solarCheck = body.querySelector(
+      `.compose-node .node-check input[aria-label="${STRINGS.energy.nodes.solar}"]`
+    );
+    expect(solarCheck).toBeTruthy();
+    const aMove = body.querySelector('.compose-node .move') as HTMLElement;
+    expect(aMove.getAttribute('aria-label')).toBeTruthy();
+    // The ≥44×44 floor rides the reused `.move` class (its `min-width/height: 44px` rule
+    // is shipped in 9.x and unchanged) — Compose inherits it by reusing `_renderNodeRow`.
+    // jsdom reports 0×0, so assert the class carrying the rule rather than measuring.
+    expect(aMove.classList.contains('move')).toBe(true);
+    el.remove();
+  });
+});
+
+describe('Story 10.1 AC3 — Scene-honest Tune relabel (regroup, not suppress)', () => {
+  test('My-Home Tune groups the three vehicle toggles under an "Embedded vehicle cell" heading', async () => {
+    const el = makeEditor();
+    el.setConfig(myHomeForm());
+    await el.updateComplete;
+    const sub = el.shadowRoot!.querySelector('.tune .tune-sub-heading') as HTMLElement | null;
+    expect(sub).toBeTruthy();
+    expect(sub!.textContent).toContain(STRINGS.editor.tune.embeddedVehicleHeading);
+    // The three toggles are KEPT (relabeled, not dropped).
+    expect(el.shadowRoot!.querySelector('.tune .tune-bool[data-key="hide_quick_actions"]')).toBeTruthy();
+    expect(el.shadowRoot!.querySelector('.tune .tune-bool[data-key="hide_panels"]')).toBeTruthy();
+    expect(el.shadowRoot!.querySelector('.tune .tune-bool[data-key="hide_commands"]')).toBeTruthy();
+    el.remove();
+  });
+
+  test('the vehicle card Tune has NO embedded-vehicle heading (AC1 zero-diff)', async () => {
+    const el = makeEditor();
+    el.setConfig(vehicleForm());
+    await el.updateComplete;
+    expect(el.shadowRoot!.querySelector('.tune .tune-sub-heading')).toBeFalsy();
+    expect(el.shadowRoot!.querySelector('.tune .tune-bool[data-key="hide_quick_actions"]')).toBeTruthy();
+    el.remove();
+  });
+});
+
+describe('Story 10.1 AC4 — Appearance preview branch (live <tc-my-home> vs car hero)', () => {
+  test('My-Home mounts a live <tc-my-home> (no car hero); vehicle mounts the car hero (no tc-my-home)', async () => {
+    const my = makeEditor();
+    my.hass = ONLINE_HASS;
+    my.setConfig(myHomeForm());
+    await my.updateComplete;
+    const myPrev = my.shadowRoot!.querySelector('.appearance-preview')!;
+    expect(myPrev.querySelector('.preview-stage.myhome tc-my-home')).toBeTruthy();
+    expect(myPrev.querySelector('.car-img')).toBeFalsy(); // not the lone car hero
+
+    const veh = makeEditor();
+    veh.hass = ONLINE_HASS;
+    veh.setConfig(vehicleForm());
+    await veh.updateComplete;
+    const vehPrev = veh.shadowRoot!.querySelector('.appearance-preview')!;
+    expect(vehPrev.querySelector('tc-my-home')).toBeFalsy();
+    expect(vehPrev.querySelector('.preview-stage .car-img')).toBeTruthy();
+    my.remove();
+    veh.remove();
+  });
+
+  test('the no-hass guard shows a calm note, not a mounted card', async () => {
+    const el = makeEditor();
+    el.hass = undefined;
+    el.setConfig(myHomeForm());
+    await el.updateComplete;
+    const prev = el.shadowRoot!.querySelector('.appearance-preview')!;
+    expect(prev.querySelector('tc-my-home')).toBeFalsy();
+    expect(prev.querySelector('.preview-empty')).toBeTruthy();
+    el.remove();
+  });
+});
+
+describe('Story 10.1 AC5 — default-panel picker framed as the embedded vehicle tab', () => {
+  test('My-Home relabels the picker to the vehicle tab; vehicle keeps "Default panel"', async () => {
+    const my = makeEditor();
+    my.setConfig(myHomeForm());
+    await my.updateComplete;
+    const myPlabel = my.shadowRoot!.querySelector('.panel-select')!
+      .closest('.picker-block')!.querySelector('.plabel span')!.textContent;
+    expect(myPlabel).toContain(STRINGS.editor.appearance.panelLabelMyHome);
+
+    const veh = makeEditor();
+    veh.setConfig(vehicleForm());
+    await veh.updateComplete;
+    const vehPlabel = veh.shadowRoot!.querySelector('.panel-select')!
+      .closest('.picker-block')!.querySelector('.plabel span')!.textContent;
+    expect(vehPlabel).toContain(STRINGS.editor.appearance.panelLabel);
+    my.remove();
+    veh.remove();
+  });
+});
+
+describe('Story 10.1 AC7 — every write path preserves the custom:tc-my-home type', () => {
+  test('editing the name on a My-Home config emits config-changed with the type intact', async () => {
+    const el = makeEditor();
+    el.hass = ONLINE_HASS;
+    el.setConfig(myHomeForm());
+    await el.updateComplete;
+    const emit = captureEmit(el);
+    const name = el.shadowRoot!.querySelector('input[type="text"]') as HTMLInputElement;
+    name.value = 'Garage';
+    name.dispatchEvent(new Event('change'));
+    expect(emit.get()?.type).toBe('custom:tc-my-home');
+    el.remove();
+  });
+});

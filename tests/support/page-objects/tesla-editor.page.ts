@@ -176,6 +176,32 @@ export class TeslaEditorPage {
     return this.editor.locator('.appearance .reset-auto');
   }
 
+  // ── Story 10.1 — Scene-aware (My-Home) editor variant ────────────────────────
+  /** The live composed-Scene preview card mounted in the My-Home Appearance preview. */
+  get previewSceneCard(): Locator {
+    return this.editor.locator('.appearance .preview-stage.myhome tc-my-home');
+  }
+
+  /** The Gateway bus overlay inside the live preview card (pierces tc-my-home's shadow). */
+  get previewSceneBus(): Locator {
+    return this.previewSceneCard.locator('.scene-bus, svg.bus, .gateway-bus');
+  }
+
+  /** The embedded vehicle cell (a nested tesla-card) inside the live preview Scene. */
+  get previewVehicleCell(): Locator {
+    return this.previewSceneCard.locator('tesla-card');
+  }
+
+  /** The lone car hero of the vehicle-card preview (absent in the My-Home variant). */
+  get previewCarHero(): Locator {
+    return this.editor.locator('.appearance .preview-stage .car-img');
+  }
+
+  /** The Compose wizard step's per-node blocks (My-Home variant of the Confirm step). */
+  get composeNodes(): Locator {
+    return this.editor.locator('.wiz-body .compose .compose-node');
+  }
+
   // ── Story 9.13 — Tune step (pinned ha-selector widget set) ───────────────────
   /** The pinned "Tune" section (normal form) / wizard Step-4 body. */
   get tuneSection(): Locator {

@@ -35,6 +35,14 @@ import { STRINGS } from './strings';
 // honest sentence the footer's Skip announces (never a bare "Skip"). The deep
 // per-step CONTENT is owned by siblings (Confirm→9.11, Appearance→9.12, Tune→9.13);
 // this list is the frame's spine.
+// Story 10.1 — the minimal structural shape of the cached `<tc-my-home>` the My-Home
+// Appearance preview mounts. Typed structurally (NOT an `import` of the component) so the
+// editor adds no static `components/my-home` edge — `no-cycle` forbids that back-edge.
+type PreviewCardEl = HTMLElement & {
+  setConfig?(c: TeslaCardConfig): void;
+  hass?: HomeAssistant;
+};
+
 type StepKey = 'detect' | 'confirm' | 'appearance' | 'tune' | 'finish';
 const WIZARD_STEPS: { key: StepKey; label: string; skipDefault: string }[] = [
   { key: 'detect', label: STRINGS.wizard.steps.detect, skipDefault: STRINGS.wizard.detect.skipDefault },
@@ -211,6 +219,18 @@ function canonicalOrder(rows: NodeCustomization['rows']): Role[] {
 export class TeslaCardEditor extends LitElement implements LovelaceCardEditor {
   @property({ attribute: false }) public hass?: HomeAssistant;
   @state() private _config!: TeslaCardConfig;
+
+  // ── Scene-aware framing seam (Story 10.1, AC1) ──────────────────────────────
+  // The ONE place the editor reads the `type` VALUE to drive a rendering branch.
+  // `custom:tc-my-home` ⇒ the Scene-framed variant (wizard labels, Compose step,
+  // live composed preview, "Embedded vehicle cell" Tune group); anything else takes
+  // exactly today's vehicle path (zero behavioural diff, pinned by the contract
+  // tests). NEVER read on a WRITE/`_emit` path — `setConfig`/`_emit` stay type-blind
+  // so a My-Home config's `type` round-trips intact (AC7). (`_isBareConfig`'s
+  // `k === 'type'` is a KEY-presence check, not a value/branch read — unchanged.)
+  private get _isMyHome(): boolean {
+    return this._config?.type === 'custom:tc-my-home';
+  }
 
   public setConfig(config: TeslaCardConfig): void {
     // Forward-compatible like the card's `setConfig` (Story 7.1): spread preserves
@@ -396,7 +416,15 @@ export class TeslaCardEditor extends LitElement implements LovelaceCardEditor {
   // edges (`i`/`within` scope the gating to this effective row, so a move never crosses
   // the source/load boundary). The checkbox carries its own accessible name (the visible
   // label sits in the sibling `.node-name`).
-  private _renderNodeRow(role: Role, i: number, within: readonly Role[]): TemplateResult {
+  // `showName` is `false` only in the Story-10.1 Compose step, where the node's name
+  // already heads the block (the checkbox keeps its own `aria-label`, so the accessible
+  // name survives regardless). The normal-form Scene-nodes section passes nothing ⇒ name.
+  private _renderNodeRow(
+    role: Role,
+    i: number,
+    within: readonly Role[],
+    showName = true
+  ): TemplateResult {
     return html`
       <div class="node-row">
         <label class="check node-check">
@@ -407,7 +435,7 @@ export class TeslaCardEditor extends LitElement implements LovelaceCardEditor {
             @change=${() => this._toggleNode(role)}
           />
         </label>
-        <span class="node-name">${NODE_LABELS[role]}</span>
+        ${showName ? html`<span class="node-name">${NODE_LABELS[role]}</span>` : nothing}
         <select
           class="row-select"
           aria-label=${`${STRINGS.editor.sceneNodesRowLabel}: ${NODE_LABELS[role]}`}
@@ -722,6 +750,16 @@ export class TeslaCardEditor extends LitElement implements LovelaceCardEditor {
   // mocks' static "DETECT" header). State by COLOUR AND SHAPE (current = blue filled
   // number, done = green tick, future = dim hollow number), and announced non-visually
   // ("Step 2 of 5, Confirm, current") so a reader never relies on hue.
+  // Story 10.1: the per-step label + skip-default sentence, RELABELED for the My-Home
+  // variant. Only the `confirm` step changes ("Confirm" → "Compose"); every other step
+  // keeps its vehicle copy. The `StepKey` array, count, and order are untouched.
+  private _stepLabel(s: { key: StepKey; label: string }): string {
+    return this._isMyHome && s.key === 'confirm' ? STRINGS.wizard.steps.compose : s.label;
+  }
+  private _stepSkip(s: { key: StepKey; skipDefault: string }): string {
+    return this._isMyHome && s.key === 'confirm' ? STRINGS.wizard.compose.skipDefault : s.skipDefault;
+  }
+
   private _renderStepper(): TemplateResult {
     return html`
       <ol class="stepper" role="list" aria-label=${STRINGS.wizard.title}>
@@ -733,7 +771,8 @@ export class TeslaCardEditor extends LitElement implements LovelaceCardEditor {
               : i < this._step
                 ? STRINGS.wizard.stateDone
                 : STRINGS.wizard.stateNotStarted;
-          const aria = `${STRINGS.wizard.stepWord} ${i + 1} ${STRINGS.wizard.of} ${WIZARD_STEPS.length}, ${s.label}, ${word}`;
+          const label = this._stepLabel(s);
+          const aria = `${STRINGS.wizard.stepWord} ${i + 1} ${STRINGS.wizard.of} ${WIZARD_STEPS.length}, ${label}, ${word}`;
           return html`
             <li
               class="step ${cls}"
@@ -745,7 +784,7 @@ export class TeslaCardEditor extends LitElement implements LovelaceCardEditor {
                   ? this._icon(mdiCheck)
                   : html`<span class="step-num">${i + 1}</span>`}
               </span>
-              <span class="step-label" aria-hidden="true">${s.label}</span>
+              <span class="step-label" aria-hidden="true">${label}</span>
             </li>
           `;
         })}
@@ -816,6 +855,62 @@ export class TeslaCardEditor extends LitElement implements LovelaceCardEditor {
     `;
   }
 
+  // Step 2 — Compose (Story 10.1, AC2/AC6; the My-Home variant's replacement for the
+  // vehicle wizard's Confirm). Maps each node's entity (the 9.11 picker, inline) AND
+  // surfaces the existing arrange controls (hide / Source-Load row / reorder) — node by
+  // node, grouped Sources then Loads (mirroring the Scene's two rows). Reuses the same
+  // discovery + picker + `_renderNodeRow` machinery; adds NO new arrange engine and NO
+  // add-node/duplicate affordance (those are Stories 9.7/9.14/9.15 — see story carve-out).
+  private _renderComposeNode(
+    role: Role,
+    i: number,
+    within: readonly Role[],
+    d: DiscoveryRow
+  ): TemplateResult {
+    const present = d.state !== 'absent';
+    const label = d.title ?? NODE_LABELS[role];
+    // Reading/focus order per node (AC6): the map row (head + entity picker) FIRST, then
+    // that node's arrange controls. The picker shows only for a present node; an absent
+    // node still offers its arrange controls (the map-a-miss picker stays in the normal
+    // form). The arrange row drops its name (the head carries it) — `_renderNodeRow`'s
+    // checkbox keeps its own `aria-label`, so the accessible name is intact.
+    return html`
+      <div class="compose-node ${d.state}">
+        <div class="summary-row-head">
+          <span class="disco-mark" aria-hidden="true">${this._discoMark(d.state)}</span>
+          <span class="disco-name">${label}</span>
+          <span class="disco-state">${this._discoStateWord(d.state)}</span>
+        </div>
+        ${present ? this._renderPicker(d) : nothing}
+        ${this._renderNodeRow(role, i, within, false)}
+      </div>
+    `;
+  }
+
+  private _renderCompose(): TemplateResult {
+    // One row per role, grouped Sources then Loads — the FULL `ROLES` vocabulary in each
+    // row's effective order, so `_moveNode`'s row-edge gating stays coherent (a present-
+    // only subset would let a move swap with an absent neighbour = a visible no-op). Map
+    // discovery by role once; every role is present in `_discover`'s output.
+    const disco = new Map<Role, DiscoveryRow>(this._discover().map((d) => [d.role, d]));
+    const rowGroup = (row: SceneRow, heading: string): TemplateResult => {
+      const within = this._rowOrder(row);
+      return html`
+        <span class="group-heading">${heading}</span>
+        ${within.map((role, i) => this._renderComposeNode(role, i, within, disco.get(role)!))}
+      `;
+    };
+    return html`
+      <span class="wiz-h">${STRINGS.wizard.compose.heading}</span>
+      <span class="wiz-sub">${STRINGS.wizard.compose.subhead}</span>
+      <div class="group compose" role="group" aria-label=${STRINGS.wizard.compose.heading}>
+        ${rowGroup('source', STRINGS.editor.rowSource)}
+        ${rowGroup('load', STRINGS.editor.rowLoad)}
+      </div>
+      ${this._renderAnnounce()}
+    `;
+  }
+
   // Step 5 — Finish (AC3). An honest confirmation of the card that will be created —
   // NO confetti, NO "Success!", and NO fabricated telemetry (the live generic-EV hero
   // preview is Story 9.12's seam; this frame never invents SoC/range, honouring the
@@ -836,7 +931,9 @@ export class TeslaCardEditor extends LitElement implements LovelaceCardEditor {
       case 'detect':
         return this._renderDetect();
       case 'confirm':
-        return this._renderConfirm();
+        // Story 10.1: the My-Home variant swaps the Confirm content for Compose (same
+        // StepKey slot; the step COUNT is unchanged). The vehicle card keeps Confirm.
+        return this._isMyHome ? this._renderCompose() : this._renderConfirm();
       case 'appearance':
         return this._renderAppearance();
       case 'tune':
@@ -852,7 +949,7 @@ export class TeslaCardEditor extends LitElement implements LovelaceCardEditor {
   // "Select entities manually" is the way forward). Focus order Back→Skip→Next→Finish.
   private _renderFooter(nextDisabled: boolean): TemplateResult {
     const isFinish = this._step === FINISH_STEP;
-    const skipDefault = WIZARD_STEPS[this._step].skipDefault;
+    const skipDefault = this._stepSkip(WIZARD_STEPS[this._step]);
     return html`
       <div class="wiz-footer">
         <button
@@ -1214,11 +1311,41 @@ export class TeslaCardEditor extends LitElement implements LovelaceCardEditor {
     </button>`;
   }
 
+  // Story 10.1 — the My-Home live preview is a CACHED real `<tc-my-home>` element,
+  // configured imperatively. `TcMyHome` reads its `_config` via `setConfig` (not the
+  // Lit `.config` property), so a `.config` bind would leave it unconfigured/empty — we
+  // create the element once, render it as a node in the template, and (re)`setConfig` it
+  // in `updated()` ONLY when the config identity changes (mirrors `my-home.ts`'s own
+  // embed guard — re-`setConfig`-ing every hass tick would reset the live card's state).
+  private _previewCard?: PreviewCardEl;
+  private _previewCfg?: TeslaCardConfig;
+
+  private _ensurePreviewCard(): HTMLElement {
+    if (!this._previewCard)
+      this._previewCard = document.createElement('tc-my-home') as PreviewCardEl;
+    return this._previewCard;
+  }
+
+  // Keep the cached preview card configured + live. Runs after every render but only
+  // RE-`setConfig`s on a real config change (identity guard) — a paint/theme pick emits a
+  // fresh `_config`, so the preview re-resolves (paint reflects on the embedded vehicle);
+  // `hass` refreshes every tick so freshness stays honest. No-op off the My-Home path.
+  protected override updated(): void {
+    const el = this._previewCard;
+    if (!el || !this._isMyHome || !this.hass) return;
+    if (this._previewCfg !== this._config && typeof el.setConfig === 'function') {
+      el.setConfig({ ...this._config });
+      this._previewCfg = this._config;
+    }
+    el.hass = this.hass;
+  }
+
   // The full-card live preview (D-9.12-4): the real recolorable generic-EV hero
   // (`carView`) re-skinned to the resolved paint, the whole frame flipped
   // light/dark via the SAME LIGHT_TOKENS the card host uses, and a mini tab strip
   // with the chosen default panel active. No fabricated telemetry — `charge:
   // 'parked'`, no SoC/range (the Finish-step honesty discipline carries over).
+  // The My-Home variant (Story 10.1) swaps the hero for a scaled live composed Scene.
   private _renderPreview(): TemplateResult {
     const c = this._config;
     const paint = resolvePaint(this.hass, c);
@@ -1230,10 +1357,23 @@ export class TeslaCardEditor extends LitElement implements LovelaceCardEditor {
           .map(([k, v]) => `${k}: ${v}`)
           .join('; ')
       : '';
-    return html`
-      <div class="preview-wrap">
-        <span class="preview-lead">${STRINGS.editor.appearance.livePreview}</span>
-        <div class="appearance-preview ${light ? 'light' : ''}" style=${tokenStyle || nothing}>
+    // Story 10.1 (AC4): on a My-Home card the full-card preview is a scaled-down LIVE
+    // instance of the composed Scene — a `<tc-my-home>` TAG (already defined in this
+    // flow; NO module import, so no cycle and the lazy-by-contract invariant holds, AC8/
+    // AC9b). It reuses the real render (source/load cards + the Gateway bus) and inherits
+    // the card's freshness discipline (it shows "—"/asleep honestly, never a fabricated
+    // kW) + paint (the embedded vehicle cell uses `config.paint`) + reduced-motion. The
+    // theme wrapper flips the whole preview card. Guarded for an absent edit-time `hass`
+    // (the resolvers tolerate `undefined`, but a calm note is the honest empty state).
+    const stage = this._isMyHome
+      ? html`
+          <div class="preview-stage myhome">
+            ${this.hass
+              ? html`<div class="myhome-scale">${this._ensurePreviewCard()}</div>`
+              : html`<span class="preview-empty">${STRINGS.editor.appearance.previewUnavailable}</span>`}
+          </div>
+        `
+      : html`
           <div class="preview-stage">${carView({ paint, name, charge: 'parked' })}</div>
           <div class="preview-tabs" role="tablist" aria-label=${STRINGS.editor.appearance.panelLabel}>
             ${this._presentPanels().map(
@@ -1245,6 +1385,12 @@ export class TeslaCardEditor extends LitElement implements LovelaceCardEditor {
               >`
             )}
           </div>
+        `;
+    return html`
+      <div class="preview-wrap">
+        <span class="preview-lead">${STRINGS.editor.appearance.livePreview}</span>
+        <div class="appearance-preview ${light ? 'light' : ''}" style=${tokenStyle || nothing}>
+          ${stage}
         </div>
       </div>
     `;
@@ -1359,23 +1505,32 @@ export class TeslaCardEditor extends LitElement implements LovelaceCardEditor {
   private _renderPanelPicker(): TemplateResult {
     const c = this._config;
     const value = c.default_panel ?? 'charging';
+    // Story 10.1 (AC5): on a My-Home card, panels belong to the EMBEDDED vehicle (the
+    // Scene has no tab bar) — relabel the present-gated picker as the vehicle's opening
+    // tab. Mechanism (a present-gated `<select>` over `default_panel`) is unchanged.
+    const label = this._isMyHome
+      ? STRINGS.editor.appearance.panelLabelMyHome
+      : STRINGS.editor.appearance.panelLabel;
+    const note = this._isMyHome
+      ? STRINGS.editor.appearance.panelNoteMyHome
+      : STRINGS.editor.appearance.panelNote;
     return html`
       <div class="picker-block">
         <div class="plabel">
-          <span>${STRINGS.editor.appearance.panelLabel}</span>
+          <span>${label}</span>
           ${c.default_panel !== undefined
-            ? this._renderReset(() => this._setPanel(undefined), STRINGS.editor.appearance.panelLabel)
+            ? this._renderReset(() => this._setPanel(undefined), label)
             : nothing}
         </div>
         <select
           class="panel-select"
-          aria-label=${STRINGS.editor.appearance.panelLabel}
+          aria-label=${label}
           .value=${value}
           @change=${(e: Event) => this._setPanel((e.target as HTMLSelectElement).value as PanelId)}
         >
           ${this._presentPanels().map((p) => html`<option value=${p.id}>${p.name}</option>`)}
         </select>
-        <p class="picker-note">${STRINGS.editor.appearance.panelNote}</p>
+        <p class="picker-note">${note}</p>
       </div>
     `;
   }
@@ -1519,6 +1674,30 @@ export class TeslaCardEditor extends LitElement implements LovelaceCardEditor {
     `;
   }
 
+  // The Scene-relevant Tune extras — the detected-but-hidden notice toggle + Powerwall-
+  // control visibility. Pulled out so the My-Home variant (Story 10.1) can render them
+  // ABOVE the "Embedded vehicle cell" group while the vehicle card keeps today's order
+  // (these two trailing the three vehicle toggles) — a zero-diff move for the vehicle path.
+  private _renderTuneSceneExtras(): TemplateResult {
+    const c = this._config;
+    const T = STRINGS.editor.tune;
+    return html`
+      ${this._renderTuneBool('notify_hidden_detected', STRINGS.editor.notifyHiddenDetected, c.notify_hidden_detected !== false)}
+
+      <div class="tune-row">
+        <span class="tune-lbl">${T.hidePowerwallControls}</span>
+        <ha-selector
+          class="tune-hide-powerwall"
+          .hass=${this.hass}
+          .selector=${{ boolean: {} }}
+          .value=${!!c.energy?.hide_powerwall_controls}
+          aria-label=${T.hidePowerwallControls}
+          @value-changed=${(e: Event) => this._setHidePowerwall(!!(e as CustomEvent).detail?.value)}
+        ></ha-selector>
+      </div>
+    `;
+  }
+
   // The pinned "Tune" section — the SAME component the wizard Step 4 renders (two
   // homes, one component, D-9.12-1). Every widget is a PURE config writer (no
   // `hass.states` read — AR-1 boundary holds).
@@ -1588,23 +1767,16 @@ export class TeslaCardEditor extends LitElement implements LovelaceCardEditor {
           ></ha-selector>
         </div>
 
+        ${this._isMyHome ? this._renderTuneSceneExtras() : nothing}
+
+        ${this._isMyHome
+          ? html`<span class="group-heading tune-sub-heading">${T.embeddedVehicleHeading}</span>
+              <span class="hint">${T.embeddedVehicleSub}</span>`
+          : nothing}
         ${this._renderTuneBool('hide_quick_actions', STRINGS.editor.hideQuickActions, !!c.hide_quick_actions)}
         ${this._renderTuneBool('hide_panels', STRINGS.editor.hidePanels, !!c.hide_panels)}
         ${this._renderTuneBool('hide_commands', STRINGS.editor.hideCommands, !!c.hide_commands)}
-        ${this._renderTuneBool('notify_hidden_detected', STRINGS.editor.notifyHiddenDetected, c.notify_hidden_detected !== false)}
-
-        <div class="tune-row">
-          <span class="tune-lbl">${T.hidePowerwallControls}</span>
-          <ha-selector
-            class="tune-hide-powerwall"
-            .hass=${this.hass}
-            .selector=${{ boolean: {} }}
-            .value=${!!c.energy?.hide_powerwall_controls}
-            aria-label=${T.hidePowerwallControls}
-            @value-changed=${(e: Event) =>
-              this._setHidePowerwall(!!(e as CustomEvent).detail?.value)}
-          ></ha-selector>
-        </div>
+        ${this._isMyHome ? nothing : this._renderTuneSceneExtras()}
 
         <span class="remap-live" role="status" aria-live="polite">${this._tuneAnnounce}</span>
       </div>
@@ -2388,6 +2560,46 @@ export class TeslaCardEditor extends LitElement implements LovelaceCardEditor {
       color: var(--tc-text, #f1f5f9);
       background: color-mix(in srgb, var(--tc-blue, #38bdf8) 16%, transparent);
       box-shadow: inset 0 0 0 1px var(--tc-border, rgba(255, 255, 255, 0.09));
+    }
+    /* Story 10.1 — the My-Home live preview is a scaled-down REAL <tc-my-home>. The
+       transform shrinks it; the clip container trims the unscaled box's reserved space.
+       Geometry is verified in e2e (jsdom can't lay the bus out). */
+    .preview-stage.myhome {
+      display: block;
+      overflow: hidden;
+      padding: 0;
+    }
+    .myhome-scale {
+      transform: scale(0.62);
+      transform-origin: top center;
+      /* Reclaim the height the transform scales away so the card below doesn't float on
+         a large gap (the box still reserves unscaled height — pull the slack back up). */
+      margin-bottom: -34%;
+    }
+    .myhome-scale tc-my-home {
+      display: block;
+    }
+    .preview-empty {
+      display: block;
+      padding: 24px 8px;
+      text-align: center;
+      font-size: 12.5px;
+      color: var(--tc-text-mute, var(--secondary-text-color, #64748b));
+    }
+    /* Story 10.1 — Compose step: one block per node = its map row (head + picker) then
+       its arrange controls, stacked. A hairline separates nodes for scannability. */
+    .compose-node {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      padding: 8px 0;
+      border-top: 1px solid var(--divider-color, rgba(127, 127, 127, 0.3));
+    }
+    .compose-node .node-row {
+      gap: 8px;
+    }
+    .tune-sub-heading {
+      margin-top: 10px;
     }
   `];
 }
