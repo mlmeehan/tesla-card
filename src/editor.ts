@@ -14,6 +14,7 @@ import {
 import type {
   HomeAssistant,
   TeslaCardConfig,
+  AppearanceConfig,
   LovelaceCardEditor,
   PanelId,
   NodeCustomization,
@@ -22,7 +23,10 @@ import type {
 import type { EntityKey } from './const';
 import { ROLES, type Role, type EnergyKey } from './data/registry';
 import { resolveEntities } from './data/resolve';
-import { resolveEnergyEntities } from './data/energy';
+import { resolveEnergyEntities, hasEnergySite } from './data/energy';
+import { resolvePaint, normalizeKey, PAINT_PRESETS } from './paint';
+import { carView, carStyles } from './components/car';
+import { LIGHT_TOKENS } from './styles';
 import { STRINGS } from './strings';
 
 // ── Guided first-run wizard (Story 9.9) ───────────────────────────────────────
@@ -69,6 +73,27 @@ const PANELS: { id: PanelId; name: string }[] = [
   { id: 'tyres', name: STRINGS.tabs.tyres },
   { id: 'location', name: STRINGS.tabs.location },
   { id: 'media', name: STRINGS.tabs.media },
+];
+
+// ── Appearance paint swatches (Story 9.12) ───────────────────────────────────
+// The curated bundled-preset grid (the mock's six). Each swatch carries the
+// curated automotive `hex` (sourced from `PAINT_PRESETS`, plus a curated green),
+// and the picker writes THAT hex to `config.paint` — NOT the bare `key`. This is
+// load-bearing: `resolvePaint` honours a CSS keyword (`'blue'`/`'red'`/`'green'`…)
+// as the PURE CSS colour BEFORE it ever consults `PAINT_PRESETS` (pinned +
+// deliberate — `paint.test.ts`), so writing the generic name would render a
+// garish primary (#0000ff) instead of the curated #2a4f93. Writing the hex makes
+// the rendered car match the swatch chip exactly. `key` stays the stable DOM /
+// roving-tabindex identity (and a back-compat selection match for a legacy
+// name-valued `config.paint`). Labels are generic (no vendor names ship — the
+// denylist governs bundled assets; a user's free hex is config, out of scope).
+const PAINT_SWATCHES: { key: string; label: string; hex: string }[] = [
+  { key: 'white', label: STRINGS.editor.appearance.paintWhite, hex: PAINT_PRESETS.white },
+  { key: 'silver', label: STRINGS.editor.appearance.paintSilver, hex: PAINT_PRESETS.silver },
+  { key: 'blue', label: STRINGS.editor.appearance.paintBlue, hex: PAINT_PRESETS.blue },
+  { key: 'black', label: STRINGS.editor.appearance.paintBlack, hex: PAINT_PRESETS.black },
+  { key: 'red', label: STRINGS.editor.appearance.paintRed, hex: PAINT_PRESETS.red },
+  { key: 'green', label: STRINGS.editor.appearance.paintGreen, hex: '#2f9e6b' },
 ];
 
 // Display name for each of the seven Scene nodes (Stories 9.4 + 9.14). The six
@@ -810,10 +835,7 @@ export class TeslaCardEditor extends LitElement implements LovelaceCardEditor {
       case 'confirm':
         return this._renderConfirm();
       case 'appearance':
-        return this._renderStub(
-          STRINGS.wizard.appearance.heading,
-          STRINGS.wizard.appearance.subhead
-        );
+        return this._renderAppearance();
       case 'tune':
         return this._renderStub(STRINGS.wizard.tune.heading, STRINGS.wizard.tune.subhead);
       case 'finish':
@@ -1029,11 +1051,354 @@ export class TeslaCardEditor extends LitElement implements LovelaceCardEditor {
     `;
   }
 
+  // ── Appearance & theming pickers (Story 9.12) ────────────────────────────────
+  // The polite live-region message announced after a paint/theme/panel pick — the
+  // RESOLVED appearance ("Preview, Deep blue, Dark, Charging"). Empty ⇒ silent.
+  // Coalesced by construction: every picker fires ONE pick event (a swatch click,
+  // an arrow step, a settled ha-selector change), never a per-keystroke churn.
+  @state() private _appearanceAnnounce = '';
+
+  /** The card-only theme override, read defensively (FR-24): only 'light'/'dark'
+   *  count; anything else (absent / garbage) is Auto. */
+  private _resolvedAppTheme(): 'auto' | 'light' | 'dark' {
+    const t = (this._config.appearance as { theme?: unknown } | undefined)?.theme;
+    return t === 'light' || t === 'dark' ? t : 'auto';
+  }
+
+  /** The swatch whose curated `hex` matches the current literal `config.paint`
+   *  (the value the picker writes), or — for back-compat — a legacy NAME-valued
+   *  `config.paint` matching a swatch `key`. Undefined for a custom hex / PaintSource
+   *  / unset ⇒ no swatch selected, the hex field is "active". */
+  private _selectedSwatch(): string | undefined {
+    const p = this._config.paint;
+    if (typeof p !== 'string') return undefined;
+    const norm = p.trim().toLowerCase();
+    const k = normalizeKey(p);
+    return PAINT_SWATCHES.find((s) => s.hex.toLowerCase() === norm || normalizeKey(s.key) === k)?.key;
+  }
+
+  // The present panel set (D-9.12 present-gating): the base tabs, plus Energy iff an
+  // energy site is detected — the SAME Story 1.8 predicate the card's Energy splice
+  // uses (`hasEnergySite`), so the chooser never offers a dead pick. No-hass ⇒ no
+  // Energy, gracefully (the `.states` guard mirrors `_discover`).
+  private _presentPanels(): { id: PanelId; name: string }[] {
+    const hass = this.hass?.states ? this.hass : undefined;
+    return hasEnergySite(resolveEnergyEntities(hass, this._config))
+      ? [...PANELS, { id: 'energy', name: STRINGS.tabs.energy }]
+      : PANELS;
+  }
+
+  // ── Write/reset discipline (reuse 9.11's _emit-replace + prune) ──────────────
+  // Paint / default-panel live at their existing TOP-LEVEL homes — a pure replace
+  // with a delete-on-reset. Unknown/future keys ride the `{ ...config }` spread (R9).
+  private _setPaint(value: string | undefined): void {
+    const next = { ...this._config };
+    // Verbatim — NEVER clamp/validate/substitute (even a brand red is saved as the
+    // user typed it; the denylist governs bundled assets, not runtime config, D-9.12-3).
+    if (value !== undefined && value !== '') next.paint = value;
+    else delete next.paint;
+    this._emit(next);
+    this._announceAppearance();
+  }
+
+  private _setPanel(value: PanelId | undefined): void {
+    const next = { ...this._config };
+    if (value) next.default_panel = value;
+    else delete next.default_panel;
+    this._emit(next);
+    this._announceAppearance();
+  }
+
+  // Theme is the one NEW key — it lives under `appearance`. Clone the container,
+  // set/delete `theme`, then PRUNE an emptied `appearance` so Auto/reset restores
+  // today's config byte-for-byte (SM-C4). A garbage non-object `appearance` is
+  // replaced rather than spread (mirrors `_commitNodes`' defensive clone).
+  private _setTheme(value: 'light' | 'dark' | undefined): void {
+    const next = { ...this._config };
+    const appearance: AppearanceConfig =
+      next.appearance && typeof next.appearance === 'object' && !Array.isArray(next.appearance)
+        ? { ...next.appearance }
+        : {};
+    if (value) appearance.theme = value;
+    else delete appearance.theme;
+    if (Object.keys(appearance).length > 0) next.appearance = appearance;
+    else delete next.appearance;
+    this._emit(next);
+    this._announceAppearance();
+  }
+
+  // Compose the resolved-appearance announcement (read AFTER `_emit` updated
+  // `_config`). Names what Auto inherits (today's dark) so the announce is honest.
+  private _announceAppearance(): void {
+    const c = this._config;
+    const A = STRINGS.editor.appearance;
+    const sel = this._selectedSwatch();
+    const paintStr = typeof c.paint === 'string' ? c.paint : undefined;
+    const paintWord = sel
+      ? PAINT_SWATCHES.find((s) => s.key === sel)!.label
+      : paintStr || A.paintDefault;
+    const theme = this._resolvedAppTheme();
+    const themeWord =
+      theme === 'light' ? A.themeLight : theme === 'dark' ? A.themeDark : `${A.themeAuto} (${A.themeDark})`;
+    const panelId = (c.default_panel ?? 'charging') as PanelId;
+    const panelWord = STRINGS.tabs[panelId] ?? String(panelId);
+    this._appearanceAnnounce = `${A.announcePrefix}, ${paintWord}, ${themeWord}, ${panelWord}`;
+  }
+
+  // Roving-tabindex radiogroup arrow traversal (shared by the swatch grid + the
+  // theme segmented control). Returns the next index, or -1 for a non-arrow key.
+  private _radioNext(e: KeyboardEvent, count: number, cur: number): number {
+    switch (e.key) {
+      case 'ArrowRight':
+      case 'ArrowDown':
+        return (cur + 1) % count;
+      case 'ArrowLeft':
+      case 'ArrowUp':
+        return (cur - 1 + count) % count;
+      case 'Home':
+        return 0;
+      case 'End':
+        return count - 1;
+      default:
+        return -1;
+    }
+  }
+
+  private _onSwatchKey(e: KeyboardEvent): void {
+    const sel = this._selectedSwatch();
+    const cur = sel ? PAINT_SWATCHES.findIndex((s) => s.key === sel) : 0;
+    const next = this._radioNext(e, PAINT_SWATCHES.length, cur);
+    if (next < 0) return;
+    e.preventDefault();
+    const s = PAINT_SWATCHES[next];
+    this._setPaint(s.hex); // write the curated hex (NOT the CSS-keyword key — see PAINT_SWATCHES)
+    void this.updateComplete.then(() => {
+      (this.shadowRoot?.querySelector(`.swatch[data-key="${s.key}"]`) as HTMLElement | null)?.focus?.();
+    });
+  }
+
+  private _onThemeKey(e: KeyboardEvent): void {
+    const order: ('auto' | 'light' | 'dark')[] = ['auto', 'light', 'dark'];
+    const next = this._radioNext(e, 3, order.indexOf(this._resolvedAppTheme()));
+    if (next < 0) return;
+    e.preventDefault();
+    const val = order[next];
+    this._setTheme(val === 'auto' ? undefined : val);
+    void this.updateComplete.then(() => {
+      (this.shadowRoot?.querySelector(`.seg-btn[data-theme="${val}"]`) as HTMLElement | null)?.focus?.();
+    });
+  }
+
+  // The ha-selector hex field's settled value (D-9.12-3): write the literal
+  // VERBATIM (untrimmed casing preserved), or delete on empty (the picker's reset).
+  private _onHex(ev: CustomEvent): void {
+    const raw = (ev.detail as { value?: unknown } | undefined)?.value;
+    const s = typeof raw === 'string' ? raw : '';
+    this._setPaint(s.trim() ? s : undefined);
+  }
+
+  // A quiet ↺ reset button, present ONLY when the picker's key is set (parity with
+  // the 9.11 entity-picker-row reset). Reuses the `.reset-auto` style.
+  private _renderReset(onClick: () => void, label: string): TemplateResult {
+    return html`<button
+      type="button"
+      class="reset-auto"
+      aria-label=${`${STRINGS.editor.appearance.resetDefault} ${label}`}
+      @click=${onClick}
+    >
+      ${this._icon(mdiRestore)}
+      <span>${STRINGS.editor.appearance.resetDefault}</span>
+    </button>`;
+  }
+
+  // The full-card live preview (D-9.12-4): the real recolorable generic-EV hero
+  // (`carView`) re-skinned to the resolved paint, the whole frame flipped
+  // light/dark via the SAME LIGHT_TOKENS the card host uses, and a mini tab strip
+  // with the chosen default panel active. No fabricated telemetry — `charge:
+  // 'parked'`, no SoC/range (the Finish-step honesty discipline carries over).
+  private _renderPreview(): TemplateResult {
+    const c = this._config;
+    const paint = resolvePaint(this.hass, c);
+    const light = this._resolvedAppTheme() === 'light';
+    const name = c.name?.trim() || STRINGS.hero.defaultName;
+    const panel = c.default_panel ?? 'charging';
+    const tokenStyle = light
+      ? Object.entries(LIGHT_TOKENS)
+          .map(([k, v]) => `${k}: ${v}`)
+          .join('; ')
+      : '';
+    return html`
+      <div class="preview-wrap">
+        <span class="preview-lead">${STRINGS.editor.appearance.livePreview}</span>
+        <div class="appearance-preview ${light ? 'light' : ''}" style=${tokenStyle || nothing}>
+          <div class="preview-stage">${carView({ paint, name, charge: 'parked' })}</div>
+          <div class="preview-tabs" role="tablist" aria-label=${STRINGS.editor.appearance.panelLabel}>
+            ${this._presentPanels().map(
+              (p) => html`<span
+                class="preview-tab ${p.id === panel ? 'active' : ''}"
+                role="tab"
+                aria-selected=${p.id === panel ? 'true' : 'false'}
+                >${p.name}</span
+              >`
+            )}
+          </div>
+        </div>
+      </div>
+    `;
+  }
+
+  // Paint: an own-rolled radiogroup swatch grid + a free HA-native `text`-selector
+  // hex. Selected = a check glyph (distinct from the blue focus ring); the colour
+  // NAME is a caption on the surface token, NEVER ink on the paint fill (a11y HIGH).
+  private _renderPaintPicker(): TemplateResult {
+    const c = this._config;
+    const sel = this._selectedSwatch();
+    const paintStr = typeof c.paint === 'string' ? c.paint : undefined;
+    const hexValue = !sel && paintStr ? paintStr : '';
+    const tabIndexFor = (i: number, key: string) => (sel ? (key === sel ? 0 : -1) : i === 0 ? 0 : -1);
+    return html`
+      <div class="picker-block">
+        <div class="plabel">
+          <span>${STRINGS.editor.appearance.paintLabel}</span>
+          ${c.paint !== undefined
+            ? this._renderReset(() => this._setPaint(undefined), STRINGS.editor.appearance.paintLabel)
+            : nothing}
+        </div>
+        <div
+          class="swatches"
+          role="radiogroup"
+          aria-label=${STRINGS.editor.appearance.paintLabel}
+          @keydown=${(e: KeyboardEvent) => this._onSwatchKey(e)}
+        >
+          ${PAINT_SWATCHES.map(
+            (s, i) => html`
+              <div
+                class="swatch ${s.key === sel ? 'sel' : ''}"
+                role="radio"
+                data-key=${s.key}
+                aria-checked=${s.key === sel ? 'true' : 'false'}
+                aria-label=${s.label}
+                tabindex=${tabIndexFor(i, s.key)}
+                @click=${() => this._setPaint(s.hex)}
+              >
+                ${s.key === sel
+                  ? html`<span class="swatch-check" aria-hidden="true">${this._icon(mdiCheck)}</span>`
+                  : nothing}
+                <span class="swatch-chip" style=${`background: ${s.hex}`}></span>
+                <span class="swatch-nm">${s.label}</span>
+              </div>
+            `
+          )}
+        </div>
+        <label class="hexfield">
+          <span class="hexlab">${STRINGS.editor.appearance.hexLabel}</span>
+          <ha-selector
+            .hass=${this.hass}
+            .selector=${{ text: {} }}
+            .value=${hexValue}
+            @value-changed=${(e: Event) => this._onHex(e as CustomEvent)}
+          ></ha-selector>
+        </label>
+        <p class="picker-note">${STRINGS.editor.appearance.hexNote}</p>
+      </div>
+    `;
+  }
+
+  // Theme: an own-rolled Auto/Light/Dark segmented radiogroup (text-labelled, never
+  // colour-coded). Auto ⇒ delete the key (no override); Light/Dark ⇒ write it.
+  private _renderThemePicker(): TemplateResult {
+    const theme = this._resolvedAppTheme();
+    const opts: { val: 'auto' | 'light' | 'dark'; label: string }[] = [
+      { val: 'auto', label: STRINGS.editor.appearance.themeAuto },
+      { val: 'light', label: STRINGS.editor.appearance.themeLight },
+      { val: 'dark', label: STRINGS.editor.appearance.themeDark },
+    ];
+    return html`
+      <div class="picker-block">
+        <div class="plabel">
+          <span>${STRINGS.editor.appearance.themeLabel}</span>
+          ${theme !== 'auto'
+            ? this._renderReset(() => this._setTheme(undefined), STRINGS.editor.appearance.themeLabel)
+            : nothing}
+        </div>
+        <div
+          class="seg"
+          role="radiogroup"
+          aria-label=${STRINGS.editor.appearance.themeLabel}
+          @keydown=${(e: KeyboardEvent) => this._onThemeKey(e)}
+        >
+          ${opts.map(
+            (o) => html`
+              <button
+                type="button"
+                class="seg-btn ${o.val === theme ? 'on' : ''}"
+                role="radio"
+                data-theme=${o.val}
+                aria-checked=${o.val === theme ? 'true' : 'false'}
+                tabindex=${o.val === theme ? 0 : -1}
+                @click=${() => this._setTheme(o.val === 'auto' ? undefined : o.val)}
+              >
+                ${o.val === theme
+                  ? html`<span class="seg-check" aria-hidden="true">${this._icon(mdiCheck)}</span>`
+                  : nothing}
+                <span>${o.label}</span>
+              </button>
+            `
+          )}
+        </div>
+        <p class="auto-sub">${STRINGS.editor.appearance.themeAutoSub}</p>
+      </div>
+    `;
+  }
+
+  // Default panel: a present-gated HA-native `<select>` (the standalone 7.2 field
+  // is SUBSUMED here — one control, no duplication).
+  private _renderPanelPicker(): TemplateResult {
+    const c = this._config;
+    const value = c.default_panel ?? 'charging';
+    return html`
+      <div class="picker-block">
+        <div class="plabel">
+          <span>${STRINGS.editor.appearance.panelLabel}</span>
+          ${c.default_panel !== undefined
+            ? this._renderReset(() => this._setPanel(undefined), STRINGS.editor.appearance.panelLabel)
+            : nothing}
+        </div>
+        <select
+          class="panel-select"
+          aria-label=${STRINGS.editor.appearance.panelLabel}
+          .value=${value}
+          @change=${(e: Event) => this._setPanel((e.target as HTMLSelectElement).value as PanelId)}
+        >
+          ${this._presentPanels().map((p) => html`<option value=${p.id}>${p.name}</option>`)}
+        </select>
+        <p class="picker-note">${STRINGS.editor.appearance.panelNote}</p>
+      </div>
+    `;
+  }
+
+  // The pinned "Appearance" section — the SAME component the wizard Step 3 renders
+  // (two homes, one component, D-9.12-1). Preview stacks ABOVE the three pickers
+  // (narrow-dialog layout); the polite announce shared with the other surfaces.
+  private _renderAppearance(): TemplateResult {
+    return html`
+      <div class="group appearance" role="group" aria-label=${STRINGS.editor.appearance.heading}>
+        <span class="group-heading">${STRINGS.editor.appearance.heading}</span>
+        ${this._renderPreview()}
+        ${this._renderPaintPicker()}
+        ${this._renderThemePicker()}
+        ${this._renderPanelPicker()}
+        <span class="remap-live" role="status" aria-live="polite">${this._appearanceAnnounce}</span>
+      </div>
+    `;
+  }
+
   private _renderNormalForm(): TemplateResult {
     const c = this._config;
     return html`
       <div class="form">
         ${this._renderDiscoverySummary()}
+        ${this._renderAppearance()}
         <label class="field">
           <span>${STRINGS.editor.vehicleName}</span>
           <input
@@ -1052,17 +1417,6 @@ export class TeslaCardEditor extends LitElement implements LovelaceCardEditor {
             placeholder=${STRINGS.editor.imagePlaceholder}
             @change=${(e: Event) => this._text(e, 'image')}
           />
-        </label>
-
-        <label class="field">
-          <span>${STRINGS.editor.defaultPanel}</span>
-          <select
-            .value=${c.default_panel ?? 'charging'}
-            @change=${(e: Event) =>
-              this._patch({ default_panel: (e.target as HTMLSelectElement).value as PanelId })}
-          >
-            ${PANELS.map((p) => html`<option value=${p.id}>${p.name}</option>`)}
-          </select>
         </label>
 
         <label class="check">
@@ -1118,7 +1472,9 @@ export class TeslaCardEditor extends LitElement implements LovelaceCardEditor {
     `;
   }
 
-  static override styles = css`
+  // carStyles brings the recolorable hero's `.car-img`/`.tc-car` rules so the
+  // appearance preview reuses the REAL render path (Story 9.12 Task 4).
+  static override styles = [carStyles, css`
     .form {
       display: flex;
       flex-direction: column;
@@ -1606,7 +1962,235 @@ export class TeslaCardEditor extends LitElement implements LovelaceCardEditor {
       text-align: center;
       color: var(--tc-text-mute, var(--secondary-text-color, #64748b));
     }
-  `;
+
+    /* ── Appearance & theming pickers (Story 9.12) ───────────────────────────
+       Built against the canonical --tc-* tokens with DESIGN.md HA fallbacks (hard
+       gate). The preview frame carries its OWN token block: dark by fallback, and
+       the LIGHT_TOKENS set inline (the single-sourced card-only flip). */
+    .appearance {
+      gap: 12px;
+    }
+    .picker-block {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+    .plabel {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      font-size: 11.5px;
+      font-weight: 700;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      color: var(--tc-text-dim, var(--secondary-text-color, #9aa7b8));
+    }
+    /* Paint swatch grid — own-rolled radiogroup, each radio ≥44×44 (a11y). */
+    .swatches {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 8px;
+    }
+    .swatch {
+      position: relative;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 6px;
+      min-height: 44px;
+      padding: 10px 6px;
+      border-radius: var(--tc-radius-md, 12px);
+      border: 1px solid var(--tc-border, var(--divider-color, rgba(127, 127, 127, 0.3)));
+      background: var(--tc-surface, var(--card-background-color, rgba(127, 127, 127, 0.06)));
+      cursor: pointer;
+    }
+    /* selected = a check glyph + a stronger border, kept DISTINCT from the shared
+       2px blue :focus-visible ring (selected ≠ focused — never one blue ring). */
+    .swatch.sel {
+      border-color: var(--tc-border-strong, var(--divider-color, rgba(127, 127, 127, 0.5)));
+    }
+    .swatch-check {
+      position: absolute;
+      top: 5px;
+      right: 6px;
+      display: inline-flex;
+      width: 16px;
+      height: 16px;
+      border-radius: var(--tc-pill, 999px);
+      background: var(--tc-blue, #38bdf8);
+      color: #04121d;
+    }
+    .swatch-check .ico {
+      width: 16px;
+      height: 16px;
+      fill: currentColor;
+    }
+    .swatch-chip {
+      width: 30px;
+      height: 30px;
+      border-radius: var(--tc-pill, 999px);
+      box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.18), 0 2px 6px rgba(0, 0, 0, 0.35);
+    }
+    /* colour NAME is a caption on the surface token (≥4.5:1), NEVER ink on the
+       paint fill (no fixed ink clears AA across pearl-white→obsidian — a11y HIGH). */
+    .swatch-nm {
+      font-size: 10.5px;
+      font-weight: 600;
+      letter-spacing: 0.02em;
+      color: var(--tc-text-dim, var(--secondary-text-color, #9aa7b8));
+    }
+    .swatch.sel .swatch-nm {
+      color: var(--tc-text, var(--primary-text-color, #f1f5f9));
+    }
+    .hexfield {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+    .hexlab {
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--tc-text-dim, var(--secondary-text-color, #9aa7b8));
+    }
+    .picker-note {
+      margin: 0;
+      font-size: 11px;
+      line-height: 1.45;
+      color: var(--tc-text-mute, var(--secondary-text-color, #64748b));
+    }
+    /* Theme segmented control — own-rolled radiogroup, text-labelled. */
+    .seg {
+      display: flex;
+      gap: 4px;
+      padding: 4px;
+      border-radius: var(--tc-pill, 999px);
+      border: 1px solid var(--tc-border, var(--divider-color, rgba(127, 127, 127, 0.3)));
+      background: var(--tc-surface-2, var(--card-background-color, rgba(127, 127, 127, 0.08)));
+    }
+    .seg-btn {
+      flex: 1 1 0;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+      min-height: 44px;
+      padding: 8px 6px;
+      border: 0;
+      border-radius: var(--tc-pill, 999px);
+      background: transparent;
+      color: var(--tc-text-dim, var(--secondary-text-color, #9aa7b8));
+      font: inherit;
+      font-size: 12.5px;
+      font-weight: 700;
+      letter-spacing: 0.04em;
+      cursor: pointer;
+    }
+    .seg-btn.on {
+      background: var(--tc-surface-3, rgba(127, 127, 127, 0.14));
+      color: var(--tc-text, var(--primary-text-color, #f1f5f9));
+      box-shadow: inset 0 0 0 1px var(--tc-border-strong, var(--divider-color, rgba(127, 127, 127, 0.4)));
+    }
+    .seg-check {
+      display: inline-flex;
+      width: 15px;
+      height: 15px;
+    }
+    .seg-check .ico {
+      width: 15px;
+      height: 15px;
+      fill: currentColor;
+    }
+    .auto-sub {
+      margin: 0;
+      font-size: 11px;
+      line-height: 1.45;
+      color: var(--tc-text-mute, var(--secondary-text-color, #64748b));
+    }
+    .panel-select {
+      min-height: 44px;
+      padding: 0 11px;
+      border-radius: var(--tc-radius-sm, 10px);
+      border: 1px solid var(--tc-border-strong, var(--divider-color, rgba(127, 127, 127, 0.4)));
+      background: var(--tc-surface-3, var(--card-background-color, rgba(127, 127, 127, 0.1)));
+      color: var(--tc-text, var(--primary-text-color, inherit));
+      font: inherit;
+      font-size: 13.5px;
+    }
+    /* Full-card live preview — stacks ABOVE the pickers (narrow-dialog layout). The
+       frame carries the dark tokens by fallback; .light overlays LIGHT_TOKENS
+       inline (single-sourced with the card host). The re-skin is a decorative
+       transition that becomes an instant CUT under reduced motion (CAP-6). */
+    .preview-wrap {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+    .preview-lead {
+      font-size: 10.5px;
+      font-weight: 700;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      color: var(--tc-text-mute, var(--secondary-text-color, #64748b));
+    }
+    .appearance-preview {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      padding: 14px;
+      border-radius: var(--tc-radius-lg, 18px);
+      border: 1px solid var(--tc-border, rgba(255, 255, 255, 0.09));
+      background: #0d1424;
+      color: var(--tc-text, #f1f5f9);
+      transition: background 0.18s var(--tc-ease, ease), color 0.18s var(--tc-ease, ease);
+    }
+    .appearance-preview.light {
+      background: #f3f5f9;
+    }
+    @media (prefers-reduced-motion: reduce) {
+      .appearance-preview {
+        transition: none;
+      }
+    }
+    .preview-stage {
+      display: flex;
+      justify-content: center;
+      padding: 6px 0;
+    }
+    .preview-stage .car-img {
+      width: 100%;
+      max-width: 240px;
+      height: auto;
+      display: block;
+    }
+    .preview-tabs {
+      display: flex;
+      gap: 4px;
+      padding: 4px;
+      border-radius: var(--tc-pill, 999px);
+      border: 1px solid var(--tc-border, rgba(255, 255, 255, 0.09));
+      background: var(--tc-surface-2, rgba(255, 255, 255, 0.07));
+      overflow: hidden;
+    }
+    .preview-tab {
+      flex: 0 0 auto;
+      padding: 6px 9px;
+      border-radius: var(--tc-pill, 999px);
+      font-size: 10px;
+      font-weight: 700;
+      letter-spacing: 0.05em;
+      text-transform: uppercase;
+      white-space: nowrap;
+      color: var(--tc-text-mute, #64748b);
+    }
+    .preview-tab.active {
+      flex: 1 1 auto;
+      text-align: center;
+      color: var(--tc-text, #f1f5f9);
+      background: color-mix(in srgb, var(--tc-blue, #38bdf8) 16%, transparent);
+      box-shadow: inset 0 0 0 1px var(--tc-border, rgba(255, 255, 255, 0.09));
+    }
+  `];
 }
 
 declare global {

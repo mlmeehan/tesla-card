@@ -243,6 +243,29 @@ describe('centralized strings — voice contract (Story 2.5)', () => {
     expect(wizardCopy.filter((v) => v.includes('!')), 'no exclamation/hype in wizard copy').toEqual([]);
   });
 
+  test('Story 9.12: appearance picker copy is generic + calm (no vendor names, no hype)', () => {
+    const a = STRINGS.editor.appearance;
+    expect(a.heading).toBe('Appearance');
+    // Theme options are TEXT-labelled (never colour-coded); the card-only sub-label present.
+    expect([a.themeAuto, a.themeLight, a.themeDark]).toEqual(['Auto', 'Light', 'Dark']);
+    expect(a.themeAutoSub).toContain("only this card's surfaces");
+    // Paint preset labels are GENERIC colour names — no vendor marketing names ship.
+    expect([a.paintWhite, a.paintSilver, a.paintBlue, a.paintBlack, a.paintRed, a.paintGreen]).toEqual([
+      'White',
+      'Silver',
+      'Deep blue',
+      'Black',
+      'Red',
+      'Green',
+    ]);
+    // Reset + announce composer + the free-choice note.
+    expect(a.resetDefault).toBe('Reset to default');
+    expect(a.announcePrefix).toBe('Preview');
+    expect(a.hexNote.length).toBeGreaterThan(0);
+    // Voice: no exclamation/hype anywhere in the appearance copy.
+    expect(Object.values(a).filter((v) => v.includes('!'))).toEqual([]);
+  });
+
   test('migration backstop: copy-bearing components import from ./strings', () => {
     const consumers = [
       'tesla-card.ts',

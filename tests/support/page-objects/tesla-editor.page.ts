@@ -140,6 +140,42 @@ export class TeslaEditorPage {
     return this.editor.locator('.wiz-disclaimer');
   }
 
+  // ── Story 9.12 — appearance & theming pickers ────────────────────────────────
+  /** The pinned "Appearance" section (normal form) / wizard Step-3 body. */
+  get appearanceSection(): Locator {
+    return this.editor.locator('.appearance');
+  }
+
+  /** A paint swatch radio by its preset key (e.g. 'blue'). */
+  paintSwatch(key: string): Locator {
+    return this.editor.locator(`.appearance .swatch[data-key="${key}"]`);
+  }
+
+  /** The free-hex ha-selector (inert in the demo — assert attached + CSS only). */
+  get paintHex(): Locator {
+    return this.editor.locator('.appearance .hexfield ha-selector');
+  }
+
+  /** A theme segmented-control option by mode ('auto' | 'light' | 'dark'). */
+  themeOption(mode: 'auto' | 'light' | 'dark'): Locator {
+    return this.editor.locator(`.appearance .seg-btn[data-theme="${mode}"]`);
+  }
+
+  /** The present-gated default-panel chooser (native select). */
+  get panelChooser(): Locator {
+    return this.editor.locator('.appearance .panel-select');
+  }
+
+  /** The full-card live preview frame (flips light/dark, holds the real hero). */
+  get appearancePreview(): Locator {
+    return this.editor.locator('.appearance .appearance-preview');
+  }
+
+  /** The appearance section's reset-to-default buttons (present only when a key is set). */
+  get appearanceReset(): Locator {
+    return this.editor.locator('.appearance .reset-auto');
+  }
+
   /** Click the emphatic primary control (Next, or Done. on the Finish step). */
   async clickNext(): Promise<void> {
     await this.footerBtn('primary').click();

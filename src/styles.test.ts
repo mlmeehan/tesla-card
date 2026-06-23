@@ -10,7 +10,7 @@ import { readFileSync, readdirSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import { describe, expect, test } from 'vitest';
-import { tokens, sharedStyles, ACCENT_SEMANTICS } from './styles';
+import { tokens, sharedStyles, ACCENT_SEMANTICS, LIGHT_TOKENS } from './styles';
 
 const SRC_DIR = dirname(fileURLToPath(import.meta.url));
 
@@ -82,6 +82,39 @@ describe('--tc-* token contract (Story 2.1)', () => {
       return /var\(\s*--(ha|primary|paper|card|divider|accent)/.test(l);
     });
     expect(offenders, `tokens must be literal (HA-theme-independent):\n${offenders.join('\n')}`).toEqual([]);
+  });
+});
+
+// ── Story 9.12 gate — card-only Light theme token block ───────────────────
+// The `:host([theme='light'])` override re-resolves ONLY the colour tokens to the
+// light palette, single-sourced from LIGHT_TOKENS (shared with the editor preview).
+// Accents stay byte-identical across themes (semantic, ground-independent).
+describe('Story 9.12 — :host([theme=light]) light token block', () => {
+  const css = (tokens as unknown as { cssText: string }).cssText;
+  const lightBlock = (): string => {
+    const m = css.match(/:host\(\[theme='light'\]\)\s*\{([^}]*)\}/);
+    expect(m, ':host([theme=light]) block not found in tokens').not.toBeNull();
+    return m![1];
+  };
+
+  test('the light block defines every LIGHT_TOKENS pair verbatim (single source)', () => {
+    const block = lightBlock();
+    for (const [k, v] of Object.entries(LIGHT_TOKENS)) {
+      expect(block, `light block missing ${k}: ${v}`).toContain(`${k}: ${v};`);
+    }
+  });
+
+  test('every overridden token NAME also exists in the dark :host default (parity)', () => {
+    for (const k of Object.keys(LIGHT_TOKENS)) {
+      expect(css, `dark :host missing ${k}`).toContain(`${k}:`);
+    }
+  });
+
+  test('the accents are NOT re-listed under light (semantic, ground-independent)', () => {
+    const block = lightBlock();
+    for (const name of Object.keys(ACCENT_SEMANTICS)) {
+      expect(block, `accent --tc-${name} must NOT be re-listed under light`).not.toContain(`--tc-${name}:`);
+    }
   });
 });
 

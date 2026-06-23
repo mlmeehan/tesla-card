@@ -515,6 +515,36 @@ export const STRINGS = {
     // Opts out of the card-side advisory entirely. A real on/off switch in the
     // editor; the card reads `notify_hidden_detected` to gate the banner.
     notifyHiddenDetected: 'Notify me about detected-but-hidden products',
+    // ── Appearance & theming pickers (Story 9.12, D-9.12) ─────────────────────
+    // The "Make it yours" surface: paint swatches + a free hex, a card-only
+    // Auto/Light/Dark theme override, and a present-gated default-panel chooser,
+    // over one full-card live preview. British English, calm/plain/honest voice
+    // (no hype, no exclamation). Paint labels are GENERIC (no vendor names ship).
+    // `announcePrefix` composes the polite live-region update naming the resolved
+    // appearance — `${announcePrefix}, ${paint}, ${theme}, ${panel}`.
+    appearance: {
+      heading: 'Appearance',
+      livePreview: 'Live preview',
+      paintLabel: 'Paint',
+      themeLabel: 'Theme',
+      panelLabel: 'Default panel',
+      paintWhite: 'White',
+      paintSilver: 'Silver',
+      paintBlue: 'Deep blue',
+      paintBlack: 'Black',
+      paintRed: 'Red',
+      paintGreen: 'Green',
+      paintDefault: 'default paint',
+      hexLabel: 'Custom hex',
+      hexNote: 'Any colour is accepted exactly as typed — never blocked or changed.',
+      themeAuto: 'Auto',
+      themeLight: 'Light',
+      themeDark: 'Dark',
+      themeAutoSub: "Light or Dark recolours only this card's surfaces — the dashboard is untouched.",
+      panelNote: 'Only panels available for this card are listed.',
+      resetDefault: 'Reset to default',
+      announcePrefix: 'Preview',
+    },
   },
 
   // Guided first-run wizard (Story 9.9 / CAP-5 — the no-YAML first-run flow).

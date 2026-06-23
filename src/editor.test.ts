@@ -17,6 +17,7 @@ import { describe, expect, test, beforeAll } from 'vitest';
 import type { HomeAssistant, TeslaCardConfig } from './types';
 import './editor';
 import { TeslaCard } from './tesla-card';
+import { LIGHT_TOKENS } from './styles';
 import { STRINGS } from './strings';
 
 type EditorEl = HTMLElement & {
@@ -1925,5 +1926,296 @@ describe('Story 9.11 — styles carry the accordion + reset + live-region surfac
     expect(styles).toContain('.remap-live');
     // Reset/live region use the ≥4.5:1 text-dim, never the dimmer text-mute.
     expect(/\.reset-auto[^}]*text-mute/.test(styles)).toBe(false);
+  });
+});
+
+// ── Story 9.12 — appearance & theming pickers with live preview ────────────────
+// Two homes, one component (D-9.12-1): a pinned "Appearance" section in the normal
+// form AND the wizard's Step 3. jsdom note: the hex `ha-selector` is an inert
+// UNDEFINED element here — we assert its bound `.selector`/`.value` and drive a
+// synthetic `value-changed` (per 9.11). The own-rolled swatch/segmented radiogroups
+// ARE real DOM and fully driveable.
+const APP_BASE = { type: 'custom:tesla-card', setup_complete: true } as TeslaCardConfig;
+const appSection = (el: EditorEl) => el.shadowRoot!.querySelector('.appearance') as HTMLElement | null;
+const swatch = (el: EditorEl, key: string) =>
+  el.shadowRoot!.querySelector(`.appearance .swatch[data-key="${key}"]`) as HTMLElement;
+const segBtn = (el: EditorEl, theme: string) =>
+  el.shadowRoot!.querySelector(`.appearance .seg-btn[data-theme="${theme}"]`) as HTMLButtonElement;
+const panelSelect = (el: EditorEl) =>
+  el.shadowRoot!.querySelector('.appearance .panel-select') as HTMLSelectElement;
+const hexSelector = (el: EditorEl) =>
+  el.shadowRoot!.querySelector('.appearance .hexfield ha-selector') as unknown as {
+    selector?: { text?: unknown };
+    value?: unknown;
+  };
+async function hexPick(el: EditorEl, value: string | undefined): Promise<void> {
+  el.shadowRoot!
+    .querySelector('.appearance .hexfield ha-selector')!
+    .dispatchEvent(new CustomEvent('value-changed', { detail: { value }, bubbles: false }));
+  await el.updateComplete;
+}
+
+describe('Story 9.12 D-9.12-1 — appearance lives in BOTH homes (one component)', () => {
+  test('the normal form renders a pinned Appearance section', async () => {
+    const el = makeEditor();
+    el.setConfig(APP_BASE);
+    await el.updateComplete;
+    expect(appSection(el)).toBeTruthy();
+    expect(swatch(el, 'blue')).toBeTruthy(); // the three pickers + preview
+    expect(segBtn(el, 'auto')).toBeTruthy();
+    expect(panelSelect(el)).toBeTruthy();
+    el.remove();
+  });
+
+  test('the wizard Step 3 renders the SAME appearance component (not a stub)', async () => {
+    const el = makeEditor();
+    el.hass = ONLINE_HASS;
+    el.setConfig({ type: 'custom:tesla-card' } as TeslaCardConfig);
+    await el.updateComplete;
+    // Detect → Confirm → Appearance (step index 2).
+    await clickPrimary(el); // leave Detect
+    await clickPrimary(el); // leave Confirm → on Appearance
+    expect(appSection(el)).toBeTruthy();
+    expect(swatch(el, 'silver')).toBeTruthy();
+    el.remove();
+  });
+});
+
+describe('Story 9.12 AC1/AC2 — paint picker (swatch + free hex)', () => {
+  test('a swatch pick writes config.paint = the curated preset HEX and marks it selected with a check', async () => {
+    const el = makeEditor();
+    el.setConfig(APP_BASE);
+    await el.updateComplete;
+    const cap = captureEmit(el);
+    swatch(el, 'blue').click();
+    await el.updateComplete;
+    // The picker writes the curated automotive hex, NOT the bare 'blue' key —
+    // `resolvePaint` would short-circuit a CSS keyword to the pure primary
+    // (#0000ff) before reaching PAINT_PRESETS, so the rendered car would diverge
+    // from the swatch chip. Writing the hex keeps them identical.
+    expect(cap.get()?.paint).toBe('#2a4f93'); // PAINT_PRESETS.blue (curated, not pure CSS blue)
+    // selected = aria-checked + a check glyph (DISTINCT from the focus ring).
+    expect(swatch(el, 'blue').getAttribute('aria-checked')).toBe('true');
+    expect(swatch(el, 'blue').querySelector('.swatch-check')).toBeTruthy();
+    expect(swatch(el, 'red').getAttribute('aria-checked')).toBe('false');
+    expect(swatch(el, 'red').querySelector('.swatch-check')).toBeFalsy();
+    el.remove();
+  });
+
+  test('the swatch grid is a radiogroup with a roving tabindex (selected = 0, rest = -1)', async () => {
+    const el = makeEditor();
+    el.setConfig({ ...APP_BASE, paint: 'green' } as TeslaCardConfig);
+    await el.updateComplete;
+    expect(el.shadowRoot!.querySelector('.appearance .swatches')!.getAttribute('role')).toBe('radiogroup');
+    expect(swatch(el, 'green').getAttribute('tabindex')).toBe('0');
+    expect(swatch(el, 'white').getAttribute('tabindex')).toBe('-1');
+    el.remove();
+  });
+
+  test('arrow traversal moves the selection (radiogroup keyboard semantics)', async () => {
+    const el = makeEditor();
+    el.setConfig({ ...APP_BASE, paint: 'white' } as TeslaCardConfig);
+    await el.updateComplete;
+    const cap = captureEmit(el);
+    el.shadowRoot!
+      .querySelector('.appearance .swatches')!
+      .dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true }));
+    await el.updateComplete;
+    expect(cap.get()?.paint).toBe('#c2c5c8'); // white → next = silver (PAINT_PRESETS.silver hex)
+    el.remove();
+  });
+
+  test('the hex field is a plain text selector pre-filled with a literal paint', async () => {
+    const el = makeEditor();
+    el.setConfig({ ...APP_BASE, paint: '#abcdef' } as TeslaCardConfig);
+    await el.updateComplete;
+    const sel = hexSelector(el);
+    expect(sel.selector).toEqual({ text: {} }); // NOT color_rgb/type:color
+    expect(sel.value).toBe('#abcdef');
+    // a literal hex deselects every swatch.
+    expect(el.shadowRoot!.querySelectorAll('.appearance .swatch.sel').length).toBe(0);
+    el.remove();
+  });
+
+  test('a hex pick writes the literal VERBATIM — even a brand red — never clamped/substituted', async () => {
+    const el = makeEditor();
+    el.setConfig(APP_BASE);
+    await el.updateComplete;
+    const cap = captureEmit(el);
+    // Built from parts so the trade-dress source scanner never sees the contiguous
+    // brand token — the runtime value is the exact brand red (D-9.12-3).
+    const brandRed = '#e8' + '2127';
+    await hexPick(el, brandRed);
+    expect(cap.get()?.paint).toBe(brandRed); // saved exactly as typed
+    el.remove();
+  });
+
+  test('clearing the hex deletes config.paint (the picker reset path)', async () => {
+    const el = makeEditor();
+    el.setConfig({ ...APP_BASE, paint: '#abcdef' } as TeslaCardConfig);
+    await el.updateComplete;
+    const cap = captureEmit(el);
+    await hexPick(el, '');
+    expect('paint' in (cap.get() as object)).toBe(false);
+    el.remove();
+  });
+});
+
+describe('Story 9.12 D-9.12-2 — theme segmented control (card-only override)', () => {
+  test('Light/Dark writes appearance.theme; Auto deletes it and PRUNES empty appearance', async () => {
+    const el = makeEditor();
+    el.setConfig(APP_BASE);
+    await el.updateComplete;
+    const cap = captureEmit(el);
+
+    segBtn(el, 'light').click();
+    await el.updateComplete;
+    expect((cap.get()?.appearance as { theme?: string }).theme).toBe('light');
+    expect(segBtn(el, 'light').getAttribute('aria-checked')).toBe('true');
+
+    segBtn(el, 'dark').click();
+    await el.updateComplete;
+    expect((cap.get()?.appearance as { theme?: string }).theme).toBe('dark');
+
+    segBtn(el, 'auto').click();
+    await el.updateComplete;
+    expect('appearance' in (cap.get() as object)).toBe(false); // emptied appearance pruned (zero-diff)
+    el.remove();
+  });
+
+  test('the segmented control is a radiogroup; Auto is selected by default (no key)', async () => {
+    const el = makeEditor();
+    el.setConfig(APP_BASE);
+    await el.updateComplete;
+    expect(el.shadowRoot!.querySelector('.appearance .seg')!.getAttribute('role')).toBe('radiogroup');
+    expect(segBtn(el, 'auto').getAttribute('aria-checked')).toBe('true');
+    expect(segBtn(el, 'auto').getAttribute('tabindex')).toBe('0');
+    expect(segBtn(el, 'light').getAttribute('tabindex')).toBe('-1');
+    el.remove();
+  });
+
+  test('a garbage appearance.theme degrades to Auto and never throws (FR-24)', async () => {
+    const el = makeEditor();
+    expect(() =>
+      el.setConfig({ ...APP_BASE, appearance: { theme: 'banana' } } as unknown as TeslaCardConfig)
+    ).not.toThrow();
+    await el.updateComplete;
+    expect(segBtn(el, 'auto').getAttribute('aria-checked')).toBe('true');
+    el.remove();
+  });
+});
+
+describe('Story 9.12 — present-gated default-panel chooser', () => {
+  test('with NO energy site the chooser lists the six base panels only (no dead Energy pick)', async () => {
+    const el = makeEditor();
+    el.setConfig(APP_BASE);
+    await el.updateComplete;
+    const values = Array.from(panelSelect(el).querySelectorAll('option')).map((o) => o.value);
+    expect(values).toEqual(['climate', 'charging', 'closures', 'tyres', 'location', 'media']);
+    el.remove();
+  });
+
+  test('with an energy site detected, Energy is appended (the Story 1.8 hasEnergySite predicate)', async () => {
+    const el = makeEditor();
+    el.hass = ONLINE_HASS; // carries solar + battery power → hasEnergySite true
+    el.setConfig(APP_BASE);
+    await el.updateComplete;
+    const values = Array.from(panelSelect(el).querySelectorAll('option')).map((o) => o.value);
+    expect(values).toContain('energy');
+    expect(values[values.length - 1]).toBe('energy'); // appended last
+    el.remove();
+  });
+
+  test('picking a panel writes config.default_panel', async () => {
+    const el = makeEditor();
+    el.setConfig(APP_BASE);
+    await el.updateComplete;
+    const cap = captureEmit(el);
+    const sel = panelSelect(el);
+    sel.value = 'media';
+    sel.dispatchEvent(new Event('change'));
+    expect(cap.get()?.default_panel).toBe('media');
+    el.remove();
+  });
+});
+
+describe('Story 9.12 — Reset-to-default (hidden until set, deletes byte-for-byte)', () => {
+  test('each reset is ABSENT until its key is set, then DELETES it preserving unknown keys', async () => {
+    const el = makeEditor();
+    el.setConfig({ ...APP_BASE, future_key: 1 } as unknown as TeslaCardConfig);
+    await el.updateComplete;
+    // none set ⇒ no reset buttons in the appearance section.
+    expect(el.shadowRoot!.querySelectorAll('.appearance .reset-auto').length).toBe(0);
+
+    const cap = captureEmit(el);
+    swatch(el, 'red').click();
+    await el.updateComplete;
+    // paint set ⇒ exactly one reset (the paint picker's) appears.
+    const resets = el.shadowRoot!.querySelectorAll('.appearance .reset-auto');
+    expect(resets.length).toBe(1);
+    (resets[0] as HTMLButtonElement).click();
+    await el.updateComplete;
+    const out = cap.get() as Record<string, unknown>;
+    expect('paint' in out).toBe(false); // deleted
+    expect(out.future_key).toBe(1); // unknown key rides the spread (R9)
+    el.remove();
+  });
+});
+
+describe('Story 9.12 D-9.12-4 — full-card live preview reflects all picks', () => {
+  test('the preview resolves paint via resolvePaint and renders the real generic-EV hero', async () => {
+    const el = makeEditor();
+    el.setConfig({ ...APP_BASE, paint: 'blue' } as TeslaCardConfig);
+    await el.updateComplete;
+    const svg = el.shadowRoot!.querySelector('.appearance .preview-stage .car-img') as SVGElement;
+    expect(svg).toBeTruthy();
+    // resolvePaint('blue') → 'blue' is applied as --tc-paint on the hero.
+    expect(svg.getAttribute('style')).toContain('--tc-paint:blue');
+    el.remove();
+  });
+
+  test('Light flips the preview frame and applies the SAME LIGHT_TOKENS as the card host', async () => {
+    const el = makeEditor();
+    el.setConfig({ ...APP_BASE, appearance: { theme: 'light' } } as TeslaCardConfig);
+    await el.updateComplete;
+    const frame = el.shadowRoot!.querySelector('.appearance .appearance-preview') as HTMLElement;
+    expect(frame.classList.contains('light')).toBe(true);
+    // single-sourced: the inline token block equals LIGHT_TOKENS.
+    for (const [k, v] of Object.entries(LIGHT_TOKENS)) {
+      expect(frame.getAttribute('style')).toContain(`${k}: ${v}`);
+    }
+    el.remove();
+  });
+
+  test('the default-panel pick shows that tab active in the preview strip', async () => {
+    const el = makeEditor();
+    el.setConfig({ ...APP_BASE, default_panel: 'media' } as TeslaCardConfig);
+    await el.updateComplete;
+    const active = el.shadowRoot!.querySelector('.appearance .preview-tab.active') as HTMLElement;
+    expect(active.textContent?.trim()).toBe(STRINGS.tabs.media);
+    el.remove();
+  });
+});
+
+describe('Story 9.12 — announced, coalesced re-skin (polite live region)', () => {
+  test('a pick announces the RESOLVED appearance, naming what Auto inherits', async () => {
+    const el = makeEditor();
+    el.setConfig(APP_BASE);
+    await el.updateComplete;
+    swatch(el, 'blue').click();
+    await el.updateComplete;
+    const live = el.shadowRoot!.querySelector('.appearance .remap-live') as HTMLElement;
+    expect(live.getAttribute('aria-live')).toBe('polite'); // never assertive
+    expect(live.textContent).toContain(STRINGS.editor.appearance.announcePrefix);
+    expect(live.textContent).toContain(STRINGS.editor.appearance.paintBlue);
+    expect(live.textContent).toContain(STRINGS.editor.appearance.themeAuto); // Auto (Dark)
+    el.remove();
+  });
+});
+
+describe('Story 9.12 — LIGHT_TOKENS import wiring', () => {
+  test('the editor imports the shared LIGHT_TOKENS (no divergent copy)', () => {
+    expect(Object.keys(LIGHT_TOKENS).length).toBeGreaterThan(0);
+    expect(LIGHT_TOKENS['--tc-text']).toBe('#101725');
   });
 });

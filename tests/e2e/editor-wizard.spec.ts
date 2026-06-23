@@ -326,3 +326,146 @@ test.describe('Story 9.11 wizard Confirm full-list (real browser)', () => {
     await expect(ed.confirmAbsentRows).toHaveCount(0); // Priya never sees a product she lacks
   });
 });
+
+// ── Story 9.12 — appearance & theming pickers (real browser) ───────────────────
+// The own-rolled swatch grid + segmented control + native <select> ARE measurable
+// and driveable in the demo; the hex `ha-selector` is harness-absent (registered
+// only inside the HA frontend), so it is asserted toBeAttached + via computed CSS
+// only (the honest 9.11 harness-gap pattern). The preview frame's re-skin is a
+// real CSS transition that cuts under prefers-reduced-motion.
+test.describe('Story 9.12 appearance pickers (real browser)', () => {
+  test('the normal form pins an Appearance section with all three pickers + a live preview', async ({
+    page,
+  }) => {
+    const ed = new TeslaEditorPage(page);
+    await ed.openAt('done'); // completed ⇒ normal form
+    await expect(ed.appearanceSection).toBeVisible();
+    await expect(ed.paintSwatch('blue')).toBeVisible();
+    await expect(ed.themeOption('auto')).toBeVisible();
+    await expect(ed.panelChooser).toBeVisible();
+    await expect(ed.appearancePreview).toBeVisible();
+    // The harness-absent hex selector is present (attached) even though inert.
+    await expect(ed.paintHex).toBeAttached();
+  });
+
+  test('the own-rolled swatch radiogroup is driveable — a click selects (aria-checked flips)', async ({
+    page,
+  }) => {
+    const ed = new TeslaEditorPage(page);
+    await ed.openAt('done');
+    await ed.paintSwatch('red').click();
+    await expect(ed.paintSwatch('red')).toHaveAttribute('aria-checked', 'true');
+    // Swatches clear the ≥44×44 target floor (kiosk-distance a11y).
+    const box = await ed.paintSwatch('red').boundingBox();
+    expect(box!.width).toBeGreaterThanOrEqual(44);
+    expect(box!.height).toBeGreaterThanOrEqual(44);
+  });
+
+  test('the preview re-skin transitions by default and is CUT under prefers-reduced-motion', async ({
+    page,
+  }) => {
+    const ed = new TeslaEditorPage(page);
+
+    await page.emulateMedia({ reducedMotion: 'no-preference' });
+    await ed.openAt('done');
+    await expect(ed.appearancePreview).toBeVisible();
+    expect(
+      await ed.appearancePreview.evaluate((el) => getComputedStyle(el).transitionDuration)
+    ).not.toBe('0s'); // a real decorative transition
+
+    await page.emulateMedia({ reducedMotion: 'reduce' });
+    await ed.openAt('done');
+    await expect(ed.appearancePreview).toBeVisible();
+    expect(
+      await ed.appearancePreview.evaluate((el) => getComputedStyle(el).transitionDuration)
+    ).toBe('0s'); // instant cut, no info lost (CAP-6)
+  });
+
+  // Gap: D-9.12-1 "two homes, one component" — the section the normal form pins is
+  // the SAME one the wizard Step-3 renders. The prior tests only opened the normal
+  // form ('done'); this drives the wizard branch so both surfaces are covered.
+  test('the wizard Step-3 (Appearance) hosts the same three pickers + live preview', async ({
+    page,
+  }) => {
+    const ed = new TeslaEditorPage(page);
+    await ed.open(); // fresh wizard at Detect
+    await ed.clickNext(); // Detect → Confirm
+    await ed.clickNext(); // Confirm → Appearance (Step 3)
+    await expect(ed.step(2)).toHaveClass(/current/);
+    await expect(ed.appearanceSection).toBeVisible();
+    await expect(ed.paintSwatch('blue')).toBeVisible();
+    await expect(ed.themeOption('auto')).toBeVisible();
+    await expect(ed.panelChooser).toBeVisible();
+    await expect(ed.appearancePreview).toBeVisible();
+  });
+
+  // Gap: the own-rolled Auto/Light/Dark segmented radiogroup is measurable/driveable
+  // in-browser (story Task 8). A Light pick flips aria-checked, re-skins the live
+  // preview frame (card-only theme mechanism), and writes the optional override key.
+  test('a theme pick (Light) flips the segmented control, re-skins the preview, and writes appearance.theme', async ({
+    page,
+  }) => {
+    const ed = new TeslaEditorPage(page);
+    await ed.openAt('done');
+    await expect(ed.themeOption('auto')).toHaveAttribute('aria-checked', 'true'); // Auto = default
+    await expect(ed.appearancePreview).not.toHaveClass(/light/); // dark by default
+
+    await ed.themeOption('light').click();
+    await expect(ed.themeOption('light')).toHaveAttribute('aria-checked', 'true');
+    await expect(ed.themeOption('auto')).toHaveAttribute('aria-checked', 'false'); // single-select
+    await expect(ed.appearancePreview).toHaveClass(/light/); // the preview frame flipped light
+
+    const cfg = await ed.lastConfig();
+    expect((cfg!.appearance as { theme?: string } | undefined)?.theme).toBe('light'); // override persisted
+  });
+
+  // Gap: the ↺ reset affordance the dev added (appearanceReset locator) was never
+  // exercised. It is present ONLY once a key is set, and Auto deletes + prunes the
+  // override byte-for-byte (the _emit-REPLACE reset discipline).
+  test('the reset appears only once a theme override is set, and Auto deletes it', async ({
+    page,
+  }) => {
+    const ed = new TeslaEditorPage(page);
+    await ed.openAt('done');
+    const baseline = await ed.appearanceReset.count(); // resets shown only for already-set keys
+
+    await ed.themeOption('dark').click(); // set an override → its reset appears
+    await expect(ed.appearanceReset).toHaveCount(baseline + 1);
+    expect((await ed.lastConfig())!.appearance).toBeDefined();
+
+    await ed.themeOption('auto').click(); // Auto = delete the key + prune empty appearance
+    await expect(ed.appearanceReset).toHaveCount(baseline);
+    await expect(ed.themeOption('auto')).toHaveAttribute('aria-checked', 'true');
+    const cfg = await ed.lastConfig();
+    expect((cfg!.appearance as { theme?: string } | undefined)?.theme).toBeUndefined(); // override gone
+  });
+
+  // Gap: the present-gated default-panel chooser is a real native <select> — the one
+  // pick that is fully driveable in-browser. Picking writes config.default_panel.
+  test('the default-panel chooser is a driveable native select that writes default_panel', async ({
+    page,
+  }) => {
+    const ed = new TeslaEditorPage(page);
+    await ed.openAt('done');
+    await expect(ed.panelChooser).toBeVisible();
+    await ed.panelChooser.selectOption('climate');
+    expect((await ed.lastConfig())!.default_panel).toBe('climate'); // the pick reached Lovelace
+  });
+
+  // Gap: the swatch grid is an own-rolled radiogroup with roving tabindex — keyboard
+  // arrow traversal both moves focus AND advances the selection (a11y floor, kiosk).
+  test('the paint swatch radiogroup is arrow-key traversable (roving tabindex)', async ({
+    page,
+  }) => {
+    const ed = new TeslaEditorPage(page);
+    await ed.openAt('done');
+    await ed.paintSwatch('blue').click();
+    await expect(ed.paintSwatch('blue')).toHaveAttribute('aria-checked', 'true');
+
+    await ed.paintSwatch('blue').focus();
+    await page.keyboard.press('ArrowRight'); // blue → black (next in the grid)
+    await expect(ed.paintSwatch('black')).toHaveAttribute('aria-checked', 'true');
+    await expect(ed.paintSwatch('blue')).toHaveAttribute('aria-checked', 'false');
+    await expect(ed.paintSwatch('black')).toBeFocused(); // focus rode the selection
+  });
+});

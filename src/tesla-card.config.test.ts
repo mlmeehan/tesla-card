@@ -277,6 +277,68 @@ describe('Story 9.1 — energy.nodes is additive/optional/tolerated (no consumpt
   });
 });
 
+describe('Story 9.12 — appearance.theme is additive/tolerated + reflects onto the host', () => {
+  test('appearance.theme: tolerated, preserved on _config, renders (forward-compat)', async () => {
+    const el = makeCard();
+    el.setConfig({
+      type: 'custom:tesla-card',
+      appearance: { theme: 'light', future_sub: 1 },
+    } as unknown as TeslaCardConfig);
+    el.hass = fullHass();
+    await expect(el.updateComplete).resolves.toBeDefined();
+    expect(hasRoot(el)).toBe(true);
+    // The spread keeps appearance + its unknown sub-keys intact (R9).
+    expect(el._config?.appearance).toEqual({ theme: 'light', future_sub: 1 });
+    el.remove();
+  });
+
+  test("theme='light' reflects a host theme attribute; absent ⇒ no attribute (dark default)", async () => {
+    const el = makeCard();
+    el.setConfig({ type: 'custom:tesla-card', appearance: { theme: 'light' } } as TeslaCardConfig);
+    el.hass = fullHass();
+    await el.updateComplete;
+    expect((el as unknown as HTMLElement).getAttribute('theme')).toBe('light');
+
+    // Switch to dark → attribute follows.
+    el.setConfig({ type: 'custom:tesla-card', appearance: { theme: 'dark' } } as TeslaCardConfig);
+    await el.updateComplete;
+    expect((el as unknown as HTMLElement).getAttribute('theme')).toBe('dark');
+
+    // Auto (absent) → attribute removed (byte-identical dark default).
+    el.setConfig({ type: 'custom:tesla-card' } as TeslaCardConfig);
+    await el.updateComplete;
+    expect((el as unknown as HTMLElement).hasAttribute('theme')).toBe(false);
+    el.remove();
+  });
+
+  test('a garbage appearance.theme does NOT reflect (degrades to Auto, never throws — FR-24)', async () => {
+    const el = makeCard();
+    expect(() =>
+      el.setConfig({
+        type: 'custom:tesla-card',
+        appearance: { theme: 'banana' },
+      } as unknown as TeslaCardConfig)
+    ).not.toThrow();
+    el.hass = fullHass();
+    await el.updateComplete;
+    expect(hasRoot(el)).toBe(true);
+    expect((el as unknown as HTMLElement).hasAttribute('theme')).toBe(false);
+    el.remove();
+  });
+
+  test('a garbage non-object appearance does not throw and does not reflect', async () => {
+    const el = makeCard();
+    expect(() =>
+      el.setConfig({ type: 'custom:tesla-card', appearance: 'nope' } as unknown as TeslaCardConfig)
+    ).not.toThrow();
+    el.hass = fullHass();
+    await el.updateComplete;
+    expect(hasRoot(el)).toBe(true);
+    expect((el as unknown as HTMLElement).hasAttribute('theme')).toBe(false);
+    el.remove();
+  });
+});
+
 describe('AC3 — editor setConfig is equally tolerant', () => {
   test('unknown/future keys: editor setConfig does not throw and preserves them', async () => {
     const el = makeEditor();

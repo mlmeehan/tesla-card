@@ -15,6 +15,7 @@ import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import type {
   TeslaCardConfig,
+  AppearanceConfig,
   PanelId,
   EnergyConfig,
   TyresConfig,
@@ -48,6 +49,7 @@ describe('AC1 — types.ts is the PUBLIC TeslaCardConfig surface only (E9/AR-14)
     // a re-added internal enum — fails here, the E9 "only public type" guard.
     expect(exportedDecls()).toEqual(
       [
+        'AppearanceConfig',
         'BodyLayers',
         'EnergyConfig',
         'HassEntity',
@@ -136,6 +138,22 @@ describe('AC2 — the D2/D3/D6 additions are one reviewed, coherent delta', () =
     // The contract a future epic's field relies on (R9) is stated in the JSDoc.
     expect(typesSrc()).toMatch(/forward-compat/i);
     expect(typesSrc()).toMatch(/unknown keys[\s*]+are TOLERATED/i);
+  });
+});
+
+describe('Story 9.12 — appearance.theme is an ADDITIVE, optional, card-only override', () => {
+  test('AppearanceConfig.theme is the optional light/dark union (Auto = absent)', () => {
+    expectTypeOf<AppearanceConfig['theme']>().toEqualTypeOf<'light' | 'dark' | undefined>();
+    // A bare `{}` is a valid appearance (omit ⇒ Auto, today's behaviour, SM-C4).
+    expectTypeOf<Record<string, never>>().toMatchTypeOf<AppearanceConfig>();
+  });
+
+  test('appearance hangs OPTIONALLY off the public config root (config.appearance?)', () => {
+    expectTypeOf<TeslaCardConfig['appearance']>().toEqualTypeOf<AppearanceConfig | undefined>();
+    // Paint + default panel KEEP their existing top-level homes (zero card change) —
+    // `appearance` carries only the net-new `theme`, never a parallel paint/panel.
+    expectTypeOf<TeslaCardConfig['paint']>().not.toBeUndefined();
+    expectTypeOf<TeslaCardConfig['default_panel']>().toEqualTypeOf<PanelId | undefined>();
   });
 });
 

@@ -1,4 +1,35 @@
-import { css } from 'lit';
+import { css, unsafeCSS } from 'lit';
+
+/**
+ * Card-only LIGHT theme token overrides (Story 9.12 / D-9.12-2). The SINGLE
+ * source for the light palette: both the card host's `:host([theme='light'])`
+ * rule below AND the editor's live appearance preview (`editor.ts`) read THIS
+ * map, so the two can never diverge (pinned in `styles.test.ts`). Only the
+ * COLOUR tokens flip — the dark `:host` default re-resolves to dark-alpha
+ * surfaces + dark ink on a light ground (the mock's `.card.light` palette mapped
+ * onto the `--tc-*` names). The semantic ACCENTS (blue/green/amber/red/purple/
+ * orange/teal/copper) are deliberately NOT re-listed: each owns one suite-wide
+ * meaning and reads on both grounds, so they stay byte-identical across themes.
+ */
+export const LIGHT_TOKENS: Record<string, string> = {
+  '--tc-text': '#101725',
+  '--tc-text-dim': '#4a5568',
+  '--tc-text-mute': '#7a879b',
+  '--tc-surface': 'rgba(10, 14, 26, 0.04)',
+  '--tc-surface-2': 'rgba(10, 14, 26, 0.07)',
+  '--tc-surface-3': 'rgba(10, 14, 26, 0.1)',
+  '--tc-border': 'rgba(10, 14, 26, 0.1)',
+  '--tc-border-strong': 'rgba(10, 14, 26, 0.18)',
+};
+
+// The `:host([theme='light'])` body, generated from LIGHT_TOKENS so the host rule
+// and the editor preview never drift. `unsafeCSS` is safe here — the values are
+// build-time literals from the map above, never user input.
+const lightTokenBlock = unsafeCSS(
+  Object.entries(LIGHT_TOKENS)
+    .map(([k, v]) => `${k}: ${v};`)
+    .join('\n    ')
+);
 
 /**
  * Semantic accent contract (DESIGN.md §Colors). Each accent carries ONE
@@ -234,6 +265,20 @@ export const tokens = css`
        This is the contract, NOT the --tc-border-strong hairline. */
     --tc-focus: 2px solid var(--tc-blue, #38bdf8);
     --tc-focus-offset: 2px;
+  }
+
+  /* ── card-only Light theme override (Story 9.12 / D-9.12-2) ───────────────
+     Re-resolves ONLY the colour tokens to the light palette when the card host
+     carries theme=light (reflected from config.appearance.theme by tesla-card.ts).
+     Because the tokens set is applied once on the host and inherits through shadow
+     DOM, this override cascades to every tc-* child automatically — no per-child
+     edit. Card-only: it touches the card's OWN --tc-* tokens, never a global HA
+     theme var, so the dashboard chrome is untouched. Dark is the default :host
+     above; an absent attribute is byte-identical to today. The accents are
+     intentionally NOT re-listed (semantic, ground-independent). The body is
+     single-sourced from LIGHT_TOKENS (shared with the editor preview). */
+  :host([theme='light']) {
+    ${lightTokenBlock}
   }
 `;
 

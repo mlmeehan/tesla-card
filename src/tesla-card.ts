@@ -111,6 +111,28 @@ export class TeslaCard extends LitElement implements LovelaceCard {
     if (changed.has('hass') || changed.has('_config')) this._resolve();
   }
 
+  /**
+   * The card-only theme override (Story 9.12 / D-9.12-2), read defensively
+   * (FR-24): only the exact `'light'`/`'dark'` strings count — anything else
+   * (absent / garbage / a future value) degrades to Auto (⇒ no attribute ⇒
+   * today's fixed dark default).
+   */
+  private _resolvedTheme(): 'light' | 'dark' | undefined {
+    const t = (this._config?.appearance as { theme?: unknown } | undefined)?.theme;
+    return t === 'light' || t === 'dark' ? t : undefined;
+  }
+
+  // Reflect the resolved theme onto the card's OWN host attribute. The
+  // `:host([theme='light'])` rule (styles.ts) then re-resolves the --tc-* colour
+  // tokens for THIS card's surfaces only — never a global HA theme-var write, so
+  // the surrounding dashboard chrome is untouched. Auto/absent ⇒ remove the
+  // attribute ⇒ the dark default is byte-identical to today.
+  protected override updated(): void {
+    const t = this._resolvedTheme();
+    if (t) this.setAttribute('theme', t);
+    else this.removeAttribute('theme');
+  }
+
   /** Resolve entities by stable function-name; memoised on registry/config. */
   private _resolve(): void {
     if (!this._config) return;

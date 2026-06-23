@@ -195,6 +195,25 @@ export interface TyresConfig {
 }
 
 /**
+ * Card appearance overrides (Story 9.12 / CAP-5 Pillar 3 — the "Make it yours"
+ * surface). Additive, optional, snake_case-clean, R9-tolerated. Holds ONLY the
+ * net-new `theme` key — paint reuses the top-level {@link TeslaCardConfig.paint}
+ * home and the default panel reuses {@link TeslaCardConfig.default_panel}, so
+ * those need zero card change (the picker writes the existing keys directly).
+ */
+export interface AppearanceConfig {
+  /**
+   * Card-only light/dark override (D-9.12-2). OMITTED ⇒ Auto: the card keeps its
+   * today's behaviour (the fixed dark token set) and writes no key. `'light'` /
+   * `'dark'` reflect onto the card's OWN host `theme` attribute, which re-resolves
+   * the `--tc-*` colour tokens for this card's surfaces ONLY — never a global HA
+   * theme-var write, so the surrounding dashboard chrome is untouched. Any other
+   * value degrades to Auto (FR-24) — `setConfig` never throws on it.
+   */
+  theme?: 'light' | 'dark';
+}
+
+/**
  * @unstable — the published Layer contract (FR-7). PUBLIC SURFACE; its freeze is
  * a one-way door (architecture.md D6), so this shape MAY change before it freezes
  * — bring-your-own pack authors (Story 3.7) must expect it to shift. The
@@ -296,6 +315,13 @@ export interface TeslaCardConfig {
    * `image` mode ignores it. Defaults to a neutral silver.
    */
   paint?: string | PaintSource;
+  /**
+   * Card appearance overrides (Story 9.12). Today holds only the optional, card-
+   * only `theme` override (Auto = absent); paint + default panel keep their own
+   * top-level homes. Additive / R9-tolerated — an absent `appearance` is byte-for-
+   * byte today's config. See {@link AppearanceConfig}.
+   */
+  appearance?: AppearanceConfig;
 
   // ── Entity resolution ─────────────────────────────────────────────────────
   /**
