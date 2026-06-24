@@ -560,7 +560,10 @@ test.describe('tc-my-home Scene — Gateway bus, ribbon, focus & reflow (6.6)', 
         }),
       );
     expect(srcXs).toHaveLength(2);
-    expect(Math.abs(srcXs[1] - srcXs[0])).toBeLessThan(380 + 80 + 40); // adjacent, no 380px dead column
+    // Story 11.3: under the CAPPED fluid track a 2-card row grows past 380 toward the ~560
+    // cap, so adjacent centres sit up to ~(cap + gap) ≈ 640 apart — still ONE packed column
+    // apart, far under a dropped-cell gap (a dead column would be ~2×(track+gap) ≈ 1150).
+    expect(Math.abs(srcXs[1] - srcXs[0])).toBeLessThan(560 + 80 + 60); // adjacent, no dead column
 
     // The trunk re-routes around the gap and stays horizontal on the wide desktop.
     const t = await trunkLine(page);
@@ -706,9 +709,9 @@ test.describe('tc-my-home Scene — Story 8.5 vehicle node (live layout)', () =>
     expect(cx.wc < cx.veh ? seg.x2 > seg.x1 : seg.x2 < seg.x1).toBe(true);
   });
 
-  // ── AC6/AC9 — the compact embed fits the 380px load-row track (the variant's reason) ─
+  // ── AC6/AC9 — the compact embed fits its (now fluid) load-row track (the variant's reason) ─
 
-  test('AC6/AC9 — the compact vehicle cell fits the 380px track (width parity, no overflow, ≥44×44)', async ({
+  test('AC6/AC9/AC7(11.3) — the compact vehicle cell fits its fluid track (width parity, ≥380 floor, ≤cap, no overflow, ≥44×44)', async ({
     page,
   }) => {
     await mountScene(page);
@@ -718,14 +721,18 @@ test.describe('tc-my-home Scene — Story 8.5 vehicle node (live layout)', () =>
     const wcBox = await wcCell(page).boundingBox();
     expect(vehBox).not.toBeNull();
     expect(wcBox).not.toBeNull();
-    // The cell is PINNED to the 380px grid track — not merely "as wide as the WC cell"
-    // (that parity is trivially true since both are fixed 380px tracks and tells us
-    // nothing). The compact card must NOT widen its cell past the column: the host's own
-    // 1080px .root cap must not apply once width:100% fills the track. jsdom collapses
-    // every box to 0, so only a REAL layout catches a re-widening regression.
-    expect(Math.abs(vehBox!.width - wcBox!.width)).toBeLessThanOrEqual(2);
-    expect(vehBox!.width).toBeGreaterThanOrEqual(378);
-    expect(vehBox!.width).toBeLessThanOrEqual(382);
+    // The cell tracks its GRID column — not merely "as wide as the WC cell" in the abstract,
+    // but the SAME fluid track (parity is the strongest invariant: both share one
+    // `minmax(380px, 560px)` track, so they stay equal at any column width). The compact
+    // card must NOT widen its cell past the column: the host's own 1080px .root cap must not
+    // apply once width:100% fills the track. jsdom collapses every box to 0, so only a REAL
+    // layout catches a re-widening regression.
+    // Story 11.3 (AC7): the cell is no longer PINNED to a fixed 380 — under the fluid track
+    // it GROWS with the column up to the cap. So the bound is the contract band: ≥380 floor
+    // (never below standalone size) ∧ ≤ the ~560 cap (never the unbounded balloon).
+    expect(Math.abs(vehBox!.width - wcBox!.width)).toBeLessThanOrEqual(2); // same fluid track
+    expect(vehBox!.width).toBeGreaterThanOrEqual(378); // the 380px floor (− sub-px tolerance)
+    expect(vehBox!.width).toBeLessThanOrEqual(562); // the ~560px cap (+ sub-px tolerance)
     // No horizontal overflow at EITHER scope the variant must keep inside the track: the
     // CELL itself (it would scroll if the card content forced it wider than the 380px
     // track) AND the embedded card's inner .root (it would scroll if the hero/status
@@ -746,6 +753,59 @@ test.describe('tc-my-home Scene — Story 8.5 vehicle node (live layout)', () =>
     // The a11y floor — the focusable cell stays ≥44×44.
     expect(vehBox!.width).toBeGreaterThanOrEqual(44);
     expect(vehBox!.height).toBeGreaterThanOrEqual(44);
+  });
+
+  // ── Story 11.3 — fluid full-width Scene: cards GROW to fill a wide column (capped),
+  //    surplus reads as symmetric margin (centred-calm), the bus still spans, the vehicle
+  //    cell scales with its track. jsdom collapses layout to zero, so a REAL browser at a
+  //    wide host is the only place this geometry is observable (AC1/AC2/AC5/AC7). ───────
+  test('AC1/AC2/AC7(11.3) — on a WIDE column the tracks grow to the ~560 cap, surplus reads as symmetric margin (centred-calm, not left-jammed), the vehicle scales, the bus spans', async ({
+    page,
+  }) => {
+    // A column far wider than the packed content (3×560 + gaps ≈ 1840) so the tracks hit
+    // the cap AND leave real surplus to distribute as margin.
+    await mountScene(page, { width: 2200 });
+    await waitForTrunk(page);
+
+    const geo = await scene(page).evaluate((el) => {
+      const root = (el as HTMLElement).shadowRoot!;
+      const grid = root.querySelector('.scene-grid') as HTMLElement;
+      const row = root.querySelector('.source-row') as HTMLElement;
+      const rowCells = [...row.querySelectorAll('.scene-cell')] as HTMLElement[];
+      const g = grid.getBoundingClientRect();
+      const first = rowCells[0].getBoundingClientRect();
+      const last = rowCells[rowCells.length - 1].getBoundingClientRect();
+      return {
+        widths: rowCells.map((c) => c.getBoundingClientRect().width),
+        leftGap: first.left - g.left,
+        rightGap: g.right - last.right,
+        rowOverflow: row.scrollWidth - row.clientWidth,
+      };
+    });
+    // AC1: every card grew well past the 380 floor toward the cap, but NONE exceeds the
+    // ~560 cap — the capped fluid track, never the unbounded `1fr` balloon.
+    expect(geo.widths.length).toBeGreaterThan(0);
+    for (const w of geo.widths) {
+      expect(w).toBeGreaterThan(500); // grew past the 380 floor toward the cap
+      expect(w).toBeLessThanOrEqual(562); // capped (~560 + sub-px tolerance)
+    }
+    // AC2: surplus → MARGIN on BOTH sides (centred-calm), not a left-jammed row. Real margin
+    // on each side, and the two margins are ~symmetric.
+    expect(geo.leftGap).toBeGreaterThan(40);
+    expect(geo.rightGap).toBeGreaterThan(40);
+    expect(Math.abs(geo.leftGap - geo.rightGap)).toBeLessThan(40);
+    expect(geo.rowOverflow).toBeLessThanOrEqual(1); // no horizontal scroll — surplus is margin, not overflow
+
+    // AC7: the compact vehicle cell scaled WITH its track (grew past the floor, no overflow).
+    const vehBox = await vehCell(page).boundingBox();
+    expect(vehBox!.width).toBeGreaterThan(500);
+    expect(vehBox!.width).toBeLessThanOrEqual(562);
+    const vehOverflow = await vehCell(page).evaluate((c) => c.scrollWidth - c.clientWidth);
+    expect(vehOverflow).toBeLessThanOrEqual(1);
+
+    // AC6: the Gateway bus still spans the (now wider) Scene — one trunk rail, real length.
+    const t = await trunkLine(page);
+    expect(Math.abs(t.x2 - t.x1)).toBeGreaterThan(200);
   });
 
   // ── AC1/AC2 — focus coupling as REAL computed opacity (jsdom can't see this) ───
@@ -1021,6 +1081,190 @@ test.describe('tc-my-home Scene — Story 8.12: gw-term anchors at the card visi
     await mountScene(page, { width: 460 });
     await waitForTrunk(page);
     await expect(scene(page).locator('.gw-leg-base.long')).toHaveCount(0);
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Story 11.3 — fluid full-width Scene: the invariants that ONLY break at a WIDE
+// (capped) layout. The dev-authored 11.3 e2e (`:714`/`:762`) proves the capped-track
+// grow + surplus→margin + vehicle-scales contract at width 2200. This block is the QA
+// gap layer: it pins the three invariants the AC text calls "load-bearing" but the
+// existing wide-column test does NOT exercise at the cap —
+//   • AC3 — the bus-Y / `align-items:start` invariant survives the `.scene-grid`
+//     center→stretch flip AT a wide track (the existing 8.12 ragged-bottom proof runs
+//     at the 1100px FLOOR, where the flip is inert; the risk only materialises once the
+//     tracks actually grow and `stretch` is live).
+//   • AC5a/AC5b — the TWO width-relative geometry values at the CAP: the existing wrap
+//     comb (`:1462`) runs at width 1400 (a ~400px mid-fluid track); here the band wraps
+//     at width 2200 so the track hits the ~560 cap, the `(track+80)/2` channel offset
+//     reaches its widest, and the `.long` threshold scales with it.
+//   • AC4 — the standalone `tesla-card` keeps its 1080px-centred cap at a wide host
+//     (the Scene's fluidity must not leak to the standalone card — the live witness of
+//     the `tesla-card.ts:286` do-not-touch guard, complementing the a11y unit pin).
+// jsdom collapses every rect to zero + applies no stylesheet, so a REAL browser at a
+// wide host is the only place this geometry is observable. Under the console guard.
+// ═══════════════════════════════════════════════════════════════════════════
+test.describe('tc-my-home Scene — Story 11.3: fluid-width invariants (at the cap)', () => {
+  test.beforeEach(async ({ demo }) => {
+    await demo.open(AWAKE.open);
+  });
+
+  test('AC3 — at a WIDE (capped) track the bus-Y invariant holds: rows stay `align-items:start` under the `.scene-grid` stretch flip, so each source terminal still anchors at its OWN visible bottom (ragged, not ballooned)', async ({
+    page,
+  }) => {
+    // Width 2200 → the 3-source row hits the ~560 cap, so `stretch` on `.scene-grid` is
+    // LIVE (unlike the 1100px floor where the row is content-width and the flip is inert).
+    await mountScene(page, { width: 2200 });
+    await waitForTrunk(page);
+
+    // The two `align-items` do OPPOSITE jobs and must read as the AC3 contract: the GRID
+    // container stretches the rows to fill the width, but each ROW keeps `start` so cells
+    // shrink to their content (the 8.12 bus-Y invariant). Clobbering the row to `stretch`
+    // is the precise regression this guards.
+    const align = await scene(page).evaluate((el) => {
+      const root = (el as HTMLElement).shadowRoot!;
+      const gridEl = root.querySelector('.scene-grid') as HTMLElement;
+      const rowEl = root.querySelector('.source-row') as HTMLElement;
+      return {
+        grid: getComputedStyle(gridEl).alignItems,
+        row: getComputedStyle(rowEl).alignItems,
+      };
+    });
+    expect(align.grid).toBe('stretch'); // AC2 — rows fill the grid width
+    expect(align.row).toBe('start'); // AC3 — cells shrink to content (bus-Y invariant)
+
+    // RAGGED bottoms are the red→green discriminator: with `start` the source cells end at
+    // their OWN content bottoms (a real spread); had the flip clobbered the row to `stretch`
+    // every cell would balloon to the tallest's height → one shared bottom → spread ≈ 0.
+    const geom = await scene(page).evaluate((el) => {
+      const root = (el as HTMLElement).shadowRoot!;
+      const sceneTop = root.querySelector('.scene')!.getBoundingClientRect().top;
+      const sourceCells = [...root.querySelectorAll<HTMLElement>('.source-row .scene-cell')];
+      const bottoms = sourceCells.map((c) => {
+        const r = c.getBoundingClientRect();
+        return { node: c.dataset.node, bottom: r.bottom - sceneTop, width: r.width };
+      });
+      return { bottoms };
+    });
+    const bottoms = geom.bottoms.map((b) => b.bottom);
+    const spread = Math.max(...bottoms) - Math.min(...bottoms);
+    expect(geom.bottoms.length).toBeGreaterThanOrEqual(2);
+    expect(spread).toBeGreaterThan(20); // ragged → `start` survived the grid stretch flip
+    // Tracks genuinely grew (the flip is LIVE, not inert at the floor).
+    for (const b of geom.bottoms) expect(b.width).toBeGreaterThan(500);
+
+    // AC3 — the terminal of the SHORTEST source anchors at THAT card's own visible bottom
+    // (not the row's ballooned bottom). `cy` IS the cell near edge `rect.top + rect.height`.
+    const shortest = geom.bottoms.reduce((a, b) => (a.bottom < b.bottom ? a : b));
+    const termCy = Number(
+      await scene(page)
+        .locator(`.gw-leg[data-role="${shortest.node}"] .gw-term`)
+        .first()
+        .getAttribute('cy'),
+    );
+    expect(Math.abs(termCy - shortest.bottom)).toBeLessThanOrEqual(5);
+    // …and that terminal sits well ABOVE the tallest source's bottom — no dead ballooned gap.
+    expect(termCy).toBeLessThan(Math.max(...bottoms) - 20);
+  });
+
+  test('AC5a/AC5b — at the CAP the wrap band still combs: the `(track+80)/2` channel offset scales so the overflow leg lands in a channel (no crossing) and earns `.long`', async ({
+    page,
+  }) => {
+    // Duplicate solar → 4 sources → the band WRAPS, AND width 2200 drives the primary
+    // track to the ~560 cap (so the channel offset = (560+80)/2 ≈ 320, its widest — the
+    // existing 1400px comb test only reaches a ~400px track / ~240px offset).
+    await mountScene(page, {
+      width: 2200,
+      config: { energy: { nodes: { instances: { solar: [{}, {}] } } } },
+    });
+    await waitForTrunk(page);
+
+    const band = scene(page).locator('.source-row');
+    await expect(band).toHaveClass(/wrapped/);
+    const primaryCells = scene(page).locator('.subrow.primary .scene-cell');
+    const overflowCells = scene(page).locator('.subrow.overflow .scene-cell');
+    await expect(primaryCells).toHaveCount(3);
+    await expect(overflowCells).toHaveCount(1);
+
+    // The primary track hit the cap — this is the cap-width comb, not the mid-fluid one.
+    const primaryBoxes = await primaryCells.evaluateAll((cs) =>
+      cs.map((c) => {
+        const r = c.getBoundingClientRect();
+        return { left: r.left, right: r.right, width: r.width };
+      }),
+    );
+    for (const b of primaryBoxes) {
+      expect(b.width).toBeGreaterThan(500); // grew toward the cap
+      expect(b.width).toBeLessThanOrEqual(562); // capped, never the unbounded balloon
+    }
+
+    // ONE horizontal trunk (AR-7 — a 2nd tap-Y + longer legs, never a 2nd trunk).
+    await expect(trunk(page)).toHaveCount(1);
+    const t = await trunkLine(page);
+    expect(Math.abs(t.y1 - t.y2)).toBeLessThanOrEqual(1);
+
+    // AC5a — NO-CROSS at the CAP: the overflow card's centre-x (where its leg drops) lands
+    // in a CHANNEL between primary cards. This only holds if the `--subrow-offset` scaled
+    // with the wider track; a stale 230px offset would mis-centre the comb at this width.
+    const overflowCenterX = await overflowCells.first().evaluate((c) => {
+      const r = c.getBoundingClientRect();
+      return r.left + r.width / 2;
+    });
+    for (const b of primaryBoxes) {
+      expect(
+        overflowCenterX < b.left - 1 || overflowCenterX > b.right + 1,
+        `overflow centre ${overflowCenterX} must sit in a channel, not within [${b.left},${b.right}]`,
+      ).toBe(true);
+    }
+
+    // AC5b — the longer comb legs span well past the fluid `.long` threshold (which itself
+    // scaled with the track) → at least one `.long` leg; the threshold needed no manual retune.
+    await expect(scene(page).locator('.gw-leg-base.long')).not.toHaveCount(0);
+  });
+
+  test('AC4 — the standalone `tesla-card` keeps its 1080px-centred cap at a WIDE host (the Scene fluidity does NOT leak to the standalone card)', async ({
+    page,
+  }) => {
+    // The Scene is fluid; the standalone card is NOT — its `.root` max-width:1080px +
+    // margin:0 auto (tesla-card.ts:286, do-not-touch) must hold even in a 2200px column.
+    // Mount a fresh standalone `tesla-card` into a wide host, fed the demo's own hass.
+    await page.evaluate(() => {
+      document.getElementById('standalone-host')?.remove();
+      const src = document.querySelector('tesla-card') as unknown as { hass: unknown };
+      const host = document.createElement('div');
+      host.id = 'standalone-host';
+      host.style.cssText = 'width:2200px;padding:16px;box-sizing:border-box;';
+      document.body.prepend(host);
+      window.scrollTo(0, 0);
+      const card = document.createElement('tesla-card') as unknown as {
+        id: string;
+        setConfig(c: unknown): void;
+        hass: unknown;
+      };
+      card.id = 'standalone-card';
+      card.setConfig({ type: 'custom:tesla-card' });
+      card.hass = src.hass;
+      host.appendChild(card as unknown as HTMLElement);
+    });
+
+    const probe = await page
+      .locator('#standalone-card')
+      .evaluate((card: HTMLElement) => {
+        const root = card.shadowRoot!.querySelector('.root') as HTMLElement;
+        const cr = card.getBoundingClientRect();
+        const rr = root.getBoundingClientRect();
+        return {
+          rootWidth: rr.width,
+          leftMargin: rr.left - cr.left,
+          rightMargin: cr.right - rr.right,
+        };
+      });
+    // Capped at 1080 (+ sub-px tolerance), NOT widened to the 2200 host like the Scene.
+    expect(probe.rootWidth).toBeLessThanOrEqual(1081);
+    // Centred — real margin on both sides, ~symmetric (margin:0 auto, not left-jammed).
+    expect(probe.leftMargin).toBeGreaterThan(40);
+    expect(probe.rightMargin).toBeGreaterThan(40);
+    expect(Math.abs(probe.leftMargin - probe.rightMargin)).toBeLessThan(40);
   });
 });
 

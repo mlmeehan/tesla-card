@@ -399,26 +399,31 @@ describe('AC1 — the summary ribbon above the explicit two-row grid', () => {
     expect(txt).toContain(STRINGS.scene.ribbon.tile.home);
   });
 
-  test('the grid PACKS present cards into two centred rows (380px tracks / 80px gap, not role-fixed)', () => {
+  test('the grid PACKS present cards into two centred rows (capped fluid tracks / 80px gap, not role-fixed)', () => {
     // Story 6.7: the 6.6 role-fixed `grid-template-areas` + fixed `380px 380px
     // 380px` track (which left a 380px ghost cell for an absent node) is RETIRED
     // for present-set-driven packed row-groups — each row `grid-auto-flow:column`
-    // over `380px` tracks with the `80px` bus-channel gap. The 380px card width +
-    // 80px gap + the phone breakpoint are preserved; the ghost-cell source is gone.
+    // over fluid tracks with the `80px` bus-channel gap. The ghost-cell source is gone.
+    // Story 11.3 (D-11.3-1): the fixed `380px` track becomes a CAPPED fluid
+    // `minmax(380px, var(--scene-track-max, 560px))` — the 380px FLOOR is preserved (a
+    // card never shrinks below standalone size), but cards grow to fill a wide column up
+    // to the cap (surplus → margin, never `1fr`). The 80px gap + phone breakpoint stay.
     const flatten = (s: unknown): string =>
       Array.isArray(s)
         ? s.map(flatten).join('\n')
         : ((s as { cssText?: string })?.cssText ?? '');
     const cssText = flatten((TcMyHome as unknown as { styles: unknown }).styles);
-    expect(cssText).toContain('grid-auto-columns: 380px'); // packed 380px card tracks
+    expect(cssText).toContain('grid-auto-columns: minmax(380px, var(--scene-track-max, 560px))'); // capped fluid tracks, 380 floor
+    expect(cssText).not.toContain('grid-auto-columns: 380px'); // the fixed track is retired
     expect(cssText).toContain('column-gap: 80px'); // the bus channel preserved
     expect(cssText).toContain('grid-auto-flow: column'); // pack, not place-by-area
     expect(cssText).not.toContain('auto-fit');
-    // AC2 "centred canvas" — packing must CENTRE (a glance surface, not full-bleed):
-    // each row centres its present cards and the column centres the rows. Without
-    // this, a packed-but-left-aligned layout would silently pass the assertions above.
-    expect(cssText).toContain('justify-content: center'); // each row centres its cards
-    expect(cssText).toContain('align-items: center'); // the column centres the rows
+    // AC2 "centred canvas" — packing must CENTRE (a glance surface, not full-bleed): each
+    // row RETAINS `justify-content: center` so the >cap surplus distributes as symmetric
+    // outer margin (centred-calm, never left-jammed); the column STRETCHES the rows to
+    // full width (Story 11.3) so the fluid tracks size against the available width.
+    expect(cssText).toContain('justify-content: center'); // each row centres its (capped) cards
+    expect(cssText).toMatch(/\.scene-grid\s*\{[^}]*align-items:\s*stretch/); // rows fill the grid width
     // the ghost-cell sources are retired: no fixed 3-track template, no role-fixed areas.
     expect(cssText).not.toContain('380px 380px 380px');
     expect(cssText).not.toContain('grid-template-areas');
@@ -1582,21 +1587,24 @@ describe('Story 8.12 — gw-term anchors at the card visible bottom (source-row 
     return base.classList;
   };
 
-  test('Task 1/AC1/AC2 — the SOURCE row top-aligns (align-items:start) alongside the load row; the column-centering is untouched', () => {
+  test('Task 1/AC1/AC2 — the SOURCE row top-aligns (align-items:start) alongside the load row; the row bus-Y invariant survives the Story 11.3 column stretch', () => {
     const css = cssText();
     // Both rows now share ONE align-items:start rule. Before 8.12 only `.load-row {
     // align-items:start }` existed (guarded by a stale "source stretch is tuned for the
     // bus" comment), so the GROUPED `.source-row, .load-row { align-items: start }` is the
     // red->green proof of the source-row top-align (a bare toContain('align-items: start')
     // already passed on the load-row alone — it would NOT prove the source-row change).
+    // Story 11.3 (AC3): this GRID cross-axis `align-items: start` is LOAD-BEARING (the 8.12
+    // bus-Y invariant — it shrinks each cell to its content so the terminal anchors at the
+    // card's true visible bottom) and must survive the `.scene-grid` center→stretch edit.
     expect(css).toMatch(/\.source-row,\s*\.load-row\s*\{\s*align-items:\s*start/);
-    // AC2: the trunk does NOT move — bus-Y is invariant to align (the row TRACK height is
-    // the tallest card's either way). The `.scene-grid` COLUMN centering is a DIFFERENT
-    // selector and stays put (the 6.7 unit pin) — align is never flipped to center on a row.
-    // Bind the check to the `.scene-grid` rule BLOCK — a bare toContain('align-items: center')
-    // is a global substring that would pass if `align-items: center` appeared in ANY rule, so
-    // it would NOT prove the column-centering selector specifically stayed put.
-    expect(css).toMatch(/\.scene-grid\s*\{[^}]*align-items:\s*center/);
+    // Story 11.3 (AC2): the `.scene-grid` flex-column cross-axis flips center→STRETCH so the
+    // rows fill the grid width and the fluid tracks size against the available width. This is
+    // a DIFFERENT `align-items` from the rows' grid-cross-axis `start` above — proving the
+    // intended edit landed on the column WITHOUT clobbering the row invariant. Bind to the
+    // `.scene-grid` rule BLOCK so a stray `align-items` elsewhere can't mask a regression.
+    expect(css).toMatch(/\.scene-grid\s*\{[^}]*align-items:\s*stretch/);
+    expect(css).not.toMatch(/\.scene-grid\s*\{[^}]*align-items:\s*center/);
   });
 
   test('Task 3/AC3/AC5 — a `.gw-leg-base.long` polish rule exists (opacity:0.6 + stroke-width:2.5), as direct SVG literals — no new token, no gradient', () => {
@@ -1682,6 +1690,145 @@ describe('Story 8.12 — gw-term anchors at the card visible bottom (source-row 
     (el as unknown as { requestUpdate(): void }).requestUpdate();
     await el.updateComplete;
     expect(baseClasses(el, 'solar').contains('long')).toBe(false); // gated off at phone
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Story 11.3 — fluid full-width Scene layout. The pixel geometry (cards GROWING to fill
+// a wide column, the row reading centred-calm) is the e2e's job (jsdom layout is zero);
+// here we pin (a) the CAPPED-fluid CSS contract via the styles-string idiom and (b) the
+// TWO width-relative geometry DERIVATIONS — the `.long` threshold + the `--subrow-offset`
+// channel offset — by mocking the live cell rects and driving `_recomputeGeometry`
+// directly (the same inject-geometry pattern the 8.12 block uses to bypass jsdom's zero
+// layout). At the 380px floor both derivations land on their pre-11.3 literals (160 /
+// 230px), so a standalone-width Scene is byte-identical.
+// ═══════════════════════════════════════════════════════════════════════════
+describe('Story 11.3 — capped fluid tracks + width-relative geometry (AC1/AC2/AC5)', () => {
+  const flatten = (s: unknown): string =>
+    Array.isArray(s) ? s.map(flatten).join('\n') : ((s as { cssText?: string })?.cssText ?? '');
+  const css = (): string => flatten((TcMyHome as unknown as { styles: unknown }).styles);
+  const baseClasses = (el: Scene, role: string): DOMTokenList => {
+    const base = legOf(el, role)?.querySelector('.gw-leg-base') ?? null;
+    if (!base) throw new Error(`Story 11.3 test: no .gw-leg-base rendered for role="${role}"`);
+    return base.classList;
+  };
+
+  test('AC1 — the row + sub-row tracks are CAPPED fluid minmax(380px, var(--scene-track-max, 560px)); the 380 floor + 80 gap survive', () => {
+    const c = css();
+    // Both the packed rows AND the wrap sub-rows use the capped fluid track (a card never
+    // shrinks below the 380px standalone floor, never balloons past the dev-tunable cap).
+    const fluid = /grid-auto-columns:\s*minmax\(380px,\s*var\(--scene-track-max,\s*560px\)\)/g;
+    expect(c.match(fluid)?.length ?? 0).toBeGreaterThanOrEqual(2); // .source/.load-row + .subrow
+    expect(c).not.toContain('grid-auto-columns: 380px'); // the fixed track is fully retired
+    expect(c).toContain('column-gap: 80px'); // bus channel unchanged
+    expect(c).not.toContain('1fr 1fr'); // never the unbounded ultrawide balloon
+  });
+
+  test('AC2 — column STRETCHES + rows RETAIN justify-content:center; the wrapped band is fit-content+auto-margin (centred-calm, not max-content)', () => {
+    const c = css();
+    expect(c).toMatch(/\.scene-grid\s*\{[^}]*align-items:\s*stretch/); // rows fill the grid width
+    expect(c).toContain('justify-content: center'); // >cap surplus → symmetric outer margin
+    // The wrapped band is responsive (fit-content), centred as a whole (margin:0 auto), and
+    // NO LONGER frozen at max-content (which would overflow a column narrower than N×cap).
+    expect(c).toMatch(/\.source-row\.wrapped,\s*\.load-row\.wrapped\s*\{[^}]*width:\s*fit-content/);
+    expect(c).toMatch(/\.source-row\.wrapped,\s*\.load-row\.wrapped\s*\{[^}]*margin:\s*0 auto/);
+    expect(c).not.toMatch(/width:\s+max-content;/); // the declaration form is gone (comments aside)
+  });
+
+  test('AC3 — the rows KEEP the 8.12 grid-cross-axis align-items:start (bus-Y invariant survives the column stretch)', () => {
+    const c = css();
+    expect(c).toMatch(/\.source-row,\s*\.load-row\s*\{\s*align-items:\s*start/);
+    expect(c).toMatch(/\.subrow\s*\{[^}]*align-items:\s*start/);
+  });
+
+  test('AC5a — the overflow channel offset is the fluid var(--subrow-offset) with the 230px floor fallback; the lone overflow card is pinned to --scene-track; the ≤540px phone reset still wins', () => {
+    const c = css();
+    expect(c).toMatch(/\.subrow\.overflow\s*\{[^}]*padding-left:\s*var\(--subrow-offset,\s*230px\)/);
+    expect(c).not.toMatch(/\.subrow\.overflow\s*\{[^}]*padding-left:\s*230px;/); // no fixed literal
+    // The lone overflow card pins to the measured PRIMARY track so both sub-rows share one
+    // pitch (else the 1-card row balloons to the cap and its comb leg misses the channel).
+    expect(c).toMatch(/\.subrow\.overflow\s*\{[^}]*grid-auto-columns:\s*var\(--scene-track,\s*minmax\(380px,\s*var\(--scene-track-max,\s*560px\)\)\)/);
+    // The phone block (which jsdom ignores) still hard-resets the offset to 0 — the var is a
+    // STYLESHEET value, not inline, precisely so this @media rule can override it (AC8).
+    const phone = c.slice(c.indexOf('@media (max-width: 540px)'));
+    expect(phone).toMatch(/\.subrow\.overflow\s*\{[^}]*padding-left:\s*0/);
+  });
+
+  test('AC5a/b — _recomputeGeometry derives both width-relative values from the MEASURED track; at the 380 floor they are byte-identical (160 / 230px), at the 560 cap they scale', async () => {
+    const el = await mount(makeHass(states(awakeFx)));
+    await el.updateComplete;
+    await flushGeometry();
+    const inst = el as unknown as {
+      _scene: HTMLElement;
+      _longLegPx: number;
+      _recomputeGeometry(): void;
+    };
+    const driveAtTrack = (cellW: number): void => {
+      const scene = inst._scene;
+      scene.getBoundingClientRect = () =>
+        ({ width: 1600, height: 400, left: 0, top: 0, right: 1600, bottom: 400, x: 0, y: 0, toJSON: () => ({}) }) as DOMRect;
+      // Mock every present cell's live rect to the given (fluid) track width — the value
+      // _recomputeGeometry maxes over to derive the threshold + the channel offset.
+      scene.querySelectorAll<HTMLElement>('[data-node]').forEach((cell, i) => {
+        cell.getBoundingClientRect = () =>
+          ({ width: cellW, height: 200, left: i * (cellW + 80), top: 0, right: i * (cellW + 80) + cellW, bottom: 200, x: 0, y: 0, toJSON: () => ({}) }) as DOMRect;
+      });
+      inst._recomputeGeometry();
+    };
+
+    // At the 380px FLOOR: threshold === LONG_LEG_PX (160), track === 380px, offset === 230px
+    // — all byte-identical to the pre-11.3 literals.
+    driveAtTrack(380);
+    expect(inst._longLegPx).toBe(160);
+    expect(el.style.getPropertyValue('--scene-track')).toBe('380px');
+    expect(el.style.getPropertyValue('--subrow-offset')).toBe('230px');
+
+    // At the 560px CAP: all scale proportionately — round(560 × 160 / 380) = 236;
+    // track = 560px; (560 + 80) / 2 = 320px. The .long read + the comb pitch widen.
+    driveAtTrack(560);
+    expect(inst._longLegPx).toBe(236);
+    expect(el.style.getPropertyValue('--scene-track')).toBe('560px');
+    expect(el.style.getPropertyValue('--subrow-offset')).toBe('320px');
+
+    // An over-measure (or the phone full-width track) clamps into the [floor, cap] band —
+    // it never skews the derivations past the 560 cap.
+    driveAtTrack(2000);
+    expect(inst._longLegPx).toBe(236);
+    expect(el.style.getPropertyValue('--scene-track')).toBe('560px');
+    expect(el.style.getPropertyValue('--subrow-offset')).toBe('320px');
+  });
+
+  test('AC5b — the FLUID threshold actually gates `.long`: a leg between the floor (160) and the widened threshold (236) reads short at the cap', async () => {
+    const el = await mount(makeHass(states(awakeFx)));
+    await el.updateComplete;
+    await flushGeometry();
+    const inst = el as unknown as {
+      _scene: HTMLElement;
+      _anchors: Record<string, unknown>;
+      _axis: string;
+      _recomputeGeometry(): void;
+    };
+    // Widen the tracks to the cap so the threshold rises to 236.
+    inst._scene.getBoundingClientRect = () =>
+      ({ width: 1600, height: 400, left: 0, top: 0, right: 1600, bottom: 400, x: 0, y: 0, toJSON: () => ({}) }) as DOMRect;
+    inst._scene.querySelectorAll<HTMLElement>('[data-node]').forEach((cell, i) => {
+      cell.getBoundingClientRect = () =>
+        ({ width: 560, height: 200, left: i * 640, top: 0, right: i * 640 + 560, bottom: 200, x: 0, y: 0, toJSON: () => ({}) }) as DOMRect;
+    });
+    inst._recomputeGeometry();
+    await el.updateComplete;
+    // Now inject a desktop fixture whose leg length = 200: under the OLD fixed 160 threshold
+    // this would be `.long`; under the widened 236 cap-threshold it stays calm — the proof
+    // the classification followed the track width (not the frozen 160).
+    inst._anchors = {
+      solar: { left: 0, top: 0, width: 560, height: 50 }, // bottom=50, len=|50-250|=200
+      powerwall: { left: 640, top: 0, width: 560, height: 50 },
+      bus: { left: 0, top: 250, width: 0, height: 0 }, // trunk cross = 250
+    };
+    inst._axis = 'x';
+    (el as unknown as { requestUpdate(): void }).requestUpdate();
+    await el.updateComplete;
+    expect(baseClasses(el, 'solar').contains('long')).toBe(false); // 200 < 236 ⇒ calm at the cap
   });
 });
 

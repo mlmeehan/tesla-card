@@ -70,8 +70,32 @@ const GATEWAY_STROKE = '#cfe2ff';
  * stops ballooning under align-items:start, Task 1) crosses this and reads as a deliberate
  * energy conduit, resolving the Longer-Leg Paradox. A layout constant (not a brand/
  * trade-dress literal), a starting point tuned against the desktop screenshot (Task 7).
+ *
+ * Story 11.3 (D-11.3-4b): this is the BASELINE threshold, calibrated against the
+ * {@link SCENE_TRACK_MIN_PX} floor track. Under the fluid tracks (AC1) the live threshold
+ * is derived from the MEASURED track width in `_recomputeGeometry` (a computed-threshold
+ * logic change, NOT a CSS swap), so the `.long` classification stays proportionate as
+ * tracks widen — see {@link TcMyHome._longLegPx}. At the floor (380px) the derived value
+ * is exactly this constant, so the `.long` read is byte-identical at standalone width.
  */
 const LONG_LEG_PX = 160;
+
+/**
+ * Story 11.3 (D-11.3-1): the composed-Scene fluid track band. The grid tracks are
+ * `minmax(SCENE_TRACK_MIN_PX, var(--scene-track-max, SCENE_TRACK_MAX_PX))` — cards grow
+ * past the {@link SCENE_TRACK_MIN_PX} floor (never shrinking below standalone size) to
+ * fill a wide column, but STOP at the cap (surplus → margin, never the ultrawide `1fr`
+ * balloon). The cap is dev-tunable via the `--scene-track-max` custom property. These TS
+ * mirrors of the CSS literals drive the two width-relative geometry derivations (the
+ * `.subrow.overflow` channel offset and the `.long` threshold above), so a retune stays
+ * single-sourced. NOT brand/trade-dress literals — layout constants, like 380px/230px.
+ */
+const SCENE_TRACK_MIN_PX = 380;
+const SCENE_TRACK_MAX_PX = 560;
+
+/** Story 11.3: the bus channel gap (px) between the fluid tracks — the `column-gap`. The
+ *  overflow sub-row centres on a near-row channel at `(trackWidth + SCENE_BUS_GAP_PX) / 2`. */
+const SCENE_BUS_GAP_PX = 80;
 
 /**
  * The Scene's two LAYOUT rows (Story 6.6/6.7) — a fixed role partition, NOT the
@@ -248,6 +272,11 @@ export class TcMyHome extends LitElement implements LovelaceCard {
   private _anchors?: Record<string, RectLike>;
   /** The bus axis the last reflow resolved (`x` desktop horizontal / `y` phone vertical) — geometry-driven. */
   private _axis: BusAxis = 'x';
+  /** Story 11.3 (D-11.3-4b): the live `.long`-conduit threshold, derived each reflow from
+   *  the MEASURED track width so it stays proportionate as the fluid tracks widen (AC5b).
+   *  Seeded at {@link LONG_LEG_PX} (the {@link SCENE_TRACK_MIN_PX}-floor baseline) so the
+   *  pre-measure render and the floor-width Scene are byte-identical to Story 8.12. */
+  private _longLegPx = LONG_LEG_PX;
   /** The hovered/keyboard-focused NODE ID; drives the dim/light highlight (`undefined`
    *  = no focus). Story 8.5 admitted the vehicle cell (`'vehicle'`); Story 9.7 widened
    *  it from a role to a per-instance `data-node` id (`solar:1`), so focusing ONE array
@@ -580,11 +609,20 @@ export class TcMyHome extends LitElement implements LovelaceCard {
     if (!scene) return;
     const container = scene.getBoundingClientRect();
     const abs: Record<string, RectLike> = {};
+    // Story 11.3: the PRIMARY track width (the comb pitch) — the widest cell that is NOT a
+    // lone overflow card. A 1-card overflow sub-row balloons to the cap (it has room the
+    // 3-card primary row does not), so `max(all cells)` would over-read; the comb must key
+    // off the PRIMARY track that sets the channel pitch. Non-wrapped rows have no overflow
+    // cell, so this is just the row track.
+    let primaryTrack = 0;
     scene.querySelectorAll<HTMLElement>('[data-node]').forEach((cell) => {
       // The `data-node` is the per-instance id (Story 9.7); a wrapped card's cell is
       // found just the same (the query is depth-agnostic across sub-rows).
       const id = cell.dataset.node;
-      if (id) abs[id] = cell.getBoundingClientRect();
+      if (!id) return;
+      const rect = cell.getBoundingClientRect();
+      abs[id] = rect;
+      if (!cell.closest('.subrow.overflow')) primaryTrack = Math.max(primaryTrack, rect.width);
     });
     const rel = relativeAnchors(container, abs);
     // Story-fix (gateway-bus-placement): place the trunk in the inter-row GAP, not
@@ -612,6 +650,26 @@ export class TcMyHome extends LitElement implements LovelaceCard {
     // `≤540px` phone reflow. Still reflow-driven (this runs ONLY here), never a
     // per-`hass`-tick recompute; the underlying geometry math is unchanged (FR-33).
     this._axis = axisForWidth(container.width);
+    // Story 11.3 (D-11.3-4a/b): the genuinely width-relative geometry values derive from
+    // the MEASURED PRIMARY track width. CSS can't read a JS-measured grid track, so we
+    // publish two custom properties the stylesheet consumes (kept STYLESHEET values, not
+    // inline, so the ≤540px `@media` resets still win) and one TS value:
+    //   • `--scene-track`   — pins the LONE overflow card to the primary track so a wrapped
+    //                         band's two sub-rows share ONE pitch (else the 1-card overflow
+    //                         row balloons to the cap and its comb leg misses the channel).
+    //   • `--subrow-offset` — the overflow channel offset `(track + 80)/2`, so the overflow
+    //                         card still centres on a near-row channel at any track width.
+    //   • `_longLegPx`      — the `.long` conduit threshold, proportional to the track.
+    // Clamp into the [floor, cap] band so a sub-pixel over-measure — or the phone full-width
+    // track, never read on the y-axis anyway — can't skew the derivations. At the floor all
+    // land on their Story 8.12 / 9.7 literals (380px / 230px / 160), so a standalone-width
+    // Scene is byte-identical.
+    if (primaryTrack > 0) {
+      const trackWidth = Math.min(SCENE_TRACK_MAX_PX, Math.max(SCENE_TRACK_MIN_PX, primaryTrack));
+      this._longLegPx = Math.round((trackWidth * LONG_LEG_PX) / SCENE_TRACK_MIN_PX);
+      this.style.setProperty('--scene-track', `${trackWidth}px`);
+      this.style.setProperty('--subrow-offset', `${(trackWidth + SCENE_BUS_GAP_PX) / 2}px`);
+    }
     this.requestUpdate(); // redraw the overlay over the cached geometry
   }
 
@@ -1541,7 +1599,7 @@ export class TcMyHome extends LitElement implements LovelaceCard {
           : nothing;
         return svg`
           <g class="gw-leg ${lit?.has(n.id) ? 'on' : ''}" data-role=${n.id}>
-            <line class="gw-leg-base ${horiz && len > LONG_LEG_PX ? 'long' : ''}" style="stroke:${color}" x1=${start.x} y1=${start.y} x2=${end.x} y2=${end.y}></line>
+            <line class="gw-leg-base ${horiz && len > this._longLegPx ? 'long' : ''}" style="stroke:${color}" x1=${start.x} y1=${start.y} x2=${end.x} y2=${end.y}></line>
             ${flow}
             ${this._terminal(start, color)}
             ${this._tap(end, color)}
@@ -1777,17 +1835,36 @@ export class TcMyHome extends LitElement implements LovelaceCard {
          minimal Grid+Home topology is one source card centred over one load card,
          not two lonely cards in opposite corners. The canvas centres (a glance
          surface, not full-bleed). */
+      /* Story 11.3 (D-11.3-3): align-items center -> STRETCH. The rows are flex items of
+         this column; STRETCH clamps each row to the container width so the fluid
+         minmax(380, ...) tracks size against the AVAILABLE width -- growing past the floor
+         to fill a wide column, shrinking back to the floor on a narrow one. (align-items:
+         center would size each row to its max-content cap instead, OVERFLOWING a column
+         narrower than N x cap.) NOTE the two align-items do opposite jobs: THIS one
+         (the flex column cross-axis) is the one that changes; the rows' OWN
+         align-items:start below (the grid cross-axis, the 8.12 bus-Y invariant) must
+         NOT change (AC3). */
       .scene-grid {
         display: flex;
         flex-direction: column;
-        align-items: center;
+        align-items: stretch;
         row-gap: 150px;
       }
+      /* Story 11.3 (D-11.3-1): CAPPED fluid tracks minmax(380px, var(--scene-track-max,
+         560px)) -- cards grow past the 380px floor to fill the width but STOP at a sane
+         per-card cap, so surplus on an ultrawide column becomes outer MARGIN, never the
+         unbounded 1fr balloon. The 380px floor keeps a card from ever shrinking below
+         standalone size. justify-content:center is RETAINED (NOT dropped): once the row is
+         stretched full-width and the tracks hit their cap, it is what distributes the
+         surplus as symmetric outer margin (the row reads centred-calm, never left-jammed).
+         This is the "retained centring on the grid container" the UX gate (D-11.3-3) named
+         as the resolution to the drop-justify-content-vs-stay-centred tension -- below the
+         cap there is no surplus so it is inert (zero-diff at the floor). */
       .source-row,
       .load-row {
         display: grid;
         grid-auto-flow: column;
-        grid-auto-columns: 380px;
+        grid-auto-columns: minmax(380px, var(--scene-track-max, 560px));
         column-gap: 80px;
         justify-content: center;
       }
@@ -1881,23 +1958,41 @@ export class TcMyHome extends LitElement implements LovelaceCard {
         flex-direction: column;
         /* The band shrinks to its widest (primary) sub-row and centres as a whole;
            its sub-rows share a LEFT origin (flex-start), so the overflow padding-left
-           offsets predictably into the channels — NOT re-centred per sub-row. */
+           offsets predictably into the channels — NOT re-centred per sub-row.
+           Story 11.3 (D-11.3-1): width:max-content -> FIT-CONTENT so the band is
+           responsive — it caps at the (now fluid) content width on a wide column and
+           shrinks to the available width on a narrow one (max-content would freeze it at
+           the per-card cap and overflow a narrower column). margin:0 auto is RETAINED: a
+           multi-sub-row band must stay LEFT-origin internally for the overflow comb, so
+           centring the band AS A WHOLE via auto margins is the only mechanism that keeps it
+           centred-calm without breaking the comb (the "auto margins" resolution the UX gate
+           named). The phone @media overrides this to width:100%. */
         align-items: flex-start;
-        width: max-content;
+        width: fit-content;
         margin: 0 auto;
         row-gap: 60px;
       }
       .subrow {
         display: grid;
         grid-auto-flow: column;
-        grid-auto-columns: 380px;
+        grid-auto-columns: minmax(380px, var(--scene-track-max, 560px));
         column-gap: 80px;
         justify-content: start;
         align-items: start;
       }
       .subrow.overflow {
         order: -1; /* the FAR (top) sub-row, visually — DOM order is unchanged (a11y) */
-        padding-left: 230px; /* (380 + 80)/2 — centre each overflow card on a near-row channel */
+        /* Story 11.3 (D-11.3-4a): pin the LONE overflow card to the measured PRIMARY track
+           (--scene-track) so both sub-rows share ONE pitch — without this a 1-card overflow
+           row grows to the cap (it has room the 3-card primary row does not) and its comb
+           leg misses the channel. Fluid fallback (minmax) before first measure. */
+        grid-auto-columns: var(--scene-track, minmax(380px, var(--scene-track-max, 560px)));
+        /* The channel offset is fluid — (trackWidth + 80)/2 from the live reflow
+           measurement, published as --subrow-offset so each overflow card still centres on
+           a near-row channel at any track width. A STYLESHEET value (not inline) with the
+           230px floor-width literal as fallback, so the ≤540px @media reset to
+           padding-left:0 still wins (an inline style could not be overridden). */
+        padding-left: var(--subrow-offset, 230px); /* floor: (380 + 80)/2 = 230 */
       }
 
       /* Story 8.10: the vehicle is the trailing load-row cell again — the embedded
