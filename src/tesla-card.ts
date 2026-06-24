@@ -131,6 +131,14 @@ export class TeslaCard extends LitElement implements LovelaceCard {
     const t = this._resolvedTheme();
     if (t) this.setAttribute('theme', t);
     else this.removeAttribute('theme');
+    // Reflect the compact-variant presentation onto the card's OWN host so the
+    // tab bar can collapse to icon-only for the ~376px My-Home embed (holistic
+    // review 2026-06-24, completing Story 11.4 / AC9). Its icon-only collapse is
+    // otherwise gated on a `@media (min-width:760px)` VIEWPORT query that wrongly
+    // fires for a narrow ELEMENT in a wide viewport — the same element-vs-viewport
+    // trap fixed for tc-quick-actions/tc-commands. Standalone (no `variant`) ⇒ no
+    // attribute ⇒ byte-identical to today (AC4).
+    this.toggleAttribute('compact', this._config?.variant === 'compact');
   }
 
   /** Resolve entities by stable function-name; memoised on registry/config. */
@@ -362,6 +370,27 @@ export class TeslaCard extends LitElement implements LovelaceCard {
         .tab span {
           display: inline;
         }
+      }
+      /* Compact embed (Story 11.4 / AC9 follow-up, holistic review 2026-06-24):
+         the My-Home vehicle cell is a ~376px ELEMENT in a wide viewport, so the
+         min-width:760px label-reveal above wrongly fires for it and the tabs
+         expand into a scrolling full-label strip. Restate the icon-only compact
+         look (only the active tab labelled) ELEMENT-scoped via the reflected
+         'compact' host attribute — the same element-scope fix tc-quick-actions
+         and tc-commands use for their grids. The added (0,2,0)/(0,3,0)
+         specificity beats the media query's (0,1,0) regardless of viewport; a
+         standalone card (no attribute) is byte-identical to today (AC4). */
+      :host([compact]) .tab {
+        flex: 0 1 auto;
+      }
+      :host([compact]) .tab.active {
+        flex: 1 1 auto;
+      }
+      :host([compact]) .tab span {
+        display: none;
+      }
+      :host([compact]) .tab.active span {
+        display: inline;
       }
     `,
   ];

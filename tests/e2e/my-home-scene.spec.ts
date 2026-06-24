@@ -967,6 +967,35 @@ test.describe('tc-my-home Scene — Story 11.4 embedded vehicle honors configure
     expect(standalone.cmd).toBe(6); // standalone commands stays 6 cols (AC4)
   });
 
+  test('AC9 (tabs) — the compact embed tab bar is icon-only (only the active label shown) while the standalone (wide) card shows all labels', async ({
+    page,
+  }) => {
+    // Holistic re-review follow-up (2026-06-24): the grids above got the element-
+    // scope fix, but the tab LABELS still revealed at a `@media (min-width:760px)`
+    // VIEWPORT query — so the ~376px embed in a wide viewport rendered a scrolling
+    // full-label strip, not the icon-only bar AC9 intended. `tesla-card` now
+    // reflects `compact` and a `:host([compact])` rule keeps the embed icon-only
+    // (active tab labelled); the standalone (no variant) is byte-identical. This
+    // is the picture only a real browser can prove — jsdom resolves no @media.
+    await mountScene(page);
+    await waitForTrunk(page);
+
+    const visibleLabels = (card: import('@playwright/test').Locator) =>
+      card.evaluate(
+        (host: HTMLElement) =>
+          Array.from(host.shadowRoot?.querySelectorAll('.tab span') ?? []).filter(
+            (s) => getComputedStyle(s as HTMLElement).display !== 'none'
+          ).length
+      );
+
+    // Compact embed: exactly ONE visible label (the active tab) — icon-only.
+    // (Pre-fix this was every tab's label, the scrolling-strip regression.)
+    expect(await visibleLabels(vehCell(page).locator('tesla-card'))).toBe(1);
+    // Standalone (wide, no variant): every label shown (the ≥760px reveal), proving
+    // the `:host([compact])` scope leaves the standalone tab bar byte-identical (AC4).
+    expect(await visibleLabels(page.locator('tesla-card').first())).toBeGreaterThan(1);
+  });
+
   test('AC2 — hide_panels forwarded through the real embed drops the tab bar + panel; quick-actions + commands remain', async ({
     page,
   }) => {

@@ -273,6 +273,35 @@ describe('AC4 / UX-DR21 — compact-width accessible-name floor (no nameless tab
   });
 });
 
+describe('Review 2026-06-24 — compact embed: tab bar collapses to icon-only (element-scoped, not viewport)', () => {
+  // Holistic re-review follow-up to Story 11.4 / AC9: the quick-actions/commands
+  // grids got the `:host([compact]) .row` element-scope fix, but the tab labels
+  // still revealed at a `@media (min-width:760px)` VIEWPORT query — so the ~376px
+  // embed in a desktop viewport showed a scrolling full-label strip, not the
+  // icon-only bar AC9 intended. The fix mirrors the grids: reflect `compact` on
+  // the card host + a `:host([compact])` rule that beats the media query.
+  test('variant:"compact" reflects a `compact` host attribute; absent ⇒ none (AC4 byte-identical)', async () => {
+    const compact = await renderCard({ type: 'custom:tesla-card', variant: 'compact' }, hassFrom(awake));
+    expect(compact.hasAttribute('compact')).toBe(true);
+    compact.remove();
+
+    const standalone = await renderCard({ type: 'custom:tesla-card' }, hassFrom(awake));
+    expect(standalone.hasAttribute('compact')).toBe(false); // no variant ⇒ unchanged standalone
+    standalone.remove();
+  });
+
+  test('the gated rule is `:host([compact]) .tab span → display:none`, active label still shown', () => {
+    // jsdom resolves no @media/computed layout, so guard the rule TEXT directly
+    // (the suite's established target-style assertion idiom). The element-scoped
+    // (0,2,0)/(0,3,0) rules outrank the `@media (min-width:760px)` (0,1,0) reveal.
+    const ctor = customElements.get('tesla-card') as unknown as { styles: Array<{ cssText?: string }> };
+    const css = ctor.styles.map((s) => s?.cssText ?? '').join('\n');
+    expect(css).toMatch(/:host\(\[compact\]\)\s+\.tab\s+span\s*\{[^}]*display:\s*none/);
+    // icon-only ≠ label-less: the ACTIVE tab keeps its label in compact too.
+    expect(css).toMatch(/:host\(\[compact\]\)\s+\.tab\.active\s+span\s*\{[^}]*display:\s*inline/);
+  });
+});
+
 describe('AC1 — one card switching content (a single panel region that swaps)', () => {
   // Existing tests assert WHICH panel renders on first paint; none assert the
   // "one card switching content" promise — that selecting a tab REPLACES the

@@ -393,7 +393,9 @@ export class TcHero extends TcBase {
           ? html`<button
               class="security-chip ${security.tone} ${lastKnown ? 'last-known' : ''}"
               @click=${() => this._open('closures')}
-              aria-label="${security.word}, ${STRINGS.hero.opensClosures}"
+              aria-label="${security.word}${
+                lastKnown ? ` ${STRINGS.hero.lastKnown}` : ''
+              }, ${STRINGS.hero.opensClosures}"
             >
               ${icon(security.glyph, { size: 16 })}
               <span class="sec-word ${lastKnown ? 'tc-stale-copy' : ''}">${security.word}</span>

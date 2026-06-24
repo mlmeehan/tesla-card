@@ -1118,6 +1118,9 @@ describe('Story 11.2 AC4 — chip is a real <button> → closures, state-bearing
     const label = btn.getAttribute('aria-label')!;
     expect(label).toContain(STRINGS.status.locked);
     expect(label).toContain(STRINGS.hero.opensClosures);
+    // Awake ⇒ NOT last-known: the staleness qualifier is gated on asleep only
+    // (holistic review 2026-06-24 — mirrors the battery's lastKnown gating).
+    expect(label.toLowerCase()).not.toContain('last known');
   });
 
   test('clicking it dispatches a bubbling+composed open-panel CustomEvent with {panel:"closures"}', async () => {
@@ -1160,6 +1163,11 @@ describe('Story 11.2 AC5 — asleep last-known from RAW entities (not apertures)
     expect(
       el.shadowRoot!.querySelector('.security-chip .sec-word')!.classList.contains('tc-stale-copy')
     ).toBe(true);
+    // a11y parity with the battery (UX-DR21): the SR name says it is last-known,
+    // never a cached lock/security state presented as live (holistic review 2026-06-24).
+    const aria = chip(el)!.getAttribute('aria-label')!.toLowerCase();
+    expect(aria).toContain(STRINGS.status.locked.toLowerCase());
+    expect(aria).toContain('last known');
   });
 
   test('asleep reads the RAW door entity, NOT the asleep-suppressed apertures const', async () => {
