@@ -287,13 +287,17 @@ describe('AC3 — battery row is a real <button> dispatching open-panel{charging
 // AC4 — asleep/stale → dim + grayscale, honest hint, battery —
 // ───────────────────────────────────────────────────────────────────────────
 
-describe('AC4 — asleep: shared .tc-asleep recipe + "Asleep · updated 47m ago" + battery —', () => {
-  test('asleep render adopts the shared .tc-asleep recipe (not a bespoke treatment)', async () => {
+describe('AC4 — asleep: re-scoped dim marker + "Asleep · updated 47m ago" + battery —', () => {
+  test('asleep stage carries the opacity-dim marker, never grayscale on the render (Story 11.1 re-scope)', async () => {
     const asleep = await mountHero(makeStates({ asleep: true, batteryAgeMs: 47 * 60_000 }));
-    expect(asleep.shadowRoot!.querySelector('.car-stage')!.classList.contains('tc-asleep')).toBe(true);
-    // Awake never carries the recipe.
-    const awake = await mountHero(makeStates());
-    expect(awake.shadowRoot!.querySelector('.car-stage')!.classList.contains('tc-asleep')).toBe(false);
+    const stage = asleep.shadowRoot!.querySelector('.car-stage')!;
+    // Dim via the opacity-only marker; grayscale no longer rides the render's ancestor.
+    expect(stage.classList.contains('asleep')).toBe(true);
+    expect(stage.classList.contains('tc-asleep')).toBe(false);
+    // Awake never carries the dim treatment.
+    const awakeStage = (await mountHero(makeStates())).shadowRoot!.querySelector('.car-stage')!;
+    expect(awakeStage.classList.contains('asleep')).toBe(false);
+    expect(awakeStage.classList.contains('tc-asleep')).toBe(false);
   });
 
   test('status reads "Asleep · updated 47m ago" — drive-state + last-updated, never "Offline"', async () => {
@@ -315,6 +319,54 @@ describe('AC4 — asleep: shared .tc-asleep recipe + "Asleep · updated 47m ago"
     const el = await mountHero(makeStates({ asleep: true, batteryAgeMs: 47 * 60_000 }));
     expect(batReadout(el)).toBe('—');
     expect(gaugeClass(el)).toContain('unknown');
+  });
+});
+
+// ───────────────────────────────────────────────────────────────────────────
+// Story 11.1 AC5 — asleep render keeps hue: grayscale is re-scoped OFF the render
+// node (a coloured car dimmed via opacity), and rides ONLY the Flow overlay. A
+// child cannot un-apply an ancestor's filter, so the desaturation is moved at the
+// DOM/CSS level — never put on an ancestor of the render. Pins the no-two-tone
+// requirement + "single un-grayscaled subtree" (a partial/per-layer exemption
+// regression goes red).
+// ───────────────────────────────────────────────────────────────────────────
+
+describe('Story 11.1 AC5 — asleep render keeps hue (no grayscale on the render node)', () => {
+  test('the render node carries no grayscale handle; only the opacity marker rides the stage', async () => {
+    const el = await mountHero(withEnergy({ asleep: true }), ENERGY_OVER);
+    const stage = el.shadowRoot!.querySelector('.car-stage')!;
+    // The stage dims via the opacity-only marker — grayscale no longer rides the
+    // render's ancestor (that is what stripped the hue → near-black before).
+    expect(stage.classList.contains('asleep')).toBe(true);
+    expect(stage.classList.contains('tc-asleep')).toBe(false);
+    // The render node itself (genericCar <svg class="car-img tc-car">) keeps its hue:
+    // no desaturation class anywhere on its subtree.
+    const render = el.shadowRoot!.querySelector('.car-stage .car-img');
+    expect(render, 'render node (.car-img) missing').toBeTruthy();
+    expect(render!.classList.contains('tc-asleep')).toBe(false);
+    // Single un-grayscaled subtree: NO grayscale handle is applied per-layer via class
+    // anywhere in the stage (the desaturation is CSS-scoped to the overlay, asserted below).
+    expect(el.shadowRoot!.querySelectorAll('.car-stage .tc-asleep').length).toBe(0);
+    // …yet the Flow overlay sibling is still present (it is the node that keeps grayscale).
+    expect(el.shadowRoot!.querySelector('.car-stage .tc-flow-overlay')).toBeTruthy();
+  });
+
+  test('CSS: grayscale is scoped to the Flow overlay, never to the stage/render (AC5b)', () => {
+    const heroCss = (TcHero as unknown as { styles: Array<{ cssText?: string }> }).styles
+      .map((s) => s?.cssText ?? '')
+      .join('\n');
+    // The grayscale rides ONLY the overlay under the asleep stage.
+    const overlayRule = heroCss.match(/\.car-stage\.asleep\s+\.tc-flow-overlay\s*\{[^}]*\}/);
+    expect(overlayRule, 'missing asleep → .tc-flow-overlay grayscale rule').not.toBeNull();
+    expect(overlayRule![0]).toMatch(/filter:\s*grayscale\(\s*var\(\s*--tc-dim-grayscale\b/);
+    // The stage-asleep rule dims via opacity ONLY — no grayscale on the render's ancestor,
+    // and the magnitude is still single-sourced from the token (no hard-coded 0.5).
+    const stageRule = heroCss.match(/\.car-stage\.asleep\s*\{[^}]*\}/);
+    expect(stageRule, 'missing .car-stage.asleep opacity-dim rule').not.toBeNull();
+    expect(stageRule![0]).toMatch(/opacity:\s*var\(\s*--tc-dim-opacity\b/);
+    expect(stageRule![0], 'grayscale must NOT ride the stage (it strips the render hue)').not.toMatch(
+      /grayscale/
+    );
   });
 });
 
@@ -655,11 +707,12 @@ describe('Story 4.3 — energy-flow overlay composites into .car-stage', () => {
     expect(detail).toEqual({ panel: 'charging' }); // …yet the tap still fires
   });
 
-  test('asleep → overlay still composites under the shared .tc-asleep dim (no parallel branch)', async () => {
-    // No bespoke asleep suppression: the model+`.tc-asleep` recipe handle it — the
-    // stage carries the dim and the overlay is still composited within it.
+  test('asleep → overlay still composites under the re-scoped stage dim (no parallel branch)', async () => {
+    // No bespoke asleep suppression: the model + the stage opacity-dim handle it —
+    // the stage carries the dim and the overlay is still composited within it (and
+    // is the node that keeps grayscale, scoped via CSS — see Story 11.1 AC5).
     const el = await mountHero(withEnergy({ asleep: true }), ENERGY_OVER);
-    expect(el.shadowRoot!.querySelector('.car-stage')!.classList.contains('tc-asleep')).toBe(true);
+    expect(el.shadowRoot!.querySelector('.car-stage')!.classList.contains('asleep')).toBe(true);
     expect(overlay(el)).toBeTruthy();
   });
 });
@@ -749,7 +802,7 @@ describe('compact + asleep — last-known SoC/range fallback (dimmed), full card
     expect(aria).toContain('71%');
     expect(aria.toLowerCase()).toContain('last known');
     // The car is still dimmed and the honest stamp still shows — freshness never overstated.
-    expect(hasClass(el, '.car-stage', 'tc-asleep')).toBe(true);
+    expect(hasClass(el, '.car-stage', 'asleep')).toBe(true);
   });
 
   test('the dim actually reaches the headline .bat-pct leaf (--bat-pct-color override)', () => {

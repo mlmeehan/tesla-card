@@ -149,14 +149,22 @@ test.describe('hero — 1024×687 coordinate contract (AC3) + surface stage (AC1
 // proven HERE; the honest "updated Nm ago" hint depends on demo last_updated
 // stamps that only the bundle + harness exercise end-to-end).
 test.describe('hero — status line + tappable battery (Story 3.3)', () => {
-  test('AC4: asleep → dim+grayscale render (.tc-asleep) + "Asleep · updated …" + battery —', async ({
+  test('AC4: asleep render keeps its hue (opacity dim, NO grayscale) + "Asleep · updated …" + battery —', async ({
     demo,
   }) => {
-    await demo.open({ scenario: 'asleep' });
-    // Shared .tc-asleep recipe backs the render: opacity 0.5 + full grayscale.
-    await expect(demo.heroStage).toHaveClass(/\btc-asleep\b/);
+    // Story 11.1: a dark preset (red #9e2228) must read as a DIM RED, not near-black.
+    // grayscale is re-scoped OFF the render — the stage dims via opacity only.
+    await demo.open({ scenario: 'asleep', paint: '#9e2228' });
+    // The stage carries the opacity dim marker, never the grayscale recipe.
+    await expect(demo.heroStage).toHaveClass(/\basleep\b/);
+    await expect(demo.heroStage).not.toHaveClass(/\btc-asleep\b/);
     await expect(demo.heroStage).toHaveCSS('opacity', '0.5');
-    await expect(demo.heroStage).toHaveCSS('filter', /grayscale\(1\)/);
+    // The stage itself is NOT grayscaled (that is what stripped the render's hue before).
+    await expect(demo.heroStage).not.toHaveCSS('filter', /grayscale/);
+    // The render keeps its resolved paint hue AND carries no grayscale in its computed
+    // filter (only its own drop-shadow) — a real-browser proof jsdom cannot measure.
+    await expect(demo.heroSvg).toHaveAttribute('style', /--tc-paint:\s*#9e2228/);
+    await expect(demo.heroSvg).not.toHaveCSS('filter', /grayscale/);
     // Honest status: drive-state + last-updated hint, never "Offline".
     await expect(demo.heroStatus).toContainText('Asleep');
     await expect(demo.heroStatus).toContainText(/updated \d+m ago/);

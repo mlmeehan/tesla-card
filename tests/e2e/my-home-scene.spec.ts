@@ -877,6 +877,39 @@ test.describe('tc-my-home Scene — Story 8.5 vehicle: half-alive (asleep) is ca
     // sensor (back-dated like the car), never a fabricated fresh "Just now".
     await expect(vehCell(page).getByText(/updated 47m ago/i).first()).toBeVisible();
   });
+
+  // Story 11.1 — the asleep COMPACT EMBED is the PRIMARY real-world case (the cell is
+  // asleep almost all the time, my-home.ts:1106 / hero.ts:217-218), so closing the AC1
+  // "render keeps hue" contract for the embed matters more than for the standalone card.
+  // hero.spec.ts pins the standalone full card; this pins the embed. jsdom cannot
+  // resolve a computed `filter`, so a real-browser proof is the only tier that catches
+  // a regression re-grayscaling the embedded render. The compact embed SUPPRESSES the
+  // Flow overlay (compact ⇒ nothing, hero.ts:313), so the render WAS the only thing the
+  // old grayscale(1) hit — exactly the node that turned a dark preset near-black.
+  test('Story 11.1 — the asleep compact embed keeps its paint hue (opacity dim, NO grayscale on the render)', async ({
+    page,
+  }) => {
+    // Hand the embed the exact dark preset (red #9e2228) that collapsed to near-black
+    // under the old grayscale(1). The my-home top-level `paint` flows into the embed via
+    // `{ ...this._config, ...c.config, variant: 'compact' }` (my-home.ts:1106).
+    await mountScene(page, { config: { paint: '#9e2228' } });
+    await waitForTrunk(page);
+
+    const stage = vehCell(page).locator('.car-stage');
+    // The stage carries the opacity-dim marker, never the bare grayscale recipe class…
+    await expect(stage).toHaveClass(/\basleep\b/);
+    await expect(stage).not.toHaveClass(/\btc-asleep\b/);
+    await expect(stage).toHaveCSS('opacity', '0.5');
+    // …and the stage itself is NOT grayscaled (the over-broad filter the fix re-scoped off).
+    await expect(stage).not.toHaveCSS('filter', /grayscale/);
+
+    // The render keeps its resolved red AND carries no grayscale in its computed filter
+    // (only its own drop-shadow) — a DIM RED, not near-black. This is the embed-tier
+    // proof that AC1's "whole vehicle render keeps its hue" holds where the bug lived.
+    const render = stage.locator('svg').first();
+    await expect(render).toHaveAttribute('style', /--tc-paint:\s*#9e2228/);
+    await expect(render).not.toHaveCSS('filter', /grayscale/);
+  });
 });
 
 // ── Story 8.12 — gw-term anchors at the card's VISIBLE bottom (live layout) ─────────

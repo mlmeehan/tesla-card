@@ -256,8 +256,9 @@ export class TcHero extends TcBase {
     // energy entities and returns the model the renderer draws — the renderer
     // never re-reads hass.states. A vehicle-only install ⇒ empty model ⇒ the
     // overlay is omitted entirely (no occluding box). Asleep needs no parallel
-    // branch: the binding yields calm `quiescent` edges and `.tc-asleep` dims the
-    // whole stage (overlay included).
+    // branch: the binding yields calm `quiescent` edges and the stage opacity dim
+    // covers the whole stage (overlay included), while grayscale rides only the
+    // overlay so the render keeps its hue (Story 11.1).
     this._flow.update(bindFlowModel(this.hass, cfg));
 
     // Range mirrors the battery's last-known fallback: the live `battery_range`
@@ -300,7 +301,7 @@ export class TcHero extends TcBase {
           </div>
         </div>
 
-        <div class="car-stage ${asleep ? 'tc-asleep' : ''}">
+        <div class="car-stage ${asleep ? 'asleep' : ''}">
           ${carView({
             image,
             name,
@@ -405,10 +406,24 @@ export class TcHero extends TcBase {
         place-items: center;
         padding: 10px 0 14px;
         min-height: 160px;
-        /* Preserve the asleep fade feel; the dim/grayscale magnitudes themselves
-           come from the shared .tc-asleep recipe (--tc-dim-*), not re-hard-coded. */
+        /* Preserve the asleep fade feel; the dim magnitude itself comes from the
+           shared --tc-dim-* tokens (see .car-stage.asleep), not re-hard-coded. */
         transition: opacity 0.4s var(--tc-ease, cubic-bezier(0.22, 1, 0.36, 1)),
           filter 0.4s var(--tc-ease, cubic-bezier(0.22, 1, 0.36, 1));
+      }
+      /* ── Asleep re-scope (Story 11.1) ─────────────────────────────────────
+         The stage dims via OPACITY ONLY (single-sourced from --tc-dim-opacity),
+         so the recolorable render (.car-img/.tc-car) keeps its resolved HUE —
+         a dark preset reads as a dim colour, not near-black. Grayscale is
+         re-scoped to ride ONLY the Flow overlay (a child cannot un-apply an
+         ancestor's filter, so the desaturation must NOT sit on an ancestor of
+         the render). The literal .tc-asleep recipe in styles.ts is unchanged;
+         this is a re-scope of where the treatment is APPLIED, not the recipe. */
+      .car-stage.asleep {
+        opacity: var(--tc-dim-opacity, 0.5);
+      }
+      .car-stage.asleep .tc-flow-overlay {
+        filter: grayscale(var(--tc-dim-grayscale, 1));
       }
       .car-stage::after {
         content: '';

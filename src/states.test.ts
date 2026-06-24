@@ -64,6 +64,54 @@ describe('Asleep — dim + grayscale recipe (AC1a)', () => {
   });
 });
 
+// ── Story 11.1 AC7: dimmed staleness copy clears AA (4.5:1) ────────────────
+// Pre-existing condition (not introduced by 11.1), but it sits on the "never
+// overstate freshness" copy so we assert it. The load-bearing staleness copy
+// (status line, battery — / last-known) dims via `.tc-stale-copy`, which is a
+// COLOUR SWAP to --tc-text-dim — NOT an opacity:0.5 fade. The opacity-0.5 dim
+// (--tc-dim-opacity) rides only the .car-stage render (AC2), so it never
+// compounds onto the chrome copy. Worst case for the copy is therefore exactly
+// --tc-text-dim over the card's dark ground, which must clear AA 4.5:1.
+describe('Story 11.1 AC7 — dimmed staleness copy clears AA (4.5:1)', () => {
+  const hexToRgb = (hex: string): [number, number, number] => {
+    const h = hex.replace('#', '');
+    return [0, 2, 4].map((i) => parseInt(h.slice(i, i + 2), 16)) as [number, number, number];
+  };
+  // WCAG 2.x relative luminance + contrast ratio.
+  const relLum = ([r, g, b]: [number, number, number]): number => {
+    const lin = (c: number) => {
+      const s = c / 255;
+      return s <= 0.03928 ? s / 12.92 : ((s + 0.055) / 1.055) ** 2.4;
+    };
+    return 0.2126 * lin(r) + 0.7152 * lin(g) + 0.0722 * lin(b);
+  };
+  const ratio = (fg: string, bg: string): number => {
+    const [l1, l2] = [relLum(hexToRgb(fg)), relLum(hexToRgb(bg))].sort((a, b) => b - a);
+    return (l1 + 0.05) / (l2 + 0.05);
+  };
+
+  test('staleness recipe resolves to the AA-floor token (--tc-text-dim), never the 3:1 --tc-text-mute', () => {
+    const body = ruleBody(sharedCss, '.tc-stale-copy');
+    expect(body, '.tc-stale-copy recipe missing').not.toBeNull();
+    expect(body!).toMatch(/color:\s*var\(\s*--tc-text-dim\b/);
+    expect(body!, 'staleness copy must NOT use the decorative 3:1 --tc-text-mute').not.toMatch(
+      /--tc-text-mute/
+    );
+  });
+
+  test('--tc-text-dim clears 4.5:1 over the card dark ground (single-sourced from the token)', () => {
+    // Single-source the foreground from the declared token (no hard-coded copy of the hex).
+    const m = tokenCss.match(/--tc-text-dim:\s*(#[0-9a-fA-F]{6})/);
+    expect(m, '--tc-text-dim literal not found in tokens').not.toBeNull();
+    const textDim = m![1];
+    // Representative dark grounds: the story-documented card navy and a lighter HA
+    // dark-theme ha-card. The lighter ground is the worst case for light copy; both
+    // must clear AA so the floor holds regardless of the host theme's card colour.
+    expect(ratio(textDim, '#0a0e1a')).toBeGreaterThanOrEqual(4.5);
+    expect(ratio(textDim, '#1c1c1c')).toBeGreaterThanOrEqual(4.5);
+  });
+});
+
 // ── AC1c: Unavailable — disabled-control + staleness-copy recipes ──────────
 describe('Unavailable — disabled + staleness-copy recipes (AC1c, applies 2.3 AC1e)', () => {
   test('.tc-disabled dims + makes the control inert (pointer-events:none)', () => {
