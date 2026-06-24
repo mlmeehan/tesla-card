@@ -916,6 +916,10 @@ test.describe('tc-my-home Scene — Story 11.4 embedded vehicle honors configure
     await expect(card.locator('tc-commands')).toHaveCount(1); // …and commands — the full shell.
     // …but it is STILL the enriched compact hero (variant:'compact' retained, D-11.4-1).
     await expect(card.locator('tc-hero')).toHaveCount(1);
+    // Review F4 (2026-06-24): the AWAKE hass carries a live energy site, but the embed
+    // force-hides energy (the My-Home Scene IS the energy view), so the vehicle cell shows
+    // NO Energy tab even though the full shell renders. (STRINGS.tabs.energy === 'Energy'.)
+    await expect(card.getByRole('tab', { name: 'Energy' })).toHaveCount(0);
   });
 
   test('AC2/AC3 — the embed honors a forwarded hide_* + default_panel (the controls are real governors)', async ({

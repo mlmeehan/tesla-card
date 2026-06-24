@@ -806,6 +806,15 @@ describe('Story 8.10 — AC1/AC5: the vehicle is the trailing load-row cell embe
     expect(veh!.getAttribute('tabindex')).toBe('0');
   });
 
+  test('the embed force-hides energy so the vehicle cell never shows a redundant Energy tab (review F4)', async () => {
+    // The My-Home Scene IS the energy view; the embedded vehicle cell must NOT splice its own
+    // Energy tab from the spread-in Scene `energy` config. The embed forces `energy.hide: true`
+    // (preserving any energy *entity* overrides) — Story 11.4 code-review, 2026-06-24.
+    await mount(makeHass(states(awakeFx)));
+    expect(lastEmbedConfig?.variant).toBe('compact');
+    expect(lastEmbedConfig?.energy?.hide).toBe(true);
+  });
+
   test('the seven-element registration contract is UNCHANGED (no new tc-vehicle element)', () => {
     // The vehicle reuses the EXISTING `tesla-card` element — assert no NEW vehicle
     // element snuck into the registry (the contract is still the same seven tags).

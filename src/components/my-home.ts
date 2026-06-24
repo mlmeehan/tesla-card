@@ -652,8 +652,10 @@ export class TcMyHome extends LitElement implements LovelaceCard {
     this._axis = axisForWidth(container.width);
     // Story 11.3 (D-11.3-4a/b): the genuinely width-relative geometry values derive from
     // the MEASURED PRIMARY track width. CSS can't read a JS-measured grid track, so we
-    // publish two custom properties the stylesheet consumes (kept STYLESHEET values, not
-    // inline, so the ≤540px `@media` resets still win) and one TS value:
+    // publish two custom properties the stylesheet consumes. They are set INLINE on the host
+    // (via setProperty), so the ≤540px `@media` does NOT win by resetting these vars (an inline
+    // value beats a stylesheet rule) — it wins by resetting the CONSUMING `padding-left` /
+    // `grid-auto-columns` declarations instead (see the phone block). One TS value too:
     //   • `--scene-track`   — pins the LONE overflow card to the primary track so a wrapped
     //                         band's two sub-rows share ONE pitch (else the 1-card overflow
     //                         row balloons to the cap and its comb leg misses the channel).
@@ -1165,7 +1167,16 @@ export class TcMyHome extends LitElement implements LovelaceCard {
     // the raw `_config` identity — the spread object is NOT stored as the key (storing it
     // would mismatch every tick and re-`setConfig`, resetting the embed).
     if (typeof el.setConfig === 'function' && entry.cfg !== this._config) {
-      el.setConfig({ ...this._config, ...c.config, variant: 'compact' });
+      // Review F4 (2026-06-24): the embedded cell is the VEHICLE view, not the energy view —
+      // the My-Home Scene already IS the energy visualisation. Force-hide the embed's energy
+      // panel so the spread-in Scene `energy` config can't splice a redundant Energy tab into
+      // the vehicle cell (any energy *entity* overrides are preserved; only `hide` is forced).
+      el.setConfig({
+        ...this._config,
+        ...c.config,
+        variant: 'compact',
+        energy: { ...this._config.energy, hide: true },
+      });
       entry.cfg = this._config;
     }
     // `hass` refreshes every render so the card stays live (a plain property set —

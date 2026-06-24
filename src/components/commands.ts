@@ -1,4 +1,4 @@
-import { html, css, nothing, type TemplateResult } from 'lit';
+import { html, css, nothing, type TemplateResult, type PropertyValues } from 'lit';
 import { customElement, state } from 'lit/decorators.js';
 import {
   mdiPower,
@@ -61,7 +61,8 @@ export class TcCommands extends TcBase {
   // element in a WIDE viewport, so the `@media (max-width:540px)` collapse below
   // never fires for it. A standalone card has no `variant` ⇒ no attribute ⇒ the
   // 6-col grid is byte-identical to today (AC4).
-  protected override updated(): void {
+  protected override updated(changed: PropertyValues): void {
+    super.updated(changed);
     this.toggleAttribute('compact', this.config?.variant === 'compact');
   }
 
