@@ -49,9 +49,14 @@ function stripSlug(object: string, slug: string): string {
   return object;
 }
 
-/** A dependency-free slugify matching HA's entity-id slug rules closely. */
+/** A dependency-free slugify matching HA's entity-id slug rules closely.
+ *  Coerces non-string input (`String(name ?? '')`) so a hand-written non-string
+ *  `config.name`/`config.device` (e.g. a YAML number `name: 2024`) slugs harmlessly
+ *  instead of throwing `…trim is not a function` — which crashed both the editor's
+ *  discovery on open AND the card's entity resolution at runtime (FR-24 garbage
+ *  tolerance; the call sites only guard truthiness, not type). */
 export function slugify(name: string): string {
-  return name
+  return String(name ?? '')
     .trim()
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, '_')

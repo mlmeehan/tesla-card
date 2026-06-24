@@ -10,7 +10,7 @@
 // the committed fixture, makes ZERO network calls.
 import { describe, expect, test } from 'vitest';
 import fixture from '../fixtures/model-y-awake.json';
-import { resolveEntities } from './resolve';
+import { resolveEntities, slugify } from './resolve';
 import { DEFAULT_ENTITIES, type EntityKey } from '../const';
 import type { HomeAssistant, TeslaCardConfig } from '../types';
 
@@ -146,5 +146,26 @@ describe('entity resolver — corpus-confirmed matcher (Story 1.3)', () => {
     const renamedIds = new Set(Object.keys(renamedStates));
     const missing = VEHICLE_KEYS.filter((k) => !renamedIds.has(resolved[k]));
     expect(missing, `keys not resolving under rename:\n${missing.join('\n')}`).toEqual([]);
+  });
+});
+
+// Code-review regression (Epic 9 P1): slugify must coerce a non-string argument rather
+// than throw `…trim is not a function`. A hand-written non-string `config.name`/`device`
+// (e.g. a YAML number `name: 2024`) reaches slugify because the call sites guard only
+// truthiness, not type — an un-coerced slugify crashed both the editor's discovery on
+// open AND the card's entity resolution at runtime.
+describe('slugify — non-string coercion (FR-24)', () => {
+  test('a numeric argument slugs instead of throwing', () => {
+    expect(() => slugify(2024 as unknown as string)).not.toThrow();
+    expect(slugify(2024 as unknown as string)).toBe('2024');
+  });
+  test('null/undefined slug to the empty string (not a throw)', () => {
+    expect(slugify(undefined as unknown as string)).toBe('');
+    expect(slugify(null as unknown as string)).toBe('');
+  });
+  test('resolveEntities does not throw with a non-string config.name', () => {
+    expect(() =>
+      resolveEntities({ states: {} } as unknown as HomeAssistant, cfg({ name: 2024 as unknown as string }))
+    ).not.toThrow();
   });
 });

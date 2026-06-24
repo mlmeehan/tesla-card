@@ -645,12 +645,21 @@ export const STRINGS = {
       emptyBody: 'No Tesla or energy entities detected. Check that your integration is set up.',
       selectManually: 'Select entities manually',
       skipDefault: 'accept the detected devices',
+      // When discovery is empty there is nothing to "accept" — Skip just defers setup;
+      // the `skipDefault` label would otherwise claim a false action (review fix).
+      skipEmpty: 'skip setup for now',
     },
     // ── Step 2 — Confirm & remap (container; controls are Story 9.11) ──────────
     confirm: {
       heading: 'Confirm & remap',
       subhead: 'These are the cards we will show. They look right by default.',
       skipDefault: 'keep the detected mapping',
+      // Empty-discovery manual fallback (review fix): when NOTHING auto-resolves, the
+      // Confirm step surfaces the unfiltered map-a-miss picker for every role so the
+      // user can map entities with no YAML (9.9 AC2 — a real manual route, never a
+      // fake "all set" / a dead end).
+      manualHeading: 'Map your entities',
+      manualSubhead: 'Nothing was detected automatically. Pick the entity for each card.',
     },
     // ── Step 2 (My-Home variant) — Compose (Story 10.1, D-10.1-1) ─────────────
     // The Scene card's `confirm` step is RELABELED to Compose: map each node's entity

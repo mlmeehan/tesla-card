@@ -2240,6 +2240,14 @@ describe('Story 9.12 — LIGHT_TOKENS import wiring', () => {
 // ha-selector widgets (select/number/boolean) are inert UNDEFINED elements in jsdom —
 // we assert their bound `.selector`/`.value` and drive a synthetic `value-changed`.
 const TUNE_BASE = { type: 'custom:tesla-card', setup_complete: true } as TeslaCardConfig;
+// A hass exposing a tyre sensor's native unit so the Tune threshold widgets can present
+// in (and convert to/from) the chosen DISPLAY unit — review fix D1 makes the display-unit
+// bounds/label conditional on the native unit being knowable (else honest native fallback).
+// The explicit `tire_fl` override makes resolution deterministic in jsdom.
+const TYRE_BAR_HASS = {
+  states: { 'sensor.fl_bar': { entity_id: 'sensor.fl_bar', state: '2.4', attributes: { unit_of_measurement: 'bar' } } },
+} as unknown as HomeAssistant;
+const TUNE_TYRE = { ...TUNE_BASE, entities: { tire_fl: 'sensor.fl_bar' } } as TeslaCardConfig;
 
 describe('Story 9.13 AC-D — Tune lives in BOTH homes (un-stubs the wizard Step 4)', () => {
   test('the normal form renders a pinned Tune section', async () => {
@@ -2283,7 +2291,8 @@ describe('Story 9.13 AC-D — pinned widget bindings', () => {
 
   test('tyre thresholds are number selectors (mode:box) with a unit reflecting the chosen units', async () => {
     const el = makeEditor();
-    el.setConfig({ ...TUNE_BASE, tyres: { units: 'bar' } } as TeslaCardConfig);
+    el.hass = TYRE_BAR_HASS; // native unit must be known to present in a display unit (review fix D1)
+    el.setConfig({ ...TUNE_TYRE, tyres: { units: 'bar' } } as TeslaCardConfig);
     await el.updateComplete;
     const rec = tuneSel(el, 'tune-recommended')!.selector as { number?: { mode?: string; unit_of_measurement?: string } };
     expect(rec.number?.mode).toBe('box');
@@ -2390,7 +2399,8 @@ describe('Story 9.13 AC-D — zero-diff + a11y', () => {
 
   test('the threshold number fields announce unit + min/max range when a unit is chosen (a11y #3)', async () => {
     const el = makeEditor();
-    el.setConfig({ ...TUNE_BASE, tyres: { units: 'bar' } } as TeslaCardConfig);
+    el.hass = TYRE_BAR_HASS; // native unit known ⇒ the chosen display unit + range are announced (review fix D1)
+    el.setConfig({ ...TUNE_TYRE, tyres: { units: 'bar' } } as TeslaCardConfig);
     await el.updateComplete;
     const rec = el.shadowRoot!.querySelector('.tune .tune-recommended') as HTMLElement;
     const mar = el.shadowRoot!.querySelector('.tune .tune-margin') as HTMLElement;
@@ -2601,6 +2611,153 @@ describe('Story 10.1 AC7 — every write path preserves the custom:tc-my-home ty
     name.value = 'Garage';
     name.dispatchEvent(new Event('change'));
     expect(emit.get()?.type).toBe('custom:tc-my-home');
+    el.remove();
+  });
+});
+
+// ── Code-review regressions (Epic 9 Group-A editor adversarial review) ──────────
+// Each test fails WITHOUT its fix (red-green). Covers the crash-class + behavioural
+// findings from the 3-layer review: non-string name (P1), garbage container spreads
+// (P2), wizard dialog role (P3), preview tab ARIA (P4), focus ring (P5), swatch
+// Space/Enter (P6), empty row heading (P7), empty-Detect skip label (P8) + manual
+// fallback (P9), and tyre unit conversion (P10).
+describe('Code review regressions — Epic 9 Group A (editor)', () => {
+  test('P1: a non-string config.name (YAML number) does not crash the editor on open', async () => {
+    const el = makeEditor();
+    el.hass = EMPTY_HASS;
+    expect(() =>
+      el.setConfig({ type: 'custom:tesla-card', name: 2024 as unknown as string, setup_complete: true } as TeslaCardConfig)
+    ).not.toThrow();
+    await expect(el.updateComplete).resolves.toBeDefined();
+    // the preview renders (name falls back to the generic hero name; no `.trim()` throw)
+    expect(el.shadowRoot!.querySelector('.preview-stage')).toBeTruthy();
+    el.remove();
+  });
+
+  test('P2: an edit beside a garbage `energy` sibling normalizes it — never char-indexed, never thrown', async () => {
+    const el = makeEditor();
+    el.hass = EMPTY_HASS;
+    const cap = captureEmit(el);
+    el.setConfig({ type: 'custom:tesla-card', energy: 'on' as unknown as object, setup_complete: true } as TeslaCardConfig);
+    await el.updateComplete;
+    const sel = el.shadowRoot!.querySelector('.tune .tune-hide-powerwall')!; // → _setHidePowerwall → safeClone
+    expect(sel).toBeTruthy();
+    await tuneFire(el, sel, true);
+    const energy = cap.get()!.energy as Record<string, unknown>;
+    expect(typeof energy).toBe('object');
+    expect(energy['0']).toBeUndefined(); // NOT { 0:'o', 1:'n' }
+    expect(energy.hide_powerwall_controls).toBe(true);
+    el.remove();
+  });
+
+  test('P3: the wizard is a role="group", not a nested role="dialog"', async () => {
+    const el = makeEditor();
+    el.hass = EMPTY_HASS;
+    el.setConfig({ type: 'custom:tesla-card' } as TeslaCardConfig); // bare ⇒ wizard
+    await el.updateComplete;
+    expect(el.shadowRoot!.querySelector('.wizard')!.getAttribute('role')).toBe('group');
+    el.remove();
+  });
+
+  test('P4: the appearance preview strip carries no operable tab/tablist ARIA', async () => {
+    const el = makeEditor();
+    el.hass = EMPTY_HASS;
+    el.setConfig({ type: 'custom:tesla-card', setup_complete: true } as TeslaCardConfig);
+    await el.updateComplete;
+    expect(el.shadowRoot!.querySelector('.preview-tabs')!.getAttribute('role')).toBe('group');
+    expect(el.shadowRoot!.querySelector('.preview-tab[role="tab"]')).toBeNull();
+    el.remove();
+  });
+
+  test('P5: the editor defines its own :focus-visible ring (sharedStyles is not inherited)', () => {
+    const css = (customElements.get('tesla-card-editor') as unknown as { styles?: unknown }).styles;
+    const text = (Array.isArray(css) ? css : [css])
+      .map((c) => (c as { cssText?: string } | undefined)?.cssText ?? '')
+      .join('\n');
+    expect(text).toContain(':focus-visible');
+  });
+
+  test('P6: Space on a focused swatch selects it (ARIA APG radio activation)', async () => {
+    const el = makeEditor();
+    el.hass = EMPTY_HASS;
+    // a custom hex ⇒ no swatch selected ⇒ arrow selection-follows-focus hasn't run
+    el.setConfig({ type: 'custom:tesla-card', paint: '#123456', setup_complete: true } as TeslaCardConfig);
+    await el.updateComplete;
+    const cap = captureEmit(el);
+    const swatch = el.shadowRoot!.querySelector('.swatch[data-key]') as HTMLElement;
+    swatch.dispatchEvent(new KeyboardEvent('keydown', { key: ' ', bubbles: true }));
+    await el.updateComplete;
+    expect(cap.get()?.paint).toBeTruthy();
+    expect(cap.get()?.paint).not.toBe('#123456'); // a curated swatch hex was written
+    el.remove();
+  });
+
+  test('P7: a row emptied by promotion renders no orphan Source/Load heading', async () => {
+    const el = makeEditor();
+    el.hass = EMPTY_HASS;
+    el.setConfig({
+      type: 'custom:tesla-card',
+      setup_complete: true,
+      energy: { nodes: { rows: { solar: 'load', powerwall: 'load', grid: 'load', generator: 'load' } } },
+    } as unknown as TeslaCardConfig);
+    await el.updateComplete;
+    const headings = [...el.shadowRoot!.querySelectorAll('.group-heading')].map((h) => h.textContent?.trim());
+    expect(headings).not.toContain(STRINGS.editor.rowSource); // source row emptied
+    expect(headings).toContain(STRINGS.editor.rowLoad);
+    el.remove();
+  });
+
+  test('P8: on an empty Detect, Skip announces a deferral, not "accept the detected devices"', async () => {
+    const el = makeEditor();
+    el.hass = EMPTY_HASS; // discovery all-absent
+    el.setConfig({ type: 'custom:tesla-card' } as TeslaCardConfig); // bare ⇒ wizard at Detect
+    await el.updateComplete;
+    const skip = el.shadowRoot!.querySelector('.wiz-btn.secondary') as HTMLButtonElement;
+    expect(skip.getAttribute('aria-label')).toContain(STRINGS.wizard.detect.skipEmpty);
+    expect(skip.getAttribute('aria-label')).not.toContain(STRINGS.wizard.detect.skipDefault);
+    el.remove();
+  });
+
+  test('P9: the empty-discovery "Select entities manually" route reaches real pickers (no dead-end)', async () => {
+    const el = makeEditor();
+    el.hass = EMPTY_HASS; // nothing resolves
+    el.setConfig({ type: 'custom:tesla-card' } as TeslaCardConfig);
+    await el.updateComplete;
+    const manualBtn = [...el.shadowRoot!.querySelectorAll('button')].find((b) =>
+      b.textContent?.includes(STRINGS.wizard.detect.selectManually)
+    ) as HTMLButtonElement;
+    expect(manualBtn).toBeTruthy();
+    manualBtn.click();
+    await el.updateComplete;
+    // Confirm now renders the unfiltered map-a-miss picker for every role (not an empty list)
+    expect(el.shadowRoot!.querySelectorAll('.confirm-list .remap-panel').length).toBeGreaterThan(0);
+    expect(el.shadowRoot!.textContent).toContain(STRINGS.wizard.confirm.manualHeading);
+    el.remove();
+  });
+
+  test('P10: a tyre threshold is shown in the chosen display unit, converted from the sensor native unit', async () => {
+    const TYRE_HASS = {
+      states: {
+        'sensor.fl_psi': { entity_id: 'sensor.fl_psi', state: '35', attributes: { unit_of_measurement: 'psi' } },
+      },
+    } as unknown as HomeAssistant;
+    const el = makeEditor();
+    el.hass = TYRE_HASS;
+    el.setConfig({
+      type: 'custom:tesla-card',
+      setup_complete: true,
+      entities: { tire_fl: 'sensor.fl_psi' },
+      tyres: { units: 'bar', recommended: 35 },
+    } as unknown as TeslaCardConfig);
+    await el.updateComplete;
+    const rec = tuneSel(el, 'tune-recommended')!;
+    // 35 psi (native) shown as ~2.41 bar (display) — coherent with the bar bounds/label
+    expect(rec.value as number).toBeCloseTo(35 / 14.5038, 2);
+    // editing in bar stores back to native psi (no clamp/overwrite loss)
+    const cap = captureEmit(el);
+    await tuneFire(el, el.shadowRoot!.querySelector('.tune .tune-recommended')!, 2.5);
+    const tyres = cap.get()!.tyres as Record<string, unknown>;
+    expect(tyres.recommended as number).toBeCloseTo(2.5 * 14.5038, 1);
     el.remove();
   });
 });

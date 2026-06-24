@@ -64,6 +64,18 @@ function tuneNumberRanges(units: 'psi' | 'bar' | undefined): {
   return { unit: undefined, rec: { min: 0, max: 100, step: 0.1 }, margin: { min: 0, max: 20, step: 0.1 } };
 }
 
+/** Exact bar↔psi factor (the ONE conversion constant — shared with panel-tyres). */
+const PSI_PER_BAR = 14.5038;
+
+/** Spread-clone a config container, normalizing a malformed (non-object / array) value
+ *  to `{}` — so a hand-edited garbage sibling (`energy: "on"`) never char-indexes
+ *  (`{ ...'on' }` → `{0:'o',1:'n'}`) or rides back corrupted on an unrelated save, and a
+ *  non-iterable never throws. ONE garbage policy for every editor write (mirrors the
+ *  inline guard `_setTheme`/`_cloneTyres` use): FR-24 / SM-C4 / R9. */
+function safeClone<T extends object>(x: T | undefined): T {
+  return (x && typeof x === 'object' && !Array.isArray(x) ? { ...x } : {}) as T;
+}
+
 /**
  * A node's honest discovery result (CAP-4 / Story 9.10 AC5). FOUR states now: the
  * `no_data` (`unknown`) sibling of `unavailable` joins the 9.9 three — a registered
@@ -276,7 +288,7 @@ export class TeslaCardEditor extends LitElement implements LovelaceCardEditor {
   // top-level + energy keys intact (the Story 7.2 spread-copy contract).
   private _commitNodes(mutate: (nodes: NodeCustomization) => void): void {
     const c = this._config;
-    const nodes: NodeCustomization = { ...(c.energy?.nodes ?? {}) };
+    const nodes = safeClone<NodeCustomization>(c.energy?.nodes);
     // Clone ONLY well-formed containers. A garbage string/number `hide`/`order`/`rows`
     // (FR-24: tolerated and never consumed by the card) must NOT be spread — `[...'nope']`
     // / `{ ...'nope' }` would persist a corrupted char-indexed value on an unrelated edit,
@@ -299,7 +311,7 @@ export class TeslaCardEditor extends LitElement implements LovelaceCardEditor {
       delete nodes.order;
 
     const next: TeslaCardConfig = { ...c };
-    const energy = { ...(c.energy ?? {}) };
+    const energy = safeClone(c.energy);
     // Keep `nodes` iff anything survives the prune — `Object.keys` (not an
     // enumerated hide/order/instances check) so an unknown/future `nodes`
     // sub-key round-trips, matching the `energy`-level forward-compat prune below.
@@ -387,7 +399,7 @@ export class TeslaCardEditor extends LitElement implements LovelaceCardEditor {
   // (SM-C4). The `Object.keys(nodes).length` prune then drops an emptied `nodes`/`energy`.
   private _setNodeRow(role: Role, row: SceneRow): void {
     this._commitNodes((nodes) => {
-      const rows = { ...(nodes.rows ?? {}) };
+      const rows = safeClone(nodes.rows);
       if (row === canonicalRow(role)) delete rows[role];
       else rows[role] = row;
       if (Object.keys(rows).length > 0) nodes.rows = rows;
@@ -463,6 +475,9 @@ export class TeslaCardEditor extends LitElement implements LovelaceCardEditor {
   // One row group (Sources / Loads): a sub-heading + the row's present-order nodes.
   private _renderRowGroup(row: SceneRow, heading: string): TemplateResult {
     const within = this._rowOrder(row);
+    // A row can empty out (every node promoted to the other row, or all hidden) — don't
+    // render a labelled "Source"/"Load" heading over zero nodes (review fix P7).
+    if (within.length === 0) return html``;
     return html`
       <span class="group-heading">${heading}</span>
       ${within.map((role, i) => this._renderNodeRow(role, i, within))}
@@ -498,6 +513,11 @@ export class TeslaCardEditor extends LitElement implements LovelaceCardEditor {
   // One-shot guard so the resume step is derived ONCE (from the first config we see),
   // not reset when HA echoes our own `config-changed` back through `setConfig`.
   private _resumed = false;
+  // Empty-discovery manual-mapping mode (review fix D2): set when the user takes the
+  // "Select entities manually" escape from an empty Detect, so Confirm shows EVERY role's
+  // unfiltered map-a-miss picker (not the present-only list) — and keeps showing them as
+  // entities are mapped, so more than one can be mapped. Reset on complete / guided re-entry.
+  @state() private _manualMode = false;
 
   protected override willUpdate(changed: Map<string, unknown>): void {
     // Derive the resume step from the persisted config the first time we hold one
@@ -553,11 +573,14 @@ export class TeslaCardEditor extends LitElement implements LovelaceCardEditor {
   // defaults), so completion adds only the marker. Shared by "Done." and "Finish now".
   private _complete = (): void => {
     this._wizardOverride = false;
+    this._manualMode = false;
     this._emit({ ...this._config, setup_complete: true });
   };
 
-  // Empty-discovery escape: route into the Step-2 mapping (the manual fallback).
+  // Empty-discovery escape: enter manual-mapping mode, then route into the Step-2 mapping
+  // (the manual fallback — Confirm then shows every role's unfiltered picker, review D2).
   private _selectManually = (): void => {
+    this._manualMode = true;
     this._advance();
   };
 
@@ -565,6 +588,7 @@ export class TeslaCardEditor extends LitElement implements LovelaceCardEditor {
   private _runGuidedSetup = (): void => {
     this._resumed = true;
     this._step = 0;
+    this._manualMode = false;
     this._wizardOverride = true;
   };
 
@@ -627,14 +651,14 @@ export class TeslaCardEditor extends LitElement implements LovelaceCardEditor {
     const t = OVERRIDE_TARGET[role];
     const next: TeslaCardConfig = { ...this._config };
     if (t.surface === 'vehicle') {
-      const entities = { ...(next.entities ?? {}) };
+      const entities = safeClone(next.entities);
       if (value) entities[t.key] = value;
       else delete entities[t.key];
       if (Object.keys(entities).length > 0) next.entities = entities;
       else delete next.entities;
     } else {
-      const energy = { ...(next.energy ?? {}) };
-      const ents = { ...(energy.entities ?? {}) };
+      const energy = safeClone(next.energy);
+      const ents = safeClone(energy.entities);
       if (value) ents[t.key] = value;
       else delete ents[t.key];
       if (Object.keys(ents).length > 0) energy.entities = ents;
@@ -825,12 +849,20 @@ export class TeslaCardEditor extends LitElement implements LovelaceCardEditor {
   // not own); the absent-row manual map lives only in the normal-form summary. Reuses
   // the shared `_renderPicker` + write path; the polite live region announces a pick.
   private _renderConfirm(): TemplateResult {
-    const present = this._discover().filter((d) => d.state !== 'absent');
+    const disco = this._discover();
+    const present = disco.filter((d) => d.state !== 'absent');
+    // Empty-discovery manual fallback (review fix D2): when NOTHING auto-resolves — or the
+    // user took the "Select entities manually" escape (`_manualMode`) — the present-only
+    // list would dead-end with nothing to map. Show EVERY role's row so the absent ones
+    // expose `_renderPicker`'s unfiltered `{ entity: {} }` map-a-miss picker (9.9 AC2 —
+    // a real no-YAML route, never a fake "all set"). Stays in manual mode while mapping.
+    const manual = this._manualMode || present.length === 0;
+    const rows = manual ? disco : present;
     return html`
-      <span class="wiz-h">${STRINGS.wizard.confirm.heading}</span>
-      <span class="wiz-sub">${STRINGS.wizard.confirm.subhead}</span>
+      <span class="wiz-h">${manual ? STRINGS.wizard.confirm.manualHeading : STRINGS.wizard.confirm.heading}</span>
+      <span class="wiz-sub">${manual ? STRINGS.wizard.confirm.manualSubhead : STRINGS.wizard.confirm.subhead}</span>
       <ul class="disco confirm-list" role="list">
-        ${present.map(
+        ${rows.map(
           (d) => html`
             <li class="confirm-row ${d.state}">
               <div class="summary-row-head">
@@ -907,8 +939,17 @@ export class TeslaCardEditor extends LitElement implements LovelaceCardEditor {
   // NO confetti, NO "Success!", and NO fabricated telemetry (the live generic-EV hero
   // preview is Story 9.12's seam; this frame never invents SoC/range, honouring the
   // card's freshness discipline by construction). "Done." commits the complete config.
+  // The card's display name, coerced defensively: a non-string `config.name` (e.g. a
+  // hand-written YAML number `name: 2024`) must not throw `…trim is not a function` on
+  // editor open (FR-24) — `?.trim()` only guards null/undefined, not a number/object.
+  // Falls back to the generic hero name when blank/absent.
+  private _cardName(): string {
+    const n = this._config.name;
+    return (typeof n === 'string' ? n.trim() : '') || STRINGS.hero.defaultName;
+  }
+
   private _renderFinish(): TemplateResult {
-    const name = this._config.name?.trim() || STRINGS.hero.defaultName;
+    const name = this._cardName();
     return html`
       <span class="wiz-h">${STRINGS.wizard.finish.heading}</span>
       <span class="wiz-sub">${STRINGS.wizard.finish.subhead}</span>
@@ -941,7 +982,12 @@ export class TeslaCardEditor extends LitElement implements LovelaceCardEditor {
   // "Select entities manually" is the way forward). Focus order Back→Skip→Next→Finish.
   private _renderFooter(nextDisabled: boolean): TemplateResult {
     const isFinish = this._step === FINISH_STEP;
-    const skipDefault = this._stepSkip(WIZARD_STEPS[this._step]);
+    // Empty-discovery Detect: there is nothing to "accept", so Skip's label defers setup
+    // honestly rather than claiming a false action (review fix P8).
+    const skipDefault =
+      this._step === 0 && nextDisabled
+        ? STRINGS.wizard.detect.skipEmpty
+        : this._stepSkip(WIZARD_STEPS[this._step]);
     return html`
       <div class="wiz-footer">
         <button
@@ -989,7 +1035,7 @@ export class TeslaCardEditor extends LitElement implements LovelaceCardEditor {
     const nextDisabled =
       this._step === 0 && this._discover().every((d) => d.state === 'absent');
     return html`
-      <div class="wizard" role="dialog" aria-label=${STRINGS.wizard.title}>
+      <div class="wizard" role="group" aria-label=${STRINGS.wizard.title}>
         ${this._renderStepper()}
         ${keyed(this._step, html`<div class="wiz-body">${this._renderStepBody()}</div>`)}
         ${this._renderFooter(nextDisabled)}
@@ -1257,6 +1303,18 @@ export class TeslaCardEditor extends LitElement implements LovelaceCardEditor {
   }
 
   private _onSwatchKey(e: KeyboardEvent): void {
+    // Space/Enter activates the FOCUSED swatch (ARIA APG radio behaviour) — needed when no
+    // swatch is selected yet (a custom hex), where arrow selection-follows-focus has not
+    // run, so Tab-then-Space would otherwise do nothing (review fix P6).
+    if (e.key === ' ' || e.key === 'Enter') {
+      const key = (e.target as HTMLElement | null)?.closest?.('.swatch')?.getAttribute('data-key');
+      const hit = PAINT_SWATCHES.find((s) => s.key === key);
+      if (hit) {
+        e.preventDefault();
+        this._setPaint(hit.hex);
+      }
+      return;
+    }
     const sel = this._selectedSwatch();
     const cur = sel ? PAINT_SWATCHES.findIndex((s) => s.key === sel) : 0;
     const next = this._radioNext(e, PAINT_SWATCHES.length, cur);
@@ -1319,7 +1377,7 @@ export class TeslaCardEditor extends LitElement implements LovelaceCardEditor {
     const c = this._config;
     const paint = resolvePaint(this.hass, c);
     const light = this._resolvedAppTheme() === 'light';
-    const name = c.name?.trim() || STRINGS.hero.defaultName;
+    const name = this._cardName();
     const panel = c.default_panel ?? 'charging';
     const tokenStyle = light
       ? Object.entries(LIGHT_TOKENS)
@@ -1331,14 +1389,13 @@ export class TeslaCardEditor extends LitElement implements LovelaceCardEditor {
         <span class="preview-lead">${STRINGS.editor.appearance.livePreview}</span>
         <div class="appearance-preview ${light ? 'light' : ''}" style=${tokenStyle || nothing}>
           <div class="preview-stage">${carView({ paint, name, charge: 'parked' })}</div>
-          <div class="preview-tabs" role="tablist" aria-label=${STRINGS.editor.appearance.panelLabel}>
+          <!-- Decorative preview of the chosen default tab — NOT an operable tablist
+               (no focus/keyboard/tabpanel), so it carries no tab/tablist ARIA that would
+               misrepresent it to a screen reader; the real default-panel control is the
+               labelled picker below (review fix P4). -->
+          <div class="preview-tabs" role="group" aria-label=${STRINGS.editor.appearance.panelLabel}>
             ${this._presentPanels().map(
-              (p) => html`<span
-                class="preview-tab ${p.id === panel ? 'active' : ''}"
-                role="tab"
-                aria-selected=${p.id === panel ? 'true' : 'false'}
-                >${p.name}</span
-              >`
+              (p) => html`<span class="preview-tab ${p.id === panel ? 'active' : ''}">${p.name}</span>`
             )}
           </div>
         </div>
@@ -1567,7 +1624,7 @@ export class TeslaCardEditor extends LitElement implements LovelaceCardEditor {
   // an emptied `energy` (mirror `_writeOverride`). Sibling energy keys ride the spread.
   private _setHidePowerwall(value: boolean): void {
     const next = { ...this._config };
-    const energy = { ...(next.energy ?? {}) };
+    const energy = safeClone(next.energy);
     if (value) energy.hide_powerwall_controls = true;
     else delete energy.hide_powerwall_controls;
     if (Object.keys(energy).length > 0) next.energy = energy;
@@ -1585,7 +1642,45 @@ export class TeslaCardEditor extends LitElement implements LovelaceCardEditor {
 
   private _onTyresNum(key: 'recommended' | 'margin', ev: CustomEvent): void {
     const raw = (ev.detail as { value?: unknown } | undefined)?.value;
-    this._setTyresNum(key, typeof raw === 'number' && Number.isFinite(raw) ? raw : undefined);
+    const v = typeof raw === 'number' && Number.isFinite(raw) ? raw : undefined;
+    // Convert the edited DISPLAY-unit value back to the sensor's NATIVE storage unit so
+    // the threshold stays stored native (panel-tyres compares in native); identity when
+    // the units match or native is unknown (review fix D1 — no clamp/overwrite loss).
+    const native = this._tyreNativeUnit();
+    const display = native ? this._config.tyres?.units : undefined;
+    this._setTyresNum(key, this._convertPressure(v, display, native));
+  }
+
+  // The tyre sensors' native unit, read live from hass (D7 editor liveness relaxation —
+  // editor.ts is in the no-bare-hass-states baseline). Lets the Tune threshold widgets
+  // convert the NATIVE-stored thresholds to/from the chosen DISPLAY unit so value, bounds
+  // and label stay coherent (review fix D1). Undefined ⇒ no hass / no sensor / no unit ⇒
+  // the caller falls back to honest native presentation (no display bounds/label).
+  private _tyreNativeUnit(): 'psi' | 'bar' | undefined {
+    const hass = this.hass?.states ? this.hass : undefined;
+    if (!hass) return undefined;
+    const ids = resolveEntities(hass, this._config);
+    for (const k of ['tire_fl', 'tire_fr', 'tire_rl', 'tire_rr'] as const) {
+      const u = hass.states[ids[k]]?.attributes?.unit_of_measurement;
+      if (typeof u === 'string') {
+        if (/bar/i.test(u)) return 'bar';
+        if (/psi/i.test(u)) return 'psi';
+      }
+    }
+    return undefined;
+  }
+
+  // Convert a threshold between units via the one PSI_PER_BAR factor. Identity when
+  // either unit is unknown or they already match (an unconvertible value is shown
+  // verbatim, never mislabeled or clamped).
+  private _convertPressure(
+    v: number | undefined,
+    from: 'psi' | 'bar' | undefined,
+    to: 'psi' | 'bar' | undefined
+  ): number | undefined {
+    if (v === undefined || !from || !to || from === to) return v;
+    const bar = from === 'bar' ? v : v / PSI_PER_BAR;
+    return to === 'bar' ? bar : bar * PSI_PER_BAR;
   }
 
   // Compose the polite Tune announce (read AFTER `_emit` updated `_config`): the
@@ -1655,7 +1750,15 @@ export class TeslaCardEditor extends LitElement implements LovelaceCardEditor {
     const c = this._config;
     const T = STRINGS.editor.tune;
     const units = c.tyres?.units; // undefined ⇒ Auto / native (zero-diff)
-    const r = tuneNumberRanges(units);
+    // Present the thresholds in the chosen DISPLAY unit only when we can convert honestly
+    // (the sensor's native unit is known via D7). Otherwise fall back to native
+    // presentation (permissive range, no unit label) so a native value is never shown
+    // under mismatched bounds/label or clamped on edit (review fix D1).
+    const native = this._tyreNativeUnit();
+    const display = native ? units : undefined;
+    const r = tuneNumberRanges(display);
+    const recValue = this._convertPressure(c.tyres?.recommended, native, display);
+    const marValue = this._convertPressure(c.tyres?.margin, native, display);
     // a11y obligation #3 (EXPERIENCE.md:247-252): the number field announces its
     // unit AND min/max range ("Recommended pressure, bar, range 1.5–4"). Only when a
     // unit is chosen — Auto leaves both off (the permissive range is not meaningful to
@@ -1697,7 +1800,7 @@ export class TeslaCardEditor extends LitElement implements LovelaceCardEditor {
             .selector=${{
               number: { min: r.rec.min, max: r.rec.max, step: r.rec.step, unit_of_measurement: r.unit, mode: 'box' },
             }}
-            .value=${c.tyres?.recommended}
+            .value=${recValue}
             aria-label=${recAria}
             @value-changed=${(e: Event) => this._onTyresNum('recommended', e as CustomEvent)}
           ></ha-selector>
@@ -1711,7 +1814,7 @@ export class TeslaCardEditor extends LitElement implements LovelaceCardEditor {
             .selector=${{
               number: { min: r.margin.min, max: r.margin.max, step: r.margin.step, unit_of_measurement: r.unit, mode: 'box' },
             }}
-            .value=${c.tyres?.margin}
+            .value=${marValue}
             aria-label=${marAria}
             @value-changed=${(e: Event) => this._onTyresNum('margin', e as CustomEvent)}
           ></ha-selector>
@@ -1778,6 +1881,18 @@ export class TeslaCardEditor extends LitElement implements LovelaceCardEditor {
   // carStyles brings the recolorable hero's `.car-img`/`.tc-car` rules so the
   // appearance preview reuses the REAL render path (Story 9.12 Task 4).
   static override styles = [carStyles, css`
+    /* Focus ring (review fix P5): the editor extends LitElement WITHOUT sharedStyles, so
+       the shared :focus-visible ring is NOT inherited into this shadow root — define it
+       here so own-rolled controls (swatch/theme radios, remap chevrons, reset/seg buttons)
+       show a visible keyboard ring. Tokens carry their DESIGN fallbacks (token-defined
+       gate); un-inherited here, the fallbacks resolve to the 2px blue ring. */
+    :focus-visible {
+      outline: var(--tc-focus, 2px solid var(--tc-blue, #38bdf8));
+      outline-offset: var(--tc-focus-offset, 2px);
+    }
+    :focus:not(:focus-visible) {
+      outline: none;
+    }
     .form {
       display: flex;
       flex-direction: column;
