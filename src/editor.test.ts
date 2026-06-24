@@ -2760,4 +2760,33 @@ describe('Code review regressions — Epic 9 Group A (editor)', () => {
     expect(tyres.recommended as number).toBeCloseTo(2.5 * 14.5038, 1);
     el.remove();
   });
+
+  test('P10b: a kPa-native sensor converts to/from the chosen display unit (editor↔card parity)', async () => {
+    // kPa is a real HA TPMS native unit; panel-tyres.displayPressure converts it (÷100),
+    // so the editor must too — else a kPa sensor dead-ends on the native fallback and a
+    // bar threshold is stored as raw kPa, warning at the wrong pressure (review follow-on).
+    const TYRE_KPA_HASS = {
+      states: {
+        'sensor.fl_kpa': { entity_id: 'sensor.fl_kpa', state: '240', attributes: { unit_of_measurement: 'kPa' } },
+      },
+    } as unknown as HomeAssistant;
+    const el = makeEditor();
+    el.hass = TYRE_KPA_HASS;
+    el.setConfig({
+      type: 'custom:tesla-card',
+      setup_complete: true,
+      entities: { tire_fl: 'sensor.fl_kpa' },
+      tyres: { units: 'bar', recommended: 240 }, // stored native kPa
+    } as unknown as TeslaCardConfig);
+    await el.updateComplete;
+    const rec = tuneSel(el, 'tune-recommended')!;
+    // 240 kPa (native) shown as 2.4 bar (display) — NOT the raw 240 under bar bounds
+    expect(rec.value as number).toBeCloseTo(2.4, 2);
+    // editing in bar stores back to native kPa (× 100)
+    const cap = captureEmit(el);
+    await tuneFire(el, el.shadowRoot!.querySelector('.tune .tune-recommended')!, 2.5);
+    const tyres = cap.get()!.tyres as Record<string, unknown>;
+    expect(tyres.recommended as number).toBeCloseTo(250, 1);
+    el.remove();
+  });
 });

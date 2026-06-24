@@ -1656,7 +1656,10 @@ export class TeslaCardEditor extends LitElement implements LovelaceCardEditor {
   // convert the NATIVE-stored thresholds to/from the chosen DISPLAY unit so value, bounds
   // and label stay coherent (review fix D1). Undefined ⇒ no hass / no sensor / no unit ⇒
   // the caller falls back to honest native presentation (no display bounds/label).
-  private _tyreNativeUnit(): 'psi' | 'bar' | undefined {
+  // kPa is a real HA TPMS native unit (display stays psi/bar) — recognise it so a kPa
+  // sensor converts honestly here instead of dead-ending on the native fallback while
+  // the card (`panel-tyres.displayPressure`) DOES convert kPa (editor↔card parity).
+  private _tyreNativeUnit(): 'psi' | 'bar' | 'kpa' | undefined {
     const hass = this.hass?.states ? this.hass : undefined;
     if (!hass) return undefined;
     const ids = resolveEntities(hass, this._config);
@@ -1665,22 +1668,24 @@ export class TeslaCardEditor extends LitElement implements LovelaceCardEditor {
       if (typeof u === 'string') {
         if (/bar/i.test(u)) return 'bar';
         if (/psi/i.test(u)) return 'psi';
+        if (/kpa/i.test(u)) return 'kpa';
       }
     }
     return undefined;
   }
 
-  // Convert a threshold between units via the one PSI_PER_BAR factor. Identity when
-  // either unit is unknown or they already match (an unconvertible value is shown
-  // verbatim, never mislabeled or clamped).
+  // Convert a threshold between units via the one PSI_PER_BAR factor (kPa = bar × 100,
+  // mirroring panel-tyres). Identity when either unit is unknown or they already match
+  // (an unconvertible value is shown verbatim, never mislabeled or clamped). The display
+  // unit is only ever psi/bar; native may also be kPa (the card stores/compares native).
   private _convertPressure(
     v: number | undefined,
-    from: 'psi' | 'bar' | undefined,
-    to: 'psi' | 'bar' | undefined
+    from: 'psi' | 'bar' | 'kpa' | undefined,
+    to: 'psi' | 'bar' | 'kpa' | undefined
   ): number | undefined {
     if (v === undefined || !from || !to || from === to) return v;
-    const bar = from === 'bar' ? v : v / PSI_PER_BAR;
-    return to === 'bar' ? bar : bar * PSI_PER_BAR;
+    const bar = from === 'bar' ? v : from === 'psi' ? v / PSI_PER_BAR : v / 100;
+    return to === 'bar' ? bar : to === 'psi' ? bar * PSI_PER_BAR : bar * 100;
   }
 
   // Compose the polite Tune announce (read AFTER `_emit` updated `_config`): the
