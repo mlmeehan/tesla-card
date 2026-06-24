@@ -90,9 +90,13 @@ export function roleInstances(config: TeslaCardConfig, role: Role): RoleInstance
     index,
     count,
     title: typeof spec.title === 'string' ? spec.title : undefined,
-    entities: spec.entities && typeof spec.entities === 'object' ? spec.entities : undefined,
+    entities:
+      spec.entities && typeof spec.entities === 'object' && !Array.isArray(spec.entities)
+        ? spec.entities
+        : undefined,
     // Story 9.8: the per-car embedded-card override (vehicle role only); object-gated
-    // exactly like `entities` so a garbage `config` value degrades to "no override".
+    // exactly like `entities` (both reject arrays — review GB5) so a garbage value
+    // degrades to "no override" rather than spreading as numeric keys.
     config:
       spec.config && typeof spec.config === 'object' && !Array.isArray(spec.config)
         ? spec.config

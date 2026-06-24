@@ -2799,3 +2799,27 @@ describe('Story 9.10 AC7 — per-instance keying (a hidden role with multiple li
     expect(texts.every((t) => t.includes(`${STRINGS.energy.nodes.solar} ·`))).toBe(true);
   });
 });
+
+// ── Code review regressions (Epic 9 Group-B Scene/flow adversarial review) ──────
+describe('Code review regressions — Epic 9 Group B (Scene/flow)', () => {
+  test('GB1: a vehicle promoted to the source row keeps its cached embed across ticks (no thrash)', async () => {
+    const promoted = {
+      type: 'tc-my-home',
+      energy: { nodes: { rows: { vehicle: 'source' } } },
+    } as unknown as TeslaCardConfig;
+    const el = await mount(makeHass(states(awakeFx)), promoted);
+    const embed1 = sr(el).querySelector('.veh-cell tesla-card');
+    expect(embed1).not.toBeNull();
+    // A tick fires updated() → _pruneVehicleCache. A load-only keep-set would evict the
+    // source-promoted car and rebuild the embed (panel reset / DOM churn); identity persists.
+    el.hass = makeHass(states(awakeFx));
+    await el.updateComplete;
+    expect(sr(el).querySelector('.veh-cell tesla-card')).toBe(embed1);
+  });
+
+  test('GB2: importing my-home self-registers tc-generator (standalone Scene load)', () => {
+    // my-home.ts side-effect-imports its six child cards incl. ./generator, so a Scene
+    // loaded WITHOUT the tesla-card entry still upgrades a present generator cell.
+    expect(customElements.get('tc-generator')).toBeDefined();
+  });
+});

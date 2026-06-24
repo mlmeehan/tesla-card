@@ -43,16 +43,18 @@ import { roleInstances, roleOfInstance } from '../flow/instances';
 import type { EnergyRole, Role } from '../data/registry';
 import type { HomeAssistant, LovelaceCard, TeslaCardConfig, SceneRow } from '../types';
 
-// The five Scene-unaware child cards (Stories 6.2 / 6.3). Side-effect imports so
+// The six Scene-unaware child cards (Stories 6.2 / 6.3 / 9.14). Side-effect imports so
 // `tc-my-home` registers its whole composition from this one module — even though
 // the parent `tesla-card.ts` already imports them, this keeps the Scene element
-// self-contained. `components ← components` is allowed (no cycle: none of these
-// import `my-home`).
+// self-contained (the generator import was missing — a present generator rendered a
+// blank element when the Scene loaded standalone; review GB2). `components ← components`
+// is allowed (no cycle: none of these import `my-home`).
 import './solar';
 import './powerwall';
 import './grid';
 import './home';
 import './wall-connector';
+import './generator';
 
 /**
  * The Gateway-bus trunk stroke — the ONE new sanctioned literal this story adds
@@ -247,7 +249,7 @@ export class TcMyHome extends LitElement implements LovelaceCard {
   /**
    * Story 9.8 — the embedded detailed vehicle cards (`tesla-card`), keyed by the
    * per-instance id (the config identity). Each present vehicle cell owns its OWN
-   * embed, created once and reused across renders — the vehicle's analogue of the five
+   * embed, created once and reused across renders — the vehicle's analogue of the six
    * embedded energy cards. `cfg` is the RAW `_config` identity the embed was last
    * `setConfig`'d with (NOT the per-tick resolved cfg — see {@link _vehicleDetailCard}),
    * stored PER ENTRY so a state tick / a sibling car's update never resets another car's
@@ -449,7 +451,7 @@ export class TcMyHome extends LitElement implements LovelaceCard {
 
   /**
    * The resolved entity ids whose change must re-render the Scene — the UNION of
-   * every entity the composed children actually read, NOT just the five `*_power`
+   * every entity the composed children actually read, NOT just the six `*_power`
    * sensors. The children also surface SOC / backup-reserve / operation-mode
    * (Powerwall), grid-status (Grid), session+plug+status (Wall Connector) and the
    * Solar weather vignette (6.4); gating on power alone would FREEZE those —
@@ -559,7 +561,11 @@ export class TcMyHome extends LitElement implements LovelaceCard {
     // vehicle ids so a dropped car's cached `tesla-card` is released (no leak).
     const cfg = this._resolvedConfig ?? this._config;
     const { source, load } = cfg ? this._orderedRows(cfg) : { source: [], load: [] };
-    this._pruneVehicleCache(new Set(load.filter((c) => c.vehicle).map((c) => c.id)));
+    // Scan BOTH bands: Story 9.15 can promote the vehicle to the source row, so a load-only
+    // keep-set would evict a source-promoted car's cached embed every tick — forcing a
+    // rebuild + setConfig (panel reset / DOM churn), the exact thrash this cache prevents
+    // (review GB1). Union source+load so every present vehicle id is kept.
+    this._pruneVehicleCache(new Set([...source, ...load].filter((c) => c.vehicle).map((c) => c.id)));
     // Story 9.8: key off the VISIBLE (post-clamp) roster — so toggling "Show all" (which
     // reveals clamped cards / new anchors) flips the key and reflows the overlay ONCE.
     const ids = (cells: SceneCell[]): string => cells.map((c) => c.id).join(',');

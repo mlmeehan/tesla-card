@@ -98,4 +98,9 @@ describe('roleInstances — id + sanitized title/entities per instance', () => {
       { id: 'home:2', index: 1, count: 2, title: 'Real', entities: undefined },
     ]);
   });
+
+  test('GB5 (review): an ARRAY `entities` is rejected to undefined — mirrors the config guard, no numeric-key spread', () => {
+    const out = roleInstances(cfg({ solar: [{ entities: ['x', 'y'] }] }) as TeslaCardConfig, 'solar');
+    expect(out[0].entities).toBeUndefined();
+  });
 });
