@@ -69,6 +69,7 @@ function makeStates(opts: {
   locked?: boolean;
   usableBattery?: string; // cached SoC sensor — survives sleep (compact last-known fallback)
   estimateRange?: string; // cached range sensor — survives sleep (compact last-known fallback)
+  cachedRange?: string; // last-known battery_range surviving sleep (Story 11.2 range-rung fallback)
 } = {}): Record<string, HassEntity> {
   const {
     asleep = false,
@@ -84,12 +85,21 @@ function makeStates(opts: {
     locked = true,
     usableBattery,
     estimateRange,
+    cachedRange,
   } = opts;
   const states: Record<string, HassEntity> = {
     // Anchor: always fresh at REF → referenceNow() === REF.
     [ID.status]: ent(ID.status, asleep ? 'off' : 'on', at(0)),
     [ID.lock]: ent(ID.lock, locked ? 'locked' : 'unlocked', at(0)),
-    [ID.range]: ent(ID.range, asleep ? 'unavailable' : '210', at(0)),
+    // battery_range normally reads 'unavailable' asleep; `cachedRange` models the
+    // real Tesla battery_range retaining a last-known value across sleep (Story 11.2
+    // range-rung fallback target) — overrides the asleep 'unavailable'.
+    [ID.range]: ent(
+      ID.range,
+      cachedRange ?? (asleep ? 'unavailable' : '210'),
+      at(0),
+      { unit_of_measurement: 'mi' }
+    ),
     [ID.charging]: ent(
       ID.charging,
       chargeStatus ?? (charging ? 'Charging' : 'Disconnected'),
@@ -991,5 +1001,198 @@ describe('Story 4.6 AC4 — Hero halo (discrete entity) and WC edge (FlowModel) 
     expect(labelOf(el)).toBe(STRINGS.status.parked);
     expect(overlay(el)).toBeTruthy(); // overlay present (other roles)…
     expect(wcEdge(el)).toBeNull(); // …with NO wall_connector edge at all
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Story 11.2 — enriched compact vehicle cell: a range fallback RUNG + a lock/
+// security glance chip. Both are COMPACT-ONLY (cfg.variant === 'compact'); the
+// standalone card is byte-identical. Investigation #2 root cause: the compact
+// cell read a bare "—" for range when `estimate_battery_range` was unmapped, and
+// carried no security signal. jsdom is the primary tier (the chip's real context
+// is the asleep My-Home embed). Red-green: these go RED against today's tree (no
+// chip; range "—" when the estimate is absent) and green after.
+// ═══════════════════════════════════════════════════════════════════════════
+
+const batRangeText = (el: HeroEl): string =>
+  el.shadowRoot!.querySelector('.bat-range')!.textContent!.replace(/\s+/g, ' ').trim();
+const chip = (el: HeroEl): HTMLButtonElement | null =>
+  el.shadowRoot!.querySelector<HTMLButtonElement>('.security-chip');
+const chipWord = (el: HeroEl): string =>
+  el.shadowRoot!.querySelector('.security-chip .sec-word')!.textContent!.trim();
+
+describe('Story 11.2 AC1 — range fallback rung (estimate → last-known battery_range)', () => {
+  test('compact + asleep, estimate ABSENT but cached battery_range present → shows it, not "—"', async () => {
+    // The added rung: estimate_battery_range is unmapped/absent (investigation #2),
+    // so the range falls back to last-known battery_range rather than blanking.
+    const el = await mountHero(makeStates({ asleep: true, cachedRange: '180' }), {
+      variant: 'compact',
+    });
+    expect(batRangeText(el)).toBe('180 mi');
+    // Inherits the dimmed last-known skin (no new freshness claim).
+    expect(el.shadowRoot!.querySelector('.bat-top')!.classList.contains('tc-stale-copy')).toBe(true);
+  });
+
+  test('compact + asleep, estimate PRESENT → still shows the estimate (rung order preserved)', async () => {
+    const el = await mountHero(
+      makeStates({ asleep: true, estimateRange: '230', cachedRange: '180' }),
+      { variant: 'compact' }
+    );
+    // The estimate resolves first → it wins; the battery_range rung is only a fallback.
+    expect(batRangeText(el)).toBe('230 mi');
+  });
+
+  test('compact + asleep, BOTH absent → graceful "—" (honest no-cache, never fabricated)', async () => {
+    const el = await mountHero(makeStates({ asleep: true }), { variant: 'compact' });
+    // Default makeStates sets battery_range 'unavailable' under asleep, no estimate.
+    expect(batRangeText(el)).toBe('—');
+  });
+
+  test('the awake / full-card range branch is UNCHANGED (battery_range, never the estimate)', async () => {
+    // Awake compact reads the live battery_range (210), ignoring any estimate cache.
+    const awakeCompact = await mountHero(
+      makeStates({ estimateRange: '230' }),
+      { variant: 'compact' }
+    );
+    expect(batRangeText(awakeCompact)).toBe('210 mi');
+    // Full card asleep keeps the strict "—" (battery_range reads unavailable asleep;
+    // the rung is compact-only, so the full card never gains a cache fallback).
+    const fullAsleep = await mountHero(makeStates({ asleep: true, estimateRange: '230' }));
+    expect(batRangeText(fullAsleep)).toBe('—');
+  });
+});
+
+describe('Story 11.2 AC2/AC3 — lock/security chip states + escalation (door>window>unlocked>locked)', () => {
+  test('locked → "Locked", calm (no .muted / .exception)', async () => {
+    const el = await mountHero(makeStates({ locked: true }), { variant: 'compact' });
+    expect(chip(el)).toBeTruthy();
+    expect(chipWord(el)).toBe(STRINGS.status.locked);
+    expect(chip(el)!.classList.contains('muted')).toBe(false);
+    expect(chip(el)!.classList.contains('exception')).toBe(false);
+  });
+
+  test('unlocked → "Unlocked", muted', async () => {
+    const el = await mountHero(makeStates({ locked: false }), { variant: 'compact' });
+    expect(chipWord(el)).toBe(STRINGS.status.unlocked);
+    expect(chip(el)!.classList.contains('muted')).toBe(true);
+  });
+
+  test('any door open → amber "Door open" (exception), even when locked', async () => {
+    const states = makeStates({ locked: true });
+    states[APID.doorFL] = ent(APID.doorFL, 'on', at(0));
+    const el = await mountHero(states, { variant: 'compact' });
+    expect(chipWord(el)).toBe(STRINGS.hero.security.doorOpen);
+    expect(chip(el)!.classList.contains('exception')).toBe(true);
+  });
+
+  test('a window open + no door → amber "Window open" (exception)', async () => {
+    const states = makeStates({ locked: true });
+    states[APID.windows] = ent(APID.windows, 'open', at(0));
+    const el = await mountHero(states, { variant: 'compact' });
+    expect(chipWord(el)).toBe(STRINGS.hero.security.windowOpen);
+    expect(chip(el)!.classList.contains('exception')).toBe(true);
+  });
+
+  test('priority: a door open WINS over a simultaneous window open and over unlocked', async () => {
+    const states = makeStates({ locked: false }); // unlocked too
+    states[APID.doorFL] = ent(APID.doorFL, 'on', at(0));
+    states[APID.windows] = ent(APID.windows, 'open', at(0));
+    const el = await mountHero(states, { variant: 'compact' });
+    expect(chipWord(el)).toBe(STRINGS.hero.security.doorOpen);
+  });
+
+  test('the exception copy is a GENERIC SINGULAR regardless of how many doors are ajar', async () => {
+    const states = makeStates({ locked: true });
+    states[APID.doorFL] = ent(APID.doorFL, 'on', at(0));
+    states[DEFAULT_ENTITIES.door_rr] = ent(DEFAULT_ENTITIES.door_rr, 'on', at(0));
+    const el = await mountHero(states, { variant: 'compact' });
+    expect(chipWord(el)).toBe(STRINGS.hero.security.doorOpen); // not "2 doors open"
+  });
+});
+
+describe('Story 11.2 AC4 — chip is a real <button> → closures, state-bearing aria, ≥44×44', () => {
+  test('the chip is a <button> with a state-bearing aria-label ("…, opens closures")', async () => {
+    const el = await mountHero(makeStates({ locked: true }), { variant: 'compact' });
+    const btn = chip(el)!;
+    expect(btn.tagName).toBe('BUTTON');
+    const label = btn.getAttribute('aria-label')!;
+    expect(label).toContain(STRINGS.status.locked);
+    expect(label).toContain(STRINGS.hero.opensClosures);
+  });
+
+  test('clicking it dispatches a bubbling+composed open-panel CustomEvent with {panel:"closures"}', async () => {
+    const el = await mountHero(makeStates({ locked: false }), { variant: 'compact' });
+    let detail: { panel?: string } | undefined;
+    let composed = false;
+    let bubbles = false;
+    el.addEventListener('open-panel', (e) => {
+      const ce = e as CustomEvent<{ panel: string }>;
+      detail = ce.detail;
+      composed = ce.composed;
+      bubbles = ce.bubbles;
+    });
+    chip(el)!.click();
+    expect(detail).toEqual({ panel: 'closures' });
+    expect(composed).toBe(true);
+    expect(bubbles).toBe(true);
+  });
+
+  test('CSS: the chip clears the ≥44×44 tap floor via min-height', () => {
+    // jsdom resolves no layout, so guard the rule TEXT directly (the suite's
+    // established target-size assertion idiom, cf. .bat-pct override above).
+    const heroCss = (TcHero as unknown as { styles: Array<{ cssText?: string }> }).styles
+      .map((s) => s?.cssText ?? '')
+      .join('\n');
+    const rule = heroCss.match(/\.security-chip\s*\{[^}]*\}/);
+    expect(rule, 'missing .security-chip rule').not.toBeNull();
+    expect(rule![0]).toMatch(/min-height:\s*44px/);
+  });
+});
+
+describe('Story 11.2 AC5 — asleep last-known from RAW entities (not apertures), omit when no cache', () => {
+  test('asleep with a resolvable lock → chip stays visible + dimmed (.last-known / .tc-stale-copy)', async () => {
+    const el = await mountHero(makeStates({ asleep: true, locked: true }), {
+      variant: 'compact',
+    });
+    expect(chip(el)).toBeTruthy();
+    expect(chipWord(el)).toBe(STRINGS.status.locked);
+    expect(chip(el)!.classList.contains('last-known')).toBe(true);
+    expect(
+      el.shadowRoot!.querySelector('.security-chip .sec-word')!.classList.contains('tc-stale-copy')
+    ).toBe(true);
+  });
+
+  test('asleep reads the RAW door entity, NOT the asleep-suppressed apertures const', async () => {
+    // apertures is forced to CLOSED_APERTURES when asleep (hero.ts) — a chip derived
+    // from it would falsely read "Locked". Proving the chip reads the raw door entity:
+    // an asleep state with a door 'on' still surfaces the exception.
+    const states = makeStates({ asleep: true, locked: true });
+    states[APID.doorFL] = ent(APID.doorFL, 'on', at(0));
+    const el = await mountHero(states, { variant: 'compact' });
+    expect(chipWord(el)).toBe(STRINGS.hero.security.doorOpen);
+    expect(chip(el)!.classList.contains('exception')).toBe(true);
+  });
+
+  test('asleep + lock unknown/unavailable AND nothing open → chip OMITTED (never a "—" chip)', async () => {
+    const states = makeStates({ asleep: true });
+    states[ID.lock] = ent(ID.lock, 'unavailable', at(0)); // unresolvable lock
+    const el = await mountHero(states, { variant: 'compact' });
+    // Honest absence: the chip is omitted entirely, never a "—" chip for lock state.
+    expect(chip(el)).toBeNull();
+    expect(el.shadowRoot!.querySelector('.sec-word')).toBeNull();
+  });
+});
+
+describe('Story 11.2 AC7 — standalone (non-compact) is byte-identical (no chip, unchanged range)', () => {
+  test('the non-compact hero renders NO security chip, even with a door open', async () => {
+    const states = makeStates({ locked: false });
+    states[APID.doorFL] = ent(APID.doorFL, 'on', at(0));
+    const el = await mountHero(states); // variant unset → full card
+    expect(chip(el)).toBeNull();
+  });
+
+  test('full + variant:"full" explicit → still no chip', async () => {
+    const el = await mountHero(makeStates({ locked: false }), { variant: 'full' });
+    expect(chip(el)).toBeNull();
   });
 });

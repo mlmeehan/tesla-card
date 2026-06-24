@@ -2078,3 +2078,158 @@ test.describe('tc-my-home Scene — Story 9.10: detected-but-hidden advisory (re
     await expect(advisory(page)).toHaveCount(0);
   });
 });
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Story 11.2 — enriched compact vehicle cell: the lock/security GLANCE CHIP, at
+// the LIVE-EMBED tier. The chip's real-world context is the compact `tesla-card`
+// embedded INSIDE `tc-my-home` (my-home.ts `_vehicleDetailCard` → `variant:'compact'`)
+// — a nesting the co-located jsdom suite (which mounts a bare `tc-hero`) never
+// exercises. Only a real layout engine proves the ≥44×44 tap target (jsdom returns
+// zero-sized rects) and the genuine `--tc-amber` / `--tc-text-dim` COMPUTED colours
+// (jsdom resolves no var()/cascade); only the real composed embed proves the chip
+// reads the RAW lock/door/window entities and NOT the asleep-suppressed `apertures`
+// const — which `tc-my-home`'s asleep path ACTUALLY force-suppresses here (vs the
+// jsdom mock). The demo's awake fixture ships front_driver_door='on', so the default
+// chip is the amber "Door open" exception; the asleep scenario keeps the lock + door
+// entities (last-known), so the chip stays visible + dimmed. Range coverage is NOT
+// duplicated here — the Story 8.11 asleep test above already proves "230 mi, not —"
+// for the cached estimate; the rung's estimate→battery_range fallback is not demo-
+// reproducible (no cached battery_range survives the demo's sleep) and is fully
+// covered by the jsdom tier. Under the auto consoleGuard. STRINGS mirrored as
+// literals (the e2e layer never imports `src/`).
+// ═══════════════════════════════════════════════════════════════════════════
+
+// The chip lives in the embedded compact card's hero shadow; Playwright pierces the
+// nested open shadow roots, so a CSS locator scoped to the vehicle cell reaches it.
+const vehChip = (page: Page) => vehCell(page).locator('.security-chip');
+const chipColor = (page: Page) =>
+  vehChip(page).evaluate((el) => getComputedStyle(el).color);
+// Close the demo's default-open front-driver door so the chip de-escalates to the
+// calm "Locked" state (the awake fixture ships front_driver_door='on' → "Door open").
+const DOOR_CLOSED = {
+  'binary_sensor.garage_model_y_front_driver_door': {
+    entity_id: 'binary_sensor.garage_model_y_front_driver_door',
+    state: 'off',
+    attributes: {},
+  },
+};
+
+test.describe('tc-my-home Scene — Story 11.2 compact lock/security chip (live embed)', () => {
+  test.beforeEach(async ({ demo }) => {
+    // AWAKE: the demo hass carries the vehicle + a 'on' front-driver door, so the
+    // compact embed renders the chip in its default amber "Door open" exception.
+    await demo.open(AWAKE.open);
+  });
+
+  // ── AC2/AC3 — the chip renders in the LIVE composed embed, default "Door open" ──
+  test('AC2/AC3 — the chip renders inside the compact embed with the default amber "Door open" exception', async ({
+    page,
+  }) => {
+    await mountScene(page);
+    await waitForTrunk(page);
+
+    // Exactly one chip, inside the vehicle cell's embedded compact card — the chip's
+    // sole real-world home (jsdom mounts a bare tc-hero; this is the real nesting).
+    await expect(vehChip(page)).toHaveCount(1);
+    // The fixture ships front_driver_door='on' → escalation surfaces the generic
+    // singular "Door open" (the WORD carries the state — never hue alone).
+    await expect(vehChip(page)).toContainText('Door open');
+    await expect(vehChip(page)).toHaveClass(/exception/);
+    // It is a real <button> (tappable affordance, not a div) with a state-bearing
+    // aria-label in the battery's idiom — "<state>, opens closures".
+    expect(await vehChip(page).evaluate((el) => el.tagName)).toBe('BUTTON');
+    expect(await vehChip(page).getAttribute('aria-label')).toBe('Door open, opens closures');
+  });
+
+  // ── AC4 — the ≥44×44 tap floor, proven by REAL layout (jsdom returns 0-sized rects) ──
+  test('AC4 — the chip clears the ≥44×44 tap floor in a real layout', async ({ page }) => {
+    await mountScene(page);
+    await waitForTrunk(page);
+
+    const box = await vehChip(page).boundingBox();
+    expect(box).not.toBeNull();
+    // The a11y obligation the jsdom tier can only assert as CSS text — here it is the
+    // genuine rendered box (min-height:44px + inline padding clearing the floor).
+    expect(box!.height).toBeGreaterThanOrEqual(44);
+    expect(box!.width).toBeGreaterThanOrEqual(44);
+  });
+
+  // ── AC3 — the exception is a REAL amber computed colour (never hue-only / token resolves) ──
+  test('AC3 — the "Door open" exception computes to real amber (--tc-amber), the calm "Locked" does NOT', async ({
+    page,
+  }) => {
+    await mountScene(page);
+    await waitForTrunk(page);
+    // Default (door open) → the exception word is genuinely amber in the cascade.
+    expect(await chipColor(page)).toBe('rgb(251, 191, 36)'); // --tc-amber #fbbf24
+
+    // Close the door → the chip de-escalates to calm "Locked", and its computed colour
+    // is NO LONGER amber (the calm state is carried by the word, not a shouting hue).
+    await mountScene(page, { inject: DOOR_CLOSED });
+    await waitForTrunk(page);
+    await expect(vehChip(page)).toContainText('Locked');
+    await expect(vehChip(page)).not.toHaveClass(/exception/);
+    expect(await chipColor(page)).not.toBe('rgb(251, 191, 36)');
+  });
+
+  // ── AC5 — asleep: RAW entity, NOT the suppressed `apertures`; dimmed last-known skin ──
+  test('AC5 — asleep, the chip reads the RAW door entity (still "Door open") and dims to last-known', async ({
+    page,
+    demo,
+  }) => {
+    // ASLEEP: tc-my-home's render force-suppresses `apertures` to CLOSED_APERTURES for
+    // the embed — a chip derived from THAT would falsely read "Locked". The door entity
+    // itself survives sleep (last-known), so a chip reading the RAW entity still shows
+    // the exception. This is the only tier where the real asleep-suppression path runs.
+    await demo.open(ASLEEP.open);
+    await mountScene(page);
+    await waitForTrunk(page);
+
+    await expect(vehChip(page)).toHaveCount(1);
+    await expect(vehChip(page)).toContainText('Door open'); // raw door entity, NOT apertures
+    // Dimmed last-known skin: the same .last-known marker the asleep SoC/range carry,
+    // and the word marked .tc-stale-copy — visible-but-stale, never a live amber.
+    await expect(vehChip(page)).toHaveClass(/last-known/);
+    await expect(vehChip(page).locator('.sec-word.tc-stale-copy')).toHaveCount(1);
+    // The cascade dims an asleep exception to --tc-text-dim (NOT the live amber) — the
+    // documented "an asleep exception reads calm-stale" intent, a REAL computed proof.
+    expect(await chipColor(page)).toBe('rgb(154, 167, 184)'); // --tc-text-dim #9aa7b8
+  });
+
+  // ── AC4 — tap parity with the battery button: a real click never crashes, focusable ──
+  test('AC4 — the chip is keyboard-focusable and a real tap is inert (panels suppressed in compact, no crash)', async ({
+    page,
+  }) => {
+    await mountScene(page);
+    await waitForTrunk(page);
+
+    // Keyboard-reachable (a native <button>, no tabindex hacks) — the a11y floor.
+    // Focus lands inside the embed's nested shadow root, so the active element is read
+    // off the chip's OWN root node (document.activeElement would only be the host).
+    await vehChip(page).focus();
+    expect(
+      await vehChip(page).evaluate(
+        (el) => (el.getRootNode() as ShadowRoot | Document).activeElement === el,
+      ),
+    ).toBe(true);
+    // A real click: in the compact embed panels are suppressed, so the open-panel tap
+    // is a visual no-op (parity with the battery button) — and crucially does NOT throw.
+    // The auto consoleGuard fails the test on any console/page error this would raise.
+    await vehChip(page).click();
+    await expect(vehChip(page)).toHaveCount(1); // still mounted, scene intact
+  });
+});
+
+// ── AC7 — standalone (non-compact) is byte-identical: the full card renders NO chip ──
+test.describe('tc-my-home Scene — Story 11.2 standalone full card has no chip (compact gate)', () => {
+  test('AC7 — the standalone full `tesla-card` renders NO security chip, even with a door open', async ({
+    page,
+    demo,
+  }) => {
+    // The default demo mounts ONLY the full-variant main `tesla-card` (no Scene, no
+    // compact embed). The awake fixture has front_driver_door='on', so a non-gated chip
+    // WOULD appear — its absence proves the chip is strictly compact-gated (AC7).
+    await demo.open(AWAKE.open);
+    await expect(page.locator('tesla-card .security-chip')).toHaveCount(0);
+  });
+});

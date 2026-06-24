@@ -116,6 +116,50 @@ export class TcHero extends TcBase {
   }
 
   /**
+   * Story 11.2 — the compact cell's lock/security glance chip state, derived
+   * DIRECTLY from the raw lock + door + window entity states. NOT from the
+   * `apertures` const, which is force-suppressed to `CLOSED_APERTURES` when asleep
+   * (render(), hero.ts:253) and would falsely read "all closed/locked" on the
+   * cell where the chip lives almost all the time. The `lock` entity retains its
+   * last-known value across sleep, so the chip stays informative (dimmed) when
+   * asleep without ever fabricating freshness.
+   *
+   * Escalation priority — door > window > unlocked > locked: the chip is calm by
+   * default and only shouts (amber `--tc-amber`, the existing exception token) on
+   * a door/window exception. The state is carried by the WORD (+ the lock glyph),
+   * NEVER hue alone (extends the suite's "never hue-only" rule). The exception copy
+   * is a GENERIC SINGULAR — "Door open"/"Window open" regardless of how many are
+   * ajar (a glance; the closures panel carries per-door detail).
+   *
+   * Returns `null` when there is NO resolvable signal (lock `unknown` AND nothing
+   * reads open) — the chip is OMITTED gracefully (honest absence, never a "—" chip).
+   */
+  private _security(): {
+    word: string;
+    glyph: string;
+    tone: 'calm' | 'muted' | 'exception';
+  } | null {
+    const lockState = normalizeLockState(rawState(this.hass, this.config, 'lock'));
+    const doorOpen =
+      isOn(this.hass, this.config, 'door_fl') ||
+      isOn(this.hass, this.config, 'door_fr') ||
+      isOn(this.hass, this.config, 'door_rl') ||
+      isOn(this.hass, this.config, 'door_rr');
+    const windowOpen =
+      normalizeCoverState(rawState(this.hass, this.config, 'windows')) === 'open';
+    // Omit when nothing is resolvable — never a fabricated dash for lock state.
+    if (lockState === 'unknown' && !doorOpen && !windowOpen) return null;
+    // Escalation: door > window > unlocked > locked.
+    if (doorOpen)
+      return { word: STRINGS.hero.security.doorOpen, glyph: mdiLockOpenVariant, tone: 'exception' };
+    if (windowOpen)
+      return { word: STRINGS.hero.security.windowOpen, glyph: mdiLockOpenVariant, tone: 'exception' };
+    if (lockState === 'unlocked')
+      return { word: STRINGS.status.unlocked, glyph: mdiLockOpenVariant, tone: 'muted' };
+    return { word: STRINGS.status.locked, glyph: mdiLock, tone: 'calm' };
+  }
+
+  /**
    * The honest "updated Nm ago" hint (AC1/AC4) — the Hero is the FIRST consumer
    * of the Epic-1 freshness read-model (R6 sequencing `data → freshness → … →
    * hero`). Backing signal: `battery_level` — the headline value the battery row
@@ -242,6 +286,11 @@ export class TcHero extends TcBase {
         ? keyAgeHint(this.hass, cfg, 'usable_battery_level')
         : this._ageHint();
     const status = this._status(asleep, hint);
+    // Compact-cell lock/security chip (Story 11.2) — gated on `compact` ONLY (shows
+    // awake too; security-at-a-glance is not asleep-only). `null` ⇒ omitted (no cache
+    // to show). Derived from the RAW lock/door/window entities (see `_security`),
+    // never the asleep-suppressed `apertures` const below.
+    const security = compact ? this._security() : null;
     const limit = num(this.hass, cfg, 'charge_limit');
     // Classify once: asleep suppresses the charge cue (Story 3.3's isAsleep gate
     // still wins — an asleep car shows no live charge state).
@@ -266,9 +315,27 @@ export class TcHero extends TcBase {
     // under compact + asleep. `estimate_*` tracks the live rated `battery_range`
     // closely (never the optimistic `ideal_*`, which reads high and would visibly
     // deflate on wake — overstating freshness). The literal union is an EntityKey.
-    const rangeKey = lastKnown ? 'estimate_battery_range' : 'battery_range';
-    const rangeNum = num(this.hass, cfg, rangeKey);
-    const rangeUnit = unit(this.hass, cfg, rangeKey) || 'mi';
+    //
+    // Story 11.2 — an ADDED RUNG, not a swap: under compact + asleep, if the cached
+    // `estimate_battery_range` is unmapped/absent (`num` → undefined — investigation
+    // #2's root cause), fall back to last-known `battery_range` rather than blanking
+    // to "—". The awake / full-card branch still resolves `battery_range` unchanged.
+    // `—` survives only when BOTH keys are absent. `rangeFrom` returns the value AND
+    // the unit from the SAME resolving key, so the unit never reads off a key that
+    // produced no value. Same dimmed `.tc-stale-copy` skin as the SoC — no new stamp.
+    const rangeFrom = (
+      key: 'estimate_battery_range' | 'battery_range'
+    ): { value: number; unit: string } | undefined => {
+      const value = num(this.hass, cfg, key);
+      return value === undefined
+        ? undefined
+        : { value, unit: unit(this.hass, cfg, key) || 'mi' };
+    };
+    const range = lastKnown
+      ? rangeFrom('estimate_battery_range') ?? rangeFrom('battery_range')
+      : rangeFrom('battery_range');
+    const rangeNum = range?.value;
+    const rangeUnit = range?.unit ?? 'mi';
 
     // AC3 — a STATE-BEARING aria-label (EXPERIENCE.md:176 "Battery 64%, opens
     // charging"): SR users hear the charge + the action. Built from the SETTLED
@@ -321,6 +388,17 @@ export class TcHero extends TcBase {
                 ${this._flow.view()}
               </svg>`}
         </div>
+
+        ${security
+          ? html`<button
+              class="security-chip ${security.tone} ${lastKnown ? 'last-known' : ''}"
+              @click=${() => this._open('closures')}
+              aria-label="${security.word}, ${STRINGS.hero.opensClosures}"
+            >
+              ${icon(security.glyph, { size: 16 })}
+              <span class="sec-word ${lastKnown ? 'tc-stale-copy' : ''}">${security.word}</span>
+            </button>`
+          : nothing}
 
         <button
           class="battery ${lastKnown ? 'last-known' : ''}"
@@ -470,6 +548,58 @@ export class TcHero extends TcBase {
       .hero.compact .car-img {
         max-width: min(100%, 300px);
         max-height: 168px;
+      }
+
+      /* ── compact lock/security chip (Story 11.2) ─────────────────────────
+         The second glance affordance — a real button → closures, sibling
+         between the car stage and the battery readout, rendered ONLY under the
+         compact variant. Calm (neutral text) by default; .muted dims the
+         unlocked state; .exception paints the door/window-open WORD amber
+         (--tc-amber, the existing exception token — never a new colour, never
+         hue alone: the word carries the state). Clears the 44x44 tap floor via
+         min-height + inline padding (cf. the .battery margin/padding approach). */
+      .security-chip {
+        appearance: none;
+        border: 0;
+        background: transparent;
+        color: var(--tc-text, #f1f5f9);
+        font-family: inherit;
+        text-align: left;
+        cursor: pointer;
+        align-self: flex-start;
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        min-height: 44px;
+        padding: 4px 10px;
+        margin: 0 -10px;
+        border-radius: var(--tc-radius-md, 16px);
+        font-size: 14px;
+        font-weight: 650;
+        transition: background 0.16s var(--tc-ease, cubic-bezier(0.22, 1, 0.36, 1));
+      }
+      .security-chip:hover {
+        background: var(--tc-surface, rgba(255, 255, 255, 0.045));
+      }
+      .security-chip .sec-word {
+        line-height: 1;
+      }
+      .security-chip.muted {
+        color: var(--tc-text-dim, #9aa7b8);
+      }
+      .security-chip.exception {
+        color: var(--tc-amber, #fbbf24);
+      }
+      /* Asleep last-known skin: the same --tc-text-dim stale treatment the
+         SoC/range use (the .tc-stale-copy on .sec-word dims the word; this dims
+         the glyph to match so an asleep exception reads calm-stale, not a live
+         amber). Ordered AFTER .exception so the dim wins at equal specificity. */
+      .security-chip.last-known {
+        color: var(--tc-text-dim, #9aa7b8);
+      }
+      .security-chip.last-known .tc-ico {
+        opacity: 0.7;
+        filter: grayscale(var(--tc-dim-grayscale, 1));
       }
 
       /* Compact + asleep "last-known": the cached SoC/range are REAL but not live, so

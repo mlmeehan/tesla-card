@@ -54,6 +54,18 @@ export const STRINGS = {
     // glue: `${battery} ${pct}%, ${opensCharging}`.
     battery: 'Battery',
     opensCharging: 'opens charging',
+    // Compact-cell lock/security chip (Story 11.2) — the second glance affordance
+    // beside the battery readout. `opensClosures` mirrors `opensCharging` for the
+    // chip's state-bearing aria tail ("Locked, opens closures"); the calm/default
+    // state words reuse STRINGS.status.locked/.unlocked verbatim. `security.doorOpen`
+    // / `.windowOpen` are the ONLY two new labels — a GENERIC SINGULAR (one word
+    // regardless of how many are ajar; the closures panel carries per-door detail),
+    // amber-escalated on the word (never hue alone). British-English, calm voice.
+    opensClosures: 'opens closures',
+    security: {
+      doorOpen: 'Door open',
+      windowOpen: 'Window open',
+    },
     // Compact + asleep last-known qualifier (UX-DR18/21 honesty): the aria-label
     // marks a cached SoC as stale — "Battery 71% (last known), opens charging".
     lastKnown: '(last known)',
