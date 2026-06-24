@@ -1156,8 +1156,12 @@ export class TcMyHome extends LitElement implements LovelaceCard {
     // the cell degrades to an empty element instead of throwing. `setConfig` runs only
     // on a raw `_config` change — NOT the per-tick resolved cfg, which HA replaces on
     // every state change (re-`setConfig` each tick would reset the card's open panel).
-    // Story 8.10: the embed renders `variant: 'compact'` (hero + status only) so it fits
-    // the 380px load-row track; a standalone `tesla-card` stays full. The guard KEY stays
+    // Story 8.10/11.4: the embed renders `variant: 'compact'` = the enriched compact hero
+    // (asleep-legible paint 11.1, lock chip + last-known SoC/range 11.2, fluid scaling 11.3)
+    // so it fits the load-row track; a standalone `tesla-card` stays full. Story 11.4: the
+    // embed now ALSO renders the tab shell per the user's `hide_*` + `default_panel` (spread
+    // in from `this._config` below) — `compact` governs presentation only, not section
+    // visibility. The guard KEY stays
     // the raw `_config` identity — the spread object is NOT stored as the key (storing it
     // would mismatch every tick and re-`setConfig`, resetting the embed).
     if (typeof el.setConfig === 'function' && entry.cfg !== this._config) {

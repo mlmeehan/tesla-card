@@ -312,6 +312,98 @@ describe('AC2 — default_panel naming a conditionally-present panel opens it wh
   });
 });
 
+describe('Story 11.4 — variant:"compact" is PRESENTATION only; the embed honors hide_* + default_panel', () => {
+  // The write→picture round-trip the Epic-9 DoD mandates (project-context.md:196) and the
+  // exact gap that let the no-op ship: under `variant:'compact'` the editor's "Embedded
+  // vehicle cell" toggles + `default_panel` MUST reach the rendered picture. Before the fix
+  // (the three `cfg.hide_* || compact` guards) the first test below was RED — compact
+  // force-hid all three sections regardless of the user's value. After dropping `|| compact`
+  // compact governs only the hero's compact presentation; the sections render per `hide_*`.
+  // `tc-hero` reads `variant` off the forwarded `cfg`, so the enriched compact hero stays.
+  const hero = (el: CardEl) => el.shadowRoot!.querySelector('tc-hero');
+
+  test('compact + no hides → the FULL tab shell renders (quick-actions + tabs + commands) — the opt-out default', async () => {
+    const el = await renderCard(
+      { type: 'custom:tesla-card', variant: 'compact' },
+      hassFrom(awake)
+    );
+    const r = el.shadowRoot!;
+    expect(hero(el)).toBeTruthy(); // the (enriched) compact hero is always present
+    expect(r.querySelector('tc-quick-actions')).toBeTruthy();
+    expect(r.querySelector('.tabs')).toBeTruthy();
+    expect(r.querySelector('.panel')).toBeTruthy();
+    expect(r.querySelector('tc-commands')).toBeTruthy();
+    el.remove();
+  });
+
+  test('compact + hide_quick_actions:true → quick-actions absent, tabs + commands present', async () => {
+    const el = await renderCard(
+      { type: 'custom:tesla-card', variant: 'compact', hide_quick_actions: true },
+      hassFrom(awake)
+    );
+    const r = el.shadowRoot!;
+    expect(r.querySelector('tc-quick-actions')).toBeNull();
+    expect(r.querySelector('.tabs')).toBeTruthy();
+    expect(r.querySelector('tc-commands')).toBeTruthy();
+    el.remove();
+  });
+
+  test('compact + hide_panels:true → tab bar/panel absent, quick-actions + commands present', async () => {
+    const el = await renderCard(
+      { type: 'custom:tesla-card', variant: 'compact', hide_panels: true },
+      hassFrom(awake)
+    );
+    const r = el.shadowRoot!;
+    expect(r.querySelector('.tabs')).toBeNull();
+    expect(r.querySelector('.panel')).toBeNull();
+    expect(r.querySelector('tc-quick-actions')).toBeTruthy();
+    expect(r.querySelector('tc-commands')).toBeTruthy();
+    el.remove();
+  });
+
+  test('compact + hide_commands:true → commands absent, quick-actions + tabs present', async () => {
+    const el = await renderCard(
+      { type: 'custom:tesla-card', variant: 'compact', hide_commands: true },
+      hassFrom(awake)
+    );
+    const r = el.shadowRoot!;
+    expect(r.querySelector('tc-commands')).toBeNull();
+    expect(r.querySelector('tc-quick-actions')).toBeTruthy();
+    expect(r.querySelector('.tabs')).toBeTruthy();
+    el.remove();
+  });
+
+  test('compact + all three hidden → hero + status only (the prior look, now an explicit opt-in)', async () => {
+    const el = await renderCard(
+      {
+        type: 'custom:tesla-card',
+        variant: 'compact',
+        hide_quick_actions: true,
+        hide_panels: true,
+        hide_commands: true,
+      },
+      hassFrom(awake)
+    );
+    const r = el.shadowRoot!;
+    expect(hero(el)).toBeTruthy(); // the hero stays — this is the hero+status-only fallback
+    expect(r.querySelector('tc-quick-actions')).toBeNull();
+    expect(r.querySelector('.tabs')).toBeNull();
+    expect(r.querySelector('.panel')).toBeNull();
+    expect(r.querySelector('tc-commands')).toBeNull();
+    el.remove();
+  });
+
+  test('compact + default_panel:"tyres" → the tyres tab opens (not charging)', async () => {
+    const el = await renderCard(
+      { type: 'custom:tesla-card', variant: 'compact', default_panel: 'tyres' },
+      hassFrom(awake)
+    );
+    expect(activeTabLabel(el)).toBe(STRINGS.tabs.tyres);
+    expect(activePanelTag(el)).toBe('tc-panel-tyres');
+    el.remove();
+  });
+});
+
 describe('AC3 / AC5 — fallback only when the held panel genuinely leaves the visible set', () => {
   // Complements the no-reflow test (held panel STAYS visible → no reflow). This is
   // the OTHER branch of `current`: when the held panel truly disappears, the card

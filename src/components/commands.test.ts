@@ -388,3 +388,28 @@ describe('AC4 — no auto-wake: rendering never issues button.press without a us
     expect((el.hass!.callService as ReturnType<typeof vi.fn>)).not.toHaveBeenCalled();
   });
 });
+
+// ───────────────────────────────────────────────────────────────────────────
+// Story 11.4 / AC9 — compact-scoped grid collapse (the ~376px My-Home embed).
+// The 6-col command grid collapses to 3 cols only at a VIEWPORT @media that never
+// fires for a narrow ELEMENT in a wide viewport, so the embed reflects a `compact`
+// host attribute (from config.variant) that a `:host([compact]) .row` rule keys
+// off. jsdom does no layout, so the COLUMN COUNT is proven in e2e
+// (my-home-scene.spec.ts:714 + the AC9 computed-grid test); here we pin the two
+// halves of the mechanism: the host-attribute reflection and the gated CSS rule.
+// ───────────────────────────────────────────────────────────────────────────
+describe('Story 11.4 / AC9 — compact host-attribute reflection + gated 3-col rule', () => {
+  test('config.variant:"compact" reflects a `compact` host attribute; absent ⇒ no attribute (AC4)', async () => {
+    const compact = await mount(makeHass(makeStates()), { variant: 'compact' });
+    expect(compact.hasAttribute('compact')).toBe(true);
+
+    const standalone = await mount(makeHass(makeStates()));
+    expect(standalone.hasAttribute('compact')).toBe(false); // no variant ⇒ byte-identical
+  });
+
+  test('the gated rule is `:host([compact]) .row` → 3 cols (element-scoped, not a viewport @media)', () => {
+    const styles = TcCommands.styles as Array<{ cssText: string }>;
+    const css = styles.map((s) => s.cssText).join('\n');
+    expect(css).toMatch(/:host\(\[compact\]\)\s+\.row\s*\{[^}]*repeat\(3,\s*1fr\)/);
+  });
+});

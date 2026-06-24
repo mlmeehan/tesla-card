@@ -15,7 +15,7 @@
 // DEFAULT_ENTITIES (never inlined — the components/ hard-coded-id guard).
 import { afterEach, describe, expect, test, vi } from 'vitest';
 import './quick-actions';
-import { RECONCILE_TIMEOUT_MS } from './quick-actions';
+import { RECONCILE_TIMEOUT_MS, TcQuickActions } from './quick-actions';
 import { sharedStyles } from '../styles';
 import { DEFAULT_ENTITIES } from '../const';
 import type { HassEntity, HomeAssistant, TeslaCardConfig } from '../types';
@@ -330,3 +330,28 @@ describe('AC3 — unavailable control is disabled and never enters the optimisti
 // <tc-quick-actions> block in tesla-card.ts → covered there. Asserting the
 // component renders a row (above) is the half this file owns.
 // ───────────────────────────────────────────────────────────────────────────
+
+// ───────────────────────────────────────────────────────────────────────────
+// Story 11.4 / AC9 — compact-scoped grid collapse (the ~376px My-Home embed).
+// The 6-col pill grid collapses to 3 cols only at a VIEWPORT @media that never
+// fires for a narrow ELEMENT in a wide viewport, so the embed reflects a `compact`
+// host attribute (from config.variant) that a `:host([compact]) .row` rule keys
+// off. jsdom does no layout, so the COLUMN COUNT is proven in e2e
+// (my-home-scene.spec.ts:714 + the AC9 computed-grid test); here we pin the two
+// halves of the mechanism: the host-attribute reflection and the gated CSS rule.
+// ───────────────────────────────────────────────────────────────────────────
+describe('Story 11.4 / AC9 — compact host-attribute reflection + gated 3-col rule', () => {
+  test('config.variant:"compact" reflects a `compact` host attribute; absent ⇒ no attribute (AC4)', async () => {
+    const compact = await mount(makeHass(makeStates()), { variant: 'compact' });
+    expect(compact.hasAttribute('compact')).toBe(true);
+
+    const standalone = await mount(makeHass(makeStates()));
+    expect(standalone.hasAttribute('compact')).toBe(false); // no variant ⇒ byte-identical
+  });
+
+  test('the gated rule is `:host([compact]) .row` → 3 cols (element-scoped, not a viewport @media)', () => {
+    const styles = TcQuickActions.styles as Array<{ cssText: string }>;
+    const css = styles.map((s) => s.cssText).join('\n');
+    expect(css).toMatch(/:host\(\[compact\]\)\s+\.row\s*\{[^}]*repeat\(3,\s*1fr\)/);
+  });
+});

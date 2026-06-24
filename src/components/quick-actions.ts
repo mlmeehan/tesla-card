@@ -136,6 +136,16 @@ export class TcQuickActions extends TcBase {
     }
   }
 
+  // Reflect the compact-variant presentation onto the host so the pill grid can
+  // collapse to 3 columns for the ~376px My-Home embed (Story 11.4 / D-11.4-4).
+  // This is an ELEMENT-state scope, NOT a viewport one: the embed is a narrow
+  // element in a WIDE viewport, so the `@media (max-width:540px)` collapse below
+  // never fires for it. A standalone card has no `variant` ⇒ no attribute ⇒ the
+  // 6-col grid is byte-identical to today (AC4).
+  protected override updated(): void {
+    this.toggleAttribute('compact', this.config?.variant === 'compact');
+  }
+
   private _tap(a: QuickAction): void {
     if (!this.hass) return;
     const s = rawState(this.hass, this.config, a.key);
@@ -220,6 +230,14 @@ export class TcQuickActions extends TcBase {
           grid-template-columns: repeat(3, 1fr);
           gap: 14px 8px;
         }
+      }
+      /* Compact embed (Story 11.4): the My-Home embed is always a ~376px ELEMENT
+         in a wide viewport, so the viewport @media above never fires for it.
+         Collapse to 3 cols on the reflected host attribute instead, so the six
+         pills fit the narrow track without horizontal overflow. */
+      :host([compact]) .row {
+        grid-template-columns: repeat(3, 1fr);
+        gap: 14px 8px;
       }
     `,
   ];

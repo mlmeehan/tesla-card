@@ -881,6 +881,150 @@ test.describe('tc-my-home Scene — Story 8.5 vehicle node (live layout)', () =>
   });
 });
 
+// ═══════════════════════════════════════════════════════════════════════════
+// Story 11.4 — the embedded vehicle cell honors configured detail (real nested embed).
+//
+// The co-located jsdom suite's embedded `tesla-card` is a STUB that renders `nothing`
+// (my-home.test.ts:755-776 — it records `lastEmbedConfig` but draws no DOM), so it can
+// prove "the embed injects variant:'compact' + forwards the config" but NOT the rendered
+// picture. The REAL nested embed (a real `tesla-card` element inside `.veh-cell`) is the
+// only tier that proves the editor's "Embedded vehicle cell" controls reach the picture —
+// the exact write→picture round-trip whose absence let the no-op ship. After the
+// `|| compact` drop, the embed shows the full tab shell by default (opt-out) and honors a
+// forwarded `hide_*` + `default_panel`. The my-home config spreads into the embed via
+// `{ ...this._config, ...c.config, variant: 'compact' }` (my-home.ts:1164), so a key set on
+// the Scene reaches the embedded card.
+// ═══════════════════════════════════════════════════════════════════════════
+test.describe('tc-my-home Scene — Story 11.4 embedded vehicle honors configured detail', () => {
+  test.beforeEach(async ({ demo }) => {
+    await demo.open(AWAKE.open);
+  });
+
+  test('AC1/AC4 — a bare My-Home embed renders the FULL tab shell by default (opt-out, not hero+status only)', async ({
+    page,
+  }) => {
+    await mountScene(page);
+    await waitForTrunk(page);
+
+    // The embedded card is the real `tesla-card` (not the jsdom stub) — Playwright pierces
+    // its open shadow DOM, so the tab shell is directly assertable inside the cell.
+    const card = vehCell(page).locator('tesla-card');
+    await expect(card).toHaveCount(1);
+    await expect(card.locator('.tabs')).toHaveCount(1); // the tab bar renders…
+    await expect(card.locator('.panel')).toHaveCount(1); // …with a panel region…
+    await expect(card.locator('tc-quick-actions')).toHaveCount(1); // …and quick-actions…
+    await expect(card.locator('tc-commands')).toHaveCount(1); // …and commands — the full shell.
+    // …but it is STILL the enriched compact hero (variant:'compact' retained, D-11.4-1).
+    await expect(card.locator('tc-hero')).toHaveCount(1);
+  });
+
+  test('AC2/AC3 — the embed honors a forwarded hide_* + default_panel (the controls are real governors)', async ({
+    page,
+  }) => {
+    // Set on the My-Home Scene config; it spreads into the embed (my-home.ts:1164).
+    await mountScene(page, { config: { hide_commands: true, default_panel: 'tyres' } });
+    await waitForTrunk(page);
+
+    const card = vehCell(page).locator('tesla-card');
+    await expect(card).toHaveCount(1);
+    // hide_commands:true governs the embed — commands gone, the rest of the shell intact.
+    await expect(card.locator('tc-commands')).toHaveCount(0);
+    await expect(card.locator('.tabs')).toHaveCount(1);
+    await expect(card.locator('tc-quick-actions')).toHaveCount(1);
+    // default_panel:'tyres' opens the tyres panel in the embed (not the charging default).
+    await expect(card.locator('tc-panel-tyres')).toHaveCount(1);
+    await expect(card.locator('tc-panel-charging')).toHaveCount(0);
+  });
+
+  test('AC9 — the compact embed collapses quick-actions/commands to 3 cols while the standalone (wide) card keeps 6', async ({
+    page,
+  }) => {
+    await mountScene(page);
+    await waitForTrunk(page);
+
+    // Read the grid track count of each component's `.row` from its computed
+    // `grid-template-columns` (one px value per track). The embed reflects
+    // `:host([compact])` (a ~376px ELEMENT in a wide viewport, so the viewport
+    // @media never fires) → 3 cols; the live standalone `tesla-card` (demo.open,
+    // no `variant`, full-width) has no attribute → 6 cols, proving the
+    // `:host([compact])` scope leaves the standalone byte-identical (AC4).
+    const trackCounts = (card: import('@playwright/test').Locator) =>
+      card.evaluate((host: HTMLElement) => {
+        const cols = (sel: string): number => {
+          const el = host.shadowRoot?.querySelector(sel) as HTMLElement | null;
+          const row = el?.shadowRoot?.querySelector('.row') as HTMLElement | null;
+          return row ? getComputedStyle(row).gridTemplateColumns.trim().split(/\s+/).length : 0;
+        };
+        return { qa: cols('tc-quick-actions'), cmd: cols('tc-commands') };
+      });
+
+    const embed = await trackCounts(vehCell(page).locator('tesla-card'));
+    expect(embed.qa).toBe(3); // compact embed quick-actions → 3 cols
+    expect(embed.cmd).toBe(3); // compact embed commands → 3 cols
+
+    const standalone = await trackCounts(page.locator('tesla-card').first());
+    expect(standalone.qa).toBe(6); // standalone quick-actions stays 6 cols (AC4)
+    expect(standalone.cmd).toBe(6); // standalone commands stays 6 cols (AC4)
+  });
+
+  test('AC2 — hide_panels forwarded through the real embed drops the tab bar + panel; quick-actions + commands remain', async ({
+    page,
+  }) => {
+    // The AC2/AC3 test above proves hide_commands through the real nested embed; this pins
+    // the OTHER, most structurally-distinct toggle (hide_panels removes BOTH the tab bar and
+    // the panel region) through the SAME write→picture round-trip, so each hide_* is shown to
+    // be a real governor of the embed — not just the one toggle the first e2e happened to pick.
+    await mountScene(page, { config: { hide_panels: true } });
+    await waitForTrunk(page);
+
+    const card = vehCell(page).locator('tesla-card');
+    await expect(card).toHaveCount(1);
+    await expect(card.locator('.tabs')).toHaveCount(0); // hide_panels drops the tab bar…
+    await expect(card.locator('.panel')).toHaveCount(0); // …and its panel region…
+    await expect(card.locator('tc-quick-actions')).toHaveCount(1); // …the rest of the shell stays.
+    await expect(card.locator('tc-commands')).toHaveCount(1);
+  });
+
+  test('AC2 — hide_quick_actions forwarded through the real embed drops only quick-actions; tabs + commands remain', async ({
+    page,
+  }) => {
+    // Completes the per-toggle e2e matrix through the real nested embed (hide_commands +
+    // hide_panels proven above): hide_quick_actions removes ONLY its block, the tab shell
+    // and commands survive — the toggle governs the forwarded config, the round-trip the
+    // unit stub (renders `nothing`) cannot prove.
+    await mountScene(page, { config: { hide_quick_actions: true } });
+    await waitForTrunk(page);
+
+    const card = vehCell(page).locator('tesla-card');
+    await expect(card).toHaveCount(1);
+    await expect(card.locator('tc-quick-actions')).toHaveCount(0); // only quick-actions gone…
+    await expect(card.locator('.tabs')).toHaveCount(1); // …tab shell intact…
+    await expect(card.locator('tc-commands')).toHaveCount(1); // …commands intact.
+  });
+
+  test('AC2/AC7 — all three hides forwarded through the real embed reproduce the prior hero+status-only look (now explicit opt-in)', async ({
+    page,
+  }) => {
+    // The blast-radius inverse of the AC1 opt-out default: setting all three hide_* keys
+    // reproduces the pre-11.4 embed (hero + status only) — now an EXPLICIT opt-in, not the
+    // implicit default. Proven through the real nested embed (the unit covers the picture;
+    // this proves the forwarded combination survives the my-home.ts:1164 spread end-to-end),
+    // so the AC7 "the prior look is still reachable" promise is verified, not just asserted.
+    await mountScene(page, {
+      config: { hide_quick_actions: true, hide_panels: true, hide_commands: true },
+    });
+    await waitForTrunk(page);
+
+    const card = vehCell(page).locator('tesla-card');
+    await expect(card).toHaveCount(1);
+    await expect(card.locator('tc-hero')).toHaveCount(1); // the enriched compact hero stays…
+    await expect(card.locator('tc-quick-actions')).toHaveCount(0); // …everything else is gone.
+    await expect(card.locator('.tabs')).toHaveCount(0);
+    await expect(card.locator('.panel')).toHaveCount(0);
+    await expect(card.locator('tc-commands')).toHaveCount(0);
+  });
+});
+
 test.describe('tc-my-home Scene — Story 8.5 vehicle: half-alive (asleep) is calm, not broken', () => {
   test.beforeEach(async ({ demo }) => {
     // ASLEEP: the car sleeps (battery reads `unavailable`, present) while the local

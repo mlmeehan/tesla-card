@@ -195,11 +195,15 @@ export class TeslaCard extends LitElement implements LovelaceCard {
   protected override render(): TemplateResult | typeof nothing {
     if (!this._config || !this.hass) return nothing;
     const cfg = this._resolvedConfig ?? this._config;
-    // Compact variant (Story 8.10): hero + status only — implies the three hides
-    // (whatever their own values) so the card fits a ~380px column. `cfg` carries
-    // `variant` through `_resolve()`'s spread. Strict `=== 'compact'` — an unset or
-    // garbage value reads as full (forward-compat, never default-on).
-    const compact = cfg.variant === 'compact';
+    // Compact variant (Story 8.10): PRESENTATION only (Story 11.4). `variant: 'compact'`
+    // selects the enriched compact hero (asleep-legible paint 11.1, lock chip + last-known
+    // SoC/range 11.2, fluid track scaling 11.3) so the card fits a ~380px column — it is
+    // read by `<tc-hero>` off the `cfg` forwarded below (`cfg` carries `variant` through
+    // `_resolve()`'s spread). It does NOT hide the tab shell: the three sections below
+    // render per their OWN `hide_*` flags, so the embedded vehicle cell honors the editor's
+    // "Embedded vehicle cell" toggles + `default_panel` (the prior `|| compact` force-hide
+    // made those a no-op — Story 11.4 drops it). A standalone card has no `variant`, so the
+    // hero stays full there and the dropped `|| compact` is inert on the standalone path.
     const panels = this._panels();
     const current = panels.some((p) => p.id === this._panel) ? this._panel : 'charging';
     return html`
@@ -210,7 +214,7 @@ export class TeslaCard extends LitElement implements LovelaceCard {
           @open-panel=${this._openPanel}
         ></tc-hero>
 
-        ${cfg.hide_quick_actions || compact
+        ${cfg.hide_quick_actions
           ? nothing
           : html`<tc-quick-actions
               .hass=${this.hass}
@@ -218,7 +222,7 @@ export class TeslaCard extends LitElement implements LovelaceCard {
               @open-panel=${this._openPanel}
             ></tc-quick-actions>`}
 
-        ${cfg.hide_panels || compact
+        ${cfg.hide_panels
           ? nothing
           : html`
               <div class="tabs" role="tablist">
@@ -239,7 +243,7 @@ export class TeslaCard extends LitElement implements LovelaceCard {
               <div class="panel">${this._renderPanel(cfg, current)}</div>
             `}
 
-        ${cfg.hide_commands || compact
+        ${cfg.hide_commands
           ? nothing
           : html`<tc-commands
               .hass=${this.hass}
