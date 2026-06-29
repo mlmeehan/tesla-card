@@ -6,9 +6,9 @@
 //   • AC1 — keyboard focus ORDER across the tab strip equals reading order, and a
 //     control deep inside a NON-default panel still paints the 2px focus ring
 //     (cross-panel, not just the default charging view).
-//   • AC2 — the reduced-motion sweep reaches the live-energy FLOW overlay (the one
-//     animation the prior specs didn't cover): its dash animation HALTS while its
-//     data cues (arrowheads + kW chips) survive — "kill the motion, keep the data".
+//   • AC2 — (removed by Story 12.1) the Hero's live-energy FLOW overlay was removed,
+//     so its reduced-motion proof is gone from here; the equivalent real-browser proof
+//     lives on the Scene bus in tests/e2e/audit-r6-suite.spec.ts (`.sb-flow` halts).
 //   • AC3 — freshness honesty across the whole card: the asleep car NEVER paints a
 //     confident green "All closed" (the one unforgivable overstatement).
 //   • AC4 — the whole card driven against the costly tesla_custom dialect renders
@@ -105,33 +105,6 @@ test.describe('AC1 — cross-panel keyboard navigation / focus order', () => {
       ringedNonTab,
       'a non-tab control past the tab strip should paint the 2px blue focus ring'
     ).not.toBeNull();
-  });
-});
-
-// ── AC2 — reduced-motion reaches the flow overlay (the uncovered animation) ──
-test.describe('AC2 — reduced-motion sweep: the live-flow overlay', () => {
-  const FLOW = '.tc-flow-overlay .fo-flow';
-
-  test('flow dash animates by default (control)', async ({ demo }) => {
-    await demo.open({ scenario: 'awake' }); // awake carries the energy site → overlay present
-    const anim = await demo.card.locator(FLOW).first().evaluate((el) => getComputedStyle(el).animationName);
-    expect(anim, 'flow edges animate by default').toBe('fo-flow-dash');
-  });
-
-  test('flow dash HALTS under reduced-motion while arrowheads + kW chips survive', async ({
-    demo,
-    page,
-  }) => {
-    await page.emulateMedia({ reducedMotion: 'reduce' });
-    await demo.open({ scenario: 'awake' });
-
-    const anim = await demo.card.locator(FLOW).first().evaluate((el) => getComputedStyle(el).animationName);
-    expect(anim, 'flow dash must halt (animation:none)').toBe('none');
-
-    // "Kill the motion, keep the data": the static read survives — arrowhead heads
-    // and the kW magnitude chips remain in the DOM (colour-blind-safe cue, not hue).
-    await expect(demo.card.locator('.tc-flow-overlay .fo-head').first()).toBeAttached();
-    await expect(demo.card.locator('.tc-flow-overlay .fo-chip-val').first()).toBeAttached();
   });
 });
 

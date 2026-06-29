@@ -17,9 +17,6 @@ import { TcHero } from './hero';
 import { formatAge } from '../helpers';
 import { STRINGS } from '../strings';
 import { DEFAULT_ENTITIES } from '../const';
-import { flowOverlayStyles } from '../flow/hero-svg';
-import chargingFx from '../fixtures/flow-charging.json';
-import pluggedIdleFx from '../fixtures/flow-plugged-idle.json';
 import type { HassEntity, HomeAssistant, TeslaCardConfig } from '../types';
 
 type HeroEl = HTMLElement & {
@@ -333,12 +330,12 @@ describe('AC4 — asleep: re-scoped dim marker + "Asleep · updated 47m ago" + b
 });
 
 // ───────────────────────────────────────────────────────────────────────────
-// Story 11.1 AC5 — asleep render keeps hue: grayscale is re-scoped OFF the render
-// node (a coloured car dimmed via opacity), and rides ONLY the Flow overlay. A
-// child cannot un-apply an ancestor's filter, so the desaturation is moved at the
-// DOM/CSS level — never put on an ancestor of the render. Pins the no-two-tone
-// requirement + "single un-grayscaled subtree" (a partial/per-layer exemption
-// regression goes red).
+// Story 11.1 AC5 — asleep render keeps hue: the stage dims via OPACITY ONLY, so the
+// recolorable render (.car-img/.tc-car) keeps its resolved hue (a dark preset reads
+// as a dim colour, not near-black). Grayscale must NOT sit on the stage or any
+// ancestor of the render. (Story 12.1 removed the Flow overlay that formerly carried
+// the grayscale; the surviving asleep treatment is opacity-only, with no grayscale
+// anywhere on the stage.) A regression that grayscales the stage/render goes red.
 // ───────────────────────────────────────────────────────────────────────────
 
 describe('Story 11.1 AC5 — asleep render keeps hue (no grayscale on the render node)', () => {
@@ -354,21 +351,15 @@ describe('Story 11.1 AC5 — asleep render keeps hue (no grayscale on the render
     const render = el.shadowRoot!.querySelector('.car-stage .car-img');
     expect(render, 'render node (.car-img) missing').toBeTruthy();
     expect(render!.classList.contains('tc-asleep')).toBe(false);
-    // Single un-grayscaled subtree: NO grayscale handle is applied per-layer via class
-    // anywhere in the stage (the desaturation is CSS-scoped to the overlay, asserted below).
+    // NO grayscale handle is applied per-layer via class anywhere in the stage — the
+    // stage dims via opacity only (nothing carries the .tc-asleep grayscale recipe).
     expect(el.shadowRoot!.querySelectorAll('.car-stage .tc-asleep').length).toBe(0);
-    // …yet the Flow overlay sibling is still present (it is the node that keeps grayscale).
-    expect(el.shadowRoot!.querySelector('.car-stage .tc-flow-overlay')).toBeTruthy();
   });
 
-  test('CSS: grayscale is scoped to the Flow overlay, never to the stage/render (AC5b)', () => {
+  test('CSS: the stage dims via opacity only, never grayscale on the stage/render (AC5b)', () => {
     const heroCss = (TcHero as unknown as { styles: Array<{ cssText?: string }> }).styles
       .map((s) => s?.cssText ?? '')
       .join('\n');
-    // The grayscale rides ONLY the overlay under the asleep stage.
-    const overlayRule = heroCss.match(/\.car-stage\.asleep\s+\.tc-flow-overlay\s*\{[^}]*\}/);
-    expect(overlayRule, 'missing asleep → .tc-flow-overlay grayscale rule').not.toBeNull();
-    expect(overlayRule![0]).toMatch(/filter:\s*grayscale\(\s*var\(\s*--tc-dim-grayscale\b/);
     // The stage-asleep rule dims via opacity ONLY — no grayscale on the render's ancestor,
     // and the magnitude is still single-sourced from the token (no hard-coded 0.5).
     const stageRule = heroCss.match(/\.car-stage\.asleep\s*\{[^}]*\}/);
@@ -655,13 +646,12 @@ describe('Story 3.5 a11y — the car aria-label is state-bearing', () => {
 });
 
 // ───────────────────────────────────────────────────────────────────────────
-// Story 4.3 — live energy-flow overlay composited over the Hero stage
-// ───────────────────────────────────────────────────────────────────────────
-// The Hero binds the FlowModel (bindFlowModel) and composites HeroSvgRenderer's
-// overlay into .car-stage. jsdom proves the compositing: present-energy ⇒ an
-// absolutely-positioned, pointer-events:none overlay layered in the stage, anchored
-// to the 1024×687 viewBox; vehicle-only (empty model) ⇒ NO overlay chrome; and the
-// battery button below the stage stays clickable. We make ONE energy role present
+// Story 12.1 — the Hero emits NO flow overlay. The always-on HeroSvgRenderer overlay
+// (Story 4.3) is REMOVED from the standalone Vehicle Card's Hero; the flow viz is
+// retained UNCHANGED on the My-Home Scene bus + the Energy panel. The `overlay` helper
+// + the ENERGY_OVER/withEnergy energy-present fixtures below are RETAINED — the
+// absence-guard (AC1) mounts WITH an energy site (which previously drew the overlay)
+// and proves no `.tc-flow-overlay`/`.fo-*` is emitted. ONE energy role is made present
 // via a config.energy.entities override pointing at a DEFAULT_ENTITIES constant
 // (charger_power, a fresh kW sensor) — never an inlined literal id (components rule).
 
@@ -676,73 +666,55 @@ const ENERGY_OVER: Partial<TeslaCardConfig> = {
 const withEnergy = (extra: Parameters<typeof makeStates>[0] = {}) =>
   makeStates({ power: '6.0', ...extra });
 
-describe('Story 4.3 — energy-flow overlay composites into .car-stage', () => {
-  test('present energy → an overlay SVG inside .car-stage, anchored to 1024×687', async () => {
+describe('Story 12.1 — the Hero emits NO flow overlay', () => {
+  // The retained absence-guard (AC1): even with an energy site present (which under
+  // Story 4.3 drew the overlay), the Hero emits no `.tc-flow-overlay` and no `.fo-*`
+  // node chips / luminous edges — on the full card (awake + asleep) and compact. A
+  // regression that re-introduces the overlay turns this red.
+  const noOverlay = (el: HeroEl, label: string): void => {
+    expect(overlay(el), `${label}: overlay must be absent`).toBeNull();
+    expect(
+      el.shadowRoot!.querySelector('.car-stage .fo-chip'),
+      `${label}: no node chip`
+    ).toBeNull();
+    expect(
+      el.shadowRoot!.querySelector('.car-stage .fo-flow'),
+      `${label}: no luminous edge`
+    ).toBeNull();
+  };
+
+  test('full card, awake, energy present → no overlay, no chips/edges (car still renders)', async () => {
     const el = await mountHero(withEnergy(), ENERGY_OVER);
-    const ov = overlay(el);
-    expect(ov).toBeTruthy();
-    expect(ov!.getAttribute('viewBox')).toBe('0 0 1024 687');
-    // State-bearing aria-label (UX-DR18, mirrors the carView label): prefixed with
-    // the flow label and naming the present node — not the bare static string.
-    const label = ov!.getAttribute('aria-label')!;
-    expect(label.startsWith(STRINGS.energy.flowLabel)).toBe(true);
-    expect(label).toContain(STRINGS.energy.nodes.solar);
-    // The present role gets a glass chip carrying its label.
-    const chip = ov!.querySelector('.fo-chip[data-role="solar"]');
-    expect(chip).toBeTruthy();
-    expect(chip!.querySelector('.fo-chip-label')!.textContent).toBe(STRINGS.energy.nodes.solar);
+    noOverlay(el, 'full awake');
+    // The car silhouette still renders beneath — the stage is not emptied.
+    expect(el.shadowRoot!.querySelector('.car-stage svg.tc-ev')).toBeTruthy();
   });
 
-  test('the overlay never captures taps (pointer-events:none, layered above carView)', () => {
-    // The contract lives in the overlay stylesheet (added to the Hero static
-    // styles) — the battery button below the stage must stay reachable.
-    expect(flowOverlayStyles.cssText).toContain('pointer-events: none');
-    expect(flowOverlayStyles.cssText).toContain('position: absolute');
-  });
-
-  test('vehicle-only install (empty model) → NO overlay chrome (no occluding box)', async () => {
-    // The default makeStates() has no energy entities → empty model → omitted.
-    const el = await mountHero(makeStates());
-    expect(overlay(el)).toBeNull();
-  });
-
-  test('the battery button stays clickable with the overlay present', async () => {
-    const el = await mountHero(withEnergy(), ENERGY_OVER);
-    expect(overlay(el)).toBeTruthy(); // overlay IS drawn…
-    let detail: { panel?: string } | undefined;
-    el.addEventListener('open-panel', (e) => {
-      detail = (e as CustomEvent<{ panel: string }>).detail;
-    });
-    el.shadowRoot!.querySelector<HTMLButtonElement>('.battery')!.click();
-    expect(detail).toEqual({ panel: 'charging' }); // …yet the tap still fires
-  });
-
-  test('asleep → overlay still composites under the re-scoped stage dim (no parallel branch)', async () => {
-    // No bespoke asleep suppression: the model + the stage opacity-dim handle it —
-    // the stage carries the dim and the overlay is still composited within it (and
-    // is the node that keeps grayscale, scoped via CSS — see Story 11.1 AC5).
+  test('full card, asleep, energy present → no overlay (the asleep path is also clean)', async () => {
     const el = await mountHero(withEnergy({ asleep: true }), ENERGY_OVER);
     expect(el.shadowRoot!.querySelector('.car-stage')!.classList.contains('asleep')).toBe(true);
-    expect(overlay(el)).toBeTruthy();
+    noOverlay(el, 'full asleep');
+  });
+
+  test('compact, energy present → no overlay (the compact arm of the guard)', async () => {
+    const el = await mountHero(withEnergy(), { ...ENERGY_OVER, variant: 'compact' });
+    expect(el.shadowRoot!.querySelector('.hero.compact')).not.toBeNull();
+    noOverlay(el, 'compact');
   });
 });
 
 // ═══════════════════════════════════════════════════════════════════════════
-// Story 8.10 AC3 — the compact variant suppresses the flow-overlay kW labels
-// (the net-new piece) while the status line + battery gauge + car silhouette all
-// survive. Additive to the Story-4.3/4.6 tests above — those run with `variant`
-// unset (full) and MUST stay green unchanged (compact === false ⇒ overlay gated
-// only on _flow.empty). The OR-gate is pinned BOTH ways so a typo defaulting
-// compact-on is caught: full + energy ⇒ overlay present.
+// Story 8.10 — the compact variant tightens the silhouette while the status line +
+// battery gauge + car silhouette all survive. (The overlay it once suppressed is
+// removed entirely by Story 12.1 — its absence, incl. the compact arm, is pinned by
+// the Story-12.1 guard above; this block proves only the surviving surfaces.)
 // ═══════════════════════════════════════════════════════════════════════════
-describe('Story 8.10 — variant:compact suppresses the flow overlay (hero + status only)', () => {
-  test('compact + energy present → NO overlay, but status line · battery gauge · silhouette stay', async () => {
-    // Energy IS present (full would draw the overlay) — compact suppresses it at the
-    // DOM level without touching the surviving hero surfaces.
+describe('Story 8.10 — variant:compact keeps the status line · battery · silhouette', () => {
+  test('compact + energy present → status line · battery gauge · silhouette all stay', async () => {
+    // Energy IS present; compact tightens the silhouette without touching the surviving
+    // hero surfaces. (Overlay-absence is the Story-12.1 guard's job, above.)
     const el = await mountHero(withEnergy(), { ...ENERGY_OVER, variant: 'compact' });
     const sr = el.shadowRoot!;
-    expect(overlay(el)).toBeNull(); // the .tc-flow-overlay SVG is not emitted
-    expect(sr.querySelector('.fo-chip')).toBeNull(); // no Solar/Grid/… kW chips
     // The status line survives (the honesty surface).
     expect(sr.querySelector('.st-label')).not.toBeNull();
     expect(sr.querySelector('.st-sub')).not.toBeNull();
@@ -756,16 +728,6 @@ describe('Story 8.10 — variant:compact suppresses the flow overlay (hero + sta
     expect(sr.querySelector('.car-stage svg.tc-ev')).not.toBeNull();
     // The hero root carries the `compact` class (the width hook).
     expect(sr.querySelector('.hero.compact')).not.toBeNull();
-  });
-
-  test('variant unset / "full" (+ energy present) → the overlay renders exactly as today', async () => {
-    // OR-gate pinned the OTHER way: a typo defaulting compact-on would null these.
-    const unset = await mountHero(withEnergy(), { ...ENERGY_OVER });
-    expect(overlay(unset)).toBeTruthy();
-    expect(unset.shadowRoot!.querySelector('.hero.compact')).toBeNull();
-    const full = await mountHero(withEnergy(), { ...ENERGY_OVER, variant: 'full' });
-    expect(overlay(full)).toBeTruthy();
-    expect(full.shadowRoot!.querySelector('.hero.compact')).toBeNull();
   });
 });
 
@@ -871,136 +833,6 @@ describe('compact + asleep — last-known SoC/range fallback (dimmed), full card
     );
     expect(batReadout(el)).toBe('64%');
     expect(hasClass(el, '.battery', 'last-known')).toBe(false);
-  });
-});
-
-// ═══════════════════════════════════════════════════════════════════════════
-// Story 4.6 AC1 — the SAME flow overlay composites over ALL THREE Epic-3 Hero
-// render modes (bundled-EV / image / body-layers) with NO per-Hero rework. The
-// overlay is Hero-agnostic BY CONSTRUCTION: it lives in the fixed 1024×687 viewBox
-// z-stacked over whichever silhouette carView produces, and never reads the render
-// mode. We mount tc-hero once per mode with the SAME energy states and assert the
-// overlay's chip/edge set is byte-for-byte identical across modes.
-// (Live-Scene reuse via SceneBusRenderer is Epic 6 — NOT exercised here.)
-// ═══════════════════════════════════════════════════════════════════════════
-
-/** A minimal CONFORMING BodyLayers (color/shade/mask present) → body render mode. */
-const BODY: NonNullable<TeslaCardConfig['body']> = {
-  color: '/local/c.webp',
-  shade: '/local/s.webp',
-  mask: '/local/m.png',
-};
-
-describe('Story 4.6 AC1 — overlay identical over bundled / image / body render modes', () => {
-  const MODES: Array<{ name: string; over: Partial<TeslaCardConfig> }> = [
-    { name: 'bundled-EV', over: {} },
-    { name: 'image', over: { image: '/local/foo.png' } },
-    { name: 'body-layers', over: { body: BODY } },
-  ];
-
-  /** Canonical signature of the overlay content: present chips + edge directions. */
-  const overlaySig = (el: HeroEl): string => {
-    const ov = overlay(el)!;
-    const chips = [...ov.querySelectorAll('.fo-chip')]
-      .map((c) => c.getAttribute('data-role'))
-      .sort()
-      .join(',');
-    const edges = [...ov.querySelectorAll('.fo-edge')]
-      .map((e) => `${e.getAttribute('data-role')}:${e.getAttribute('data-direction')}`)
-      .sort()
-      .join(',');
-    return `chips[${chips}] edges[${edges}]`;
-  };
-
-  test('same FlowModel → byte-identical chip + edge set (and innerHTML) across all three modes', async () => {
-    const sigs: string[] = [];
-    const htmls: string[] = [];
-    for (const m of MODES) {
-      const el = await mountHero(withEnergy(), { ...ENERGY_OVER, ...m.over });
-      expect(overlay(el), m.name).toBeTruthy();
-      sigs.push(overlaySig(el));
-      htmls.push(overlay(el)!.innerHTML);
-    }
-    // The renderer consumes ONLY the model — so the overlay output is invariant to
-    // the car layer rendered beneath it.
-    expect(new Set(sigs).size, sigs.join(' | ')).toBe(1);
-    expect(new Set(htmls).size).toBe(1);
-  });
-
-  test('control: the three modes really DO render different car layers below the overlay', async () => {
-    // Guard against a false pass — prove "identical overlay" is real invariance, not
-    // three accidentally-identical renders. Each mode emits a distinct car element.
-    const bundled = await mountHero(withEnergy(), ENERGY_OVER);
-    const image = await mountHero(withEnergy(), { ...ENERGY_OVER, image: '/local/foo.png' });
-    const body = await mountHero(withEnergy(), { ...ENERGY_OVER, body: BODY });
-    expect(bundled.shadowRoot!.querySelector('svg.tc-ev')).toBeTruthy(); // bundled generic EV
-    expect(image.shadowRoot!.querySelector('img.car-img')).toBeTruthy(); // flat <img>
-    expect(body.shadowRoot!.querySelector('svg.tc-car:not(.tc-ev)')).toBeTruthy(); // recolor stack
-    // …and the bundled EV is NOT present in the other two (modes are mutually exclusive).
-    expect(image.shadowRoot!.querySelector('svg.tc-ev')).toBeNull();
-    expect(body.shadowRoot!.querySelector('svg.tc-ev')).toBeNull();
-  });
-});
-
-// ═══════════════════════════════════════════════════════════════════════════
-// Story 4.6 AC4 — composed view CONSISTENCY: the discrete charging_status entity
-// owns the Hero halo (`_chargeVisual` via normalizeChargingState, never signed
-// power); the FlowModel owns the wall_connector edge (the WC IS the car-charging
-// edge — no 6th vehicle node). They must never visibly contradict. We bind the
-// Story-4.5 charging / plugged-idle fixtures (WC edge via the PRODUCTION
-// bindFlowModel — no private sign math) AND drive _chargeVisual from a real
-// charging_status alongside, then assert the two derivations AGREE.
-// ═══════════════════════════════════════════════════════════════════════════
-
-describe('Story 4.6 AC4 — Hero halo (discrete entity) and WC edge (FlowModel) agree', () => {
-  /** Merge a fixture's energy sensors with a vehicle states map carrying charging_status. */
-  const heroStates = (
-    fixtureStates: Record<string, unknown>,
-    chargeStatus: string
-  ): Record<string, HassEntity> => ({
-    ...makeStates({ chargeStatus }),
-    ...(fixtureStates as Record<string, HassEntity>),
-  });
-
-  const wcEdge = (el: HeroEl): Element | null =>
-    overlay(el)?.querySelector('.fo-edge[data-role="wall_connector"]') ?? null;
-
-  test('charging fixture: halo "Charging" (green) AND the WC edge draws into the car (active, reverse)', async () => {
-    const el = await mountHero(heroStates(chargingFx.states, 'Charging'));
-    // Discrete entity wins the halo.
-    expect(labelOf(el)).toBe(STRINGS.status.charging);
-    expect(dotOf(el)).toContain('var(--tc-green');
-    // FlowModel wins the WC edge: active + reverse (bus → car = charging the car).
-    const wc = wcEdge(el);
-    expect(wc).toBeTruthy();
-    expect(wc!.getAttribute('data-direction')).toBe('reverse');
-    expect(wc!.querySelector('.fo-flow')).toBeTruthy(); // an active animated dash
-    // No contradiction: halo says charging ⇔ WC edge is actively drawing.
-  });
-
-  test('plugged-idle fixture: halo "Plugged-idle" (blue) AND the WC edge is present-but-quiescent (none)', async () => {
-    const el = await mountHero(heroStates(pluggedIdleFx.states, 'Complete'));
-    expect(labelOf(el)).toBe(STRINGS.status.pluggedIdle);
-    expect(dotOf(el)).toContain('var(--tc-blue');
-    const wc = wcEdge(el);
-    expect(wc).toBeTruthy(); // connected — the node IS present…
-    expect(wc!.getAttribute('data-direction')).toBe('none'); // …but not drawing
-    expect(wc!.querySelector('.fo-flow')).toBeNull(); // no active dash
-    // No contradiction: halo says plugged-idle ⇔ WC edge present but quiescent.
-  });
-
-  test('parked (WC absent): halo "Parked" AND no actively-drawing WC edge', async () => {
-    // Plugged-idle energy MINUS the wall_connector sensor → WC node absent, but the
-    // overlay still draws (grid/home present), so this is a real "no WC edge" proof.
-    // Drop the WC sensor by its function-slug (never an inlined literal id).
-    const states = heroStates(pluggedIdleFx.states, 'Disconnected');
-    for (const id of Object.keys(states)) {
-      if (id.includes('wall_connector')) delete states[id];
-    }
-    const el = await mountHero(states);
-    expect(labelOf(el)).toBe(STRINGS.status.parked);
-    expect(overlay(el)).toBeTruthy(); // overlay present (other roles)…
-    expect(wcEdge(el)).toBeNull(); // …with NO wall_connector edge at all
   });
 });
 

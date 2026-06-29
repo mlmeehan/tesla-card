@@ -9,7 +9,7 @@
 // (Stories 4.1–4.3) — and is asserted against THAT output only.
 //
 // Environment 'node' (no DOM): the model assertions are pure data, and the
-// renderer glanceability channel reads `HeroSvgRenderer.visuals` — a pure
+// renderer glanceability channel reads `SceneBusRenderer.visuals` — a pure
 // precompute (no mount). Hermetic: committed JSON fixtures + injected `now` from
 // each fixture's `provenance.reference_now` (never `Date.now()`), zero network.
 import { describe, expect, test } from 'vitest';
@@ -17,7 +17,7 @@ import type { HomeAssistant, TeslaCardConfig } from '../types';
 import type { EnergyRole } from '../data/registry';
 import { bindFlowModel, DEADBAND } from './binding';
 import { computeBalance } from './balance';
-import { HeroSvgRenderer } from './hero-svg';
+import { SceneBusRenderer } from './scene-bus';
 import { NODE_COLOR, edgeVisual } from './renderer';
 import type { Direction, FlowModel } from './model';
 
@@ -216,11 +216,17 @@ describe('the seven states — FlowModel reads correctly (AC1, AC3, AC4)', () =>
 // AC2 — room-glanceable: distinguishable by colour + shape + motion ALONE. We
 // read the renderer's DERIVED visuals (`active`/`direction`/`color`) — never the
 // numeric labels — and prove the seven produce visibly different overlays.
+// (Story 12.1 removed the Hero overlay; this glanceability proof now runs on the
+// SURVIVING Scene surface — SceneBusRenderer — whose `.visuals` is the ONE shared
+// `model.edges.map(e => ({ role: e.from, ...edgeVisuals(e) }))` derivation
+// (scene-bus.ts:117), pinned UNFORKED by the R1 proof in scene-bus.test.ts, and
+// whose `.label()` uses identical grammar. update()/visuals/label are DOM-free →
+// env stays 'node'.)
 // ───────────────────────────────────────────────────────────────────────────
-describe('the seven states — room-glanceable via HeroSvgRenderer (AC2)', () => {
+describe('the seven states — room-glanceable via SceneBusRenderer (AC2)', () => {
   /** The visual signature: present roles → (direction + active), from the renderer. */
   function signatureOf(fx: Fixture): string {
-    const r = new HeroSvgRenderer();
+    const r = new SceneBusRenderer();
     r.update(modelOf(fx));
     return [...r.visuals]
       .map((v) => `${v.role}:${v.direction}:${v.active ? 'motion' : 'calm'}`)
@@ -247,7 +253,7 @@ describe('the seven states — room-glanceable via HeroSvgRenderer (AC2)', () =>
   test('source colour follows the source node (NODE_COLOR), never re-derived', () => {
     // Spot-check the hue channel: a charging overlay carries solar=amber,
     // grid=neutral-dim, home=blue, wall_connector=teal — straight from NODE_COLOR.
-    const r = new HeroSvgRenderer();
+    const r = new SceneBusRenderer();
     r.update(modelOf(charging));
     for (const v of r.visuals) {
       expect(v.color).toBe(NODE_COLOR[v.role]);
@@ -258,7 +264,7 @@ describe('the seven states — room-glanceable via HeroSvgRenderer (AC2)', () =>
     // `active === (direction !== 'none')` is the motion channel; assert it lines up
     // with the model for a representative active state (charging).
     const model = modelOf(charging);
-    const r = new HeroSvgRenderer();
+    const r = new SceneBusRenderer();
     r.update(model);
     for (const v of r.visuals) {
       expect(v.active).toBe(v.direction !== 'none');
@@ -292,9 +298,9 @@ describe('charging vs plugged-idle — the contrast IS the deliverable (AC2, FR-
     expect(pWc.provenance).toBe('quiescent');
 
     // Render both: the wc visual is the discriminator.
-    const cr = new HeroSvgRenderer();
+    const cr = new SceneBusRenderer();
     cr.update(cModel);
-    const pr = new HeroSvgRenderer();
+    const pr = new SceneBusRenderer();
     pr.update(pModel);
     const cVis = [...cr.visuals].find((v) => v.role === 'wall_connector')!;
     const pVis = [...pr.visuals].find((v) => v.role === 'wall_connector')!;
@@ -353,7 +359,7 @@ describe('AC2 gap — magnitude reads as SHAPE (width) + MOTION SPEED (durSec) (
     // Import the SHARED formula from production and compare — never re-derive it
     // locally (that would be the private copy AC4/R2 forbids).
     const model = modelOf(charging);
-    const r = new HeroSvgRenderer();
+    const r = new SceneBusRenderer();
     r.update(model);
     for (const v of r.visuals) {
       const want = edgeVisual(edgeOf(model, v.role)!.kW);
@@ -363,9 +369,9 @@ describe('AC2 gap — magnitude reads as SHAPE (width) + MOTION SPEED (durSec) (
   });
 
   test('vampire (0.3 kW) draws THINNER and animates SLOWER than charging (7 kW) — both active', () => {
-    const vr = new HeroSvgRenderer();
+    const vr = new SceneBusRenderer();
     vr.update(modelOf(vampire));
-    const cr = new HeroSvgRenderer();
+    const cr = new SceneBusRenderer();
     cr.update(modelOf(charging));
     const vamp = [...vr.visuals].find((v) => v.role === 'powerwall')!; // 0.3 kW drain
     const chg = [...cr.visuals].find((v) => v.role === 'wall_connector')!; // 7.0 kW draw
@@ -380,7 +386,7 @@ describe('AC2 gap — magnitude reads as SHAPE (width) + MOTION SPEED (durSec) (
   test('a quiescent edge still gets a sane base-track width (calm, not invisible)', () => {
     // present-but-calm: the asleep corpus animates nothing, yet every edge keeps a
     // drawable width so the track still reads as "present" (AC1.1 / AC2).
-    const r = new HeroSvgRenderer();
+    const r = new SceneBusRenderer();
     r.update(modelOf(asleep as Fixture));
     for (const v of r.visuals) {
       expect(v.active).toBe(false);
@@ -391,7 +397,7 @@ describe('AC2 gap — magnitude reads as SHAPE (width) + MOTION SPEED (durSec) (
 
 describe('AC2 gap — source is never hue-only: the label+kW honesty floor (UX-DR12)', () => {
   test('label() emits every PRESENT node with its kW; an ABSENT node is omitted', () => {
-    const r = new HeroSvgRenderer();
+    const r = new SceneBusRenderer();
     r.update(modelOf(charging));
     const label = r.label();
     expect(label).toContain('Energy power flow');
@@ -413,7 +419,7 @@ describe('AC1.1 gap — quiescent is present-but-calm, NEVER blank (last-known v
   });
 
   test('label() of a calm corpus still shows real kW figures (never the "—" blank)', () => {
-    const r = new HeroSvgRenderer();
+    const r = new SceneBusRenderer();
     r.update(modelOf(asleep as Fixture));
     const label = r.label();
     expect(label).toMatch(/\d\.\d kW/); // at least one concrete kW read survives

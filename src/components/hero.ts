@@ -7,10 +7,7 @@ import { STRINGS } from '../strings';
 import { icon, batteryGauge, ageHint, keyAgeHint } from '../ui';
 import { carView, carStyles, CLOSED_APERTURES } from './car';
 import type { ApertureState, ChargeVisual } from './car';
-import { bindFlowModel } from '../flow/binding';
-import { HeroSvgRenderer, flowOverlayStyles } from '../flow/hero-svg';
 import { resolvePaint } from '../paint';
-import { HERO_VIEWBOX } from '../const';
 import { normalizeChargingState, normalizeCoverState, normalizeLockState } from '../data/dialect';
 import {
   num,
@@ -33,11 +30,6 @@ interface HeroStatus {
 
 @customElement('tc-hero')
 export class TcHero extends TcBase {
-  // The live energy-flow overlay hub (Story 4.3). Held across renders so it caches
-  // the model + precomputed geometry; the element stays thin (composites its
-  // `view()`). All mapping/derivation lives in the renderer, not here.
-  private readonly _flow = new HeroSvgRenderer();
-
   private _open(panel: PanelId): void {
     fireEvent<{ panel: PanelId }>(this, 'open-panel', { panel });
   }
@@ -250,10 +242,9 @@ export class TcHero extends TcBase {
 
   protected override render(): TemplateResult {
     const cfg = this.config;
-    // Compact variant (Story 8.10): suppress the flow-overlay kW labels and tighten
-    // the silhouette so the hero fits a ~380px column. Strict `=== 'compact'` — unset
-    // or garbage reads as full (forward-compat). DOM-level suppression only; the
-    // status line, battery gauge, and car silhouette all stay.
+    // Compact variant (Story 8.10): tighten the silhouette so the hero fits a ~380px
+    // column. Strict `=== 'compact'` — unset or garbage reads as full (forward-compat).
+    // Sizing only; the status line, battery gauge, and car silhouette all stay.
     const compact = cfg.variant === 'compact';
     const asleep = isAsleep(this.hass, cfg);
     const name = cfg.name ?? STRINGS.hero.defaultName;
@@ -300,15 +291,6 @@ export class TcHero extends TcBase {
     // An asleep car's aperture entities read `unavailable` anyway (→ all-closed),
     // and we never paint state on a dimmed car (Story 3.3's isAsleep still wins).
     const apertures: ApertureState = asleep ? CLOSED_APERTURES : this._apertures();
-
-    // Live energy-flow overlay (Story 4.3). `bindFlowModel` self-resolves the
-    // energy entities and returns the model the renderer draws — the renderer
-    // never re-reads hass.states. A vehicle-only install ⇒ empty model ⇒ the
-    // overlay is omitted entirely (no occluding box). Asleep needs no parallel
-    // branch: the binding yields calm `quiescent` edges and the stage opacity dim
-    // covers the whole stage (overlay included), while grayscale rides only the
-    // overlay so the render keeps its hue (Story 11.1).
-    this._flow.update(bindFlowModel(this.hass, cfg));
 
     // Range mirrors the battery's last-known fallback: the live `battery_range`
     // when awake (or on the full card), the cached `estimate_battery_range` ONLY
@@ -377,16 +359,6 @@ export class TcHero extends TcBase {
             charge,
             apertures,
           })}
-          ${compact || this._flow.empty
-            ? nothing
-            : html`<svg
-                class="tc-flow-overlay"
-                viewBox="0 0 ${HERO_VIEWBOX.width} ${HERO_VIEWBOX.height}"
-                role="img"
-                aria-label=${this._flow.label()}
-              >
-                ${this._flow.view()}
-              </svg>`}
         </div>
 
         ${security
@@ -425,7 +397,6 @@ export class TcHero extends TcBase {
   static override styles = [
     sharedStyles,
     carStyles,
-    flowOverlayStyles,
     css`
       .hero {
         padding: 18px 20px 20px;
@@ -494,16 +465,11 @@ export class TcHero extends TcBase {
       /* ── Asleep re-scope (Story 11.1) ─────────────────────────────────────
          The stage dims via OPACITY ONLY (single-sourced from --tc-dim-opacity),
          so the recolorable render (.car-img/.tc-car) keeps its resolved HUE —
-         a dark preset reads as a dim colour, not near-black. Grayscale is
-         re-scoped to ride ONLY the Flow overlay (a child cannot un-apply an
-         ancestor's filter, so the desaturation must NOT sit on an ancestor of
-         the render). The literal .tc-asleep recipe in styles.ts is unchanged;
-         this is a re-scope of where the treatment is APPLIED, not the recipe. */
+         a dark preset reads as a dim colour, not near-black. Grayscale must NOT
+         sit on the stage (an ancestor of the render) or it would desaturate the
+         car; the .tc-asleep recipe in styles.ts is unchanged. */
       .car-stage.asleep {
         opacity: var(--tc-dim-opacity, 0.5);
-      }
-      .car-stage.asleep .tc-flow-overlay {
-        filter: grayscale(var(--tc-dim-grayscale, 1));
       }
       .car-stage::after {
         content: '';
@@ -536,10 +502,9 @@ export class TcHero extends TcBase {
 
       /* ── compact variant (Story 8.10) ────────────────────────────────
          The "My Home" in-line embed renders the hero in a ~380px load-row
-         column (flow-overlay suppressed in render()). Tighten the silhouette
-         + stage/hero padding so the surviving silhouette · status · battery
-         fit the column with no horizontal overflow. Sizing only — the asleep
-         fade, paint, and shadow recipes are inherited unchanged. */
+         column. Tighten the silhouette + stage/hero padding so the silhouette ·
+         status · battery fit the column with no horizontal overflow. Sizing
+         only — the asleep fade, paint, and shadow recipes are inherited unchanged. */
       .hero.compact {
         padding: 14px 14px 16px;
       }

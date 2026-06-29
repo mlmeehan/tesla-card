@@ -3,17 +3,18 @@
 // Co-located gate for Story 4.4 — the SECOND FlowRenderer (SceneBusRenderer) and the
 // R1 interface-conformance proof. Drives the renderer from the SAME shared fixture
 // corpus THROUGH `bindFlowModel` (awake/asleep/all-unresolved) that the binding /
-// balance / hero-svg tests + demo use, feeding the SYNTHETIC stub rects (D5 §5d) as
+// balance tests + demo use, feeding the SYNTHETIC stub rects (D5 §5d) as
 // anchors instead of any live `getBoundingClientRect()`. The heart of the story is
-// the R1 proof: HeroSvgRenderer AND SceneBusRenderer fed the IDENTICAL model derive
-// per-edge visuals IDENTICALLY (kW → width/durSec, direction, source colour) and
-// differ ONLY in coordinates. Hermetic: committed fixtures, injected `now`, zero
-// network, zero live DOM measurement (AC4).
+// the R1 proof: the SceneBusRenderer consumes the shared `edgeVisuals`/`edgeVisual`/
+// `NODE_COLOR` UNFORKED (kW → width/durSec, direction, source colour) — the one math
+// authority, never a private copy (AR-7; the Hero renderer was retired by Story 12.1).
+// Hermetic: committed fixtures, injected `now`, zero network, zero live DOM
+// measurement (AC4).
 import { describe, expect, test, vi } from 'vitest';
 import { html, render } from 'lit';
 import { SceneBusRenderer, sceneBusStyles, type RectLike } from './scene-bus';
-import { HeroSvgRenderer, NODE_XY, BUS_XY } from './hero-svg';
 import { edgeVisual, edgeVisuals, NODE_COLOR, NODE_ICON } from './renderer';
+import { mdiGeneratorStationary } from '@mdi/js';
 import { bindFlowModel, ENERGY_ROLES } from './binding';
 import { buildFlowModel, BUS_NODE_ID, type FlowInput, type FlowModel } from './model';
 import { STRINGS } from '../strings';
@@ -164,75 +165,76 @@ describe('all-unresolved corpus → empty renderer (AC2)', () => {
 });
 
 // ═══════════════════════════════════════════════════════════════════════════
-// AC3 — THE R1 PROOF: one model, two renderers, IDENTICAL derivation. This is the
-// committed evidence that "one model serves both renderers" — both call the ONE
-// shared `edgeVisuals`/`edgeVisual`/`NODE_COLOR`, so the visual half is identical
-// edge-for-edge; only the coordinates (NODE_XY/BUS_XY vs stub-rect centres) differ.
+// AC3 — THE R1 PROOF (AR-7 revision): the FlowRenderer interface sits behind ONE
+// model, and the renderer consumes the ONE shared `edgeVisuals`/`edgeVisual`/
+// `NODE_COLOR` UNFORKED. With the Hero renderer retired (Story 12.1), this proves the
+// surviving SceneBusRenderer didn't fork the math — its per-edge visuals equal the
+// shared derivation edge-for-edge. (The cross-renderer coordinate-divergence test is
+// gone with the Hero renderer; SceneBus's own anchor sourcing is pinned by the AC1
+// anchor test above, and asleep-calm by the asleep `describe` above.)
 // ═══════════════════════════════════════════════════════════════════════════
-describe('R1 — both renderers derive edge visuals IDENTICALLY, differing only in coordinates (AC3)', () => {
-  function bothFrom(states: Record<string, unknown>, opts?: { now: number }) {
+describe('R1 — the renderer consumes the shared edge-visual math UNFORKED (AC3)', () => {
+  function sceneFrom(states: Record<string, unknown>, opts?: { now: number }) {
     const model = bindFlowModel(makeHass(states), cfg(), opts ?? {});
-    const hero = new HeroSvgRenderer();
-    hero.update(model);
     const scene = new SceneBusRenderer();
     scene.update(model);
     scene.setAnchors(STUB);
-    return { model, hero, scene };
+    return { model, scene };
   }
 
-  test('per-edge {width, durSec, direction, colour, active} are identical across renderers AND equal the shared derivation', () => {
-    const { model, hero, scene } = bothFrom(awake.states as Record<string, unknown>);
-    // Same edge order (both map over model.edges), so the visual arrays are equal.
-    expect(scene.visuals).toEqual(hero.visuals);
+  test('per-edge {width, durSec, direction, colour, active} equal the ONE shared derivation', () => {
+    const { model, scene } = sceneFrom(awake.states as Record<string, unknown>);
     expect(scene.visuals.length).toBe(model.edges.length);
 
-    // And neither forked the math: each renderer's visual equals the ONE shared
+    // The renderer didn't fork the math: each visual equals the ONE shared
     // `edgeVisuals` / `edgeVisual` / `NODE_COLOR` output for that edge.
     model.edges.forEach((e, i) => {
       const shared = edgeVisuals(e);
-      for (const v of [hero.visuals[i], scene.visuals[i]]) {
-        expect(v.role).toBe(e.from);
-        expect(v).toEqual({ role: e.from, ...shared });
-        // Pre-scale width is the canonical edgeVisual(kW).width (the AC3 contract).
-        expect(v.width).toBeCloseTo(edgeVisual(e.kW).width, 9);
-        expect(v.durSec).toBeCloseTo(edgeVisual(e.kW).durSec, 9);
-        expect(v.direction).toBe(e.direction);
-        expect(v.color).toBe(NODE_COLOR[e.from as keyof typeof NODE_COLOR]);
-        expect(v.active).toBe(e.direction !== 'none');
-      }
+      const v = scene.visuals[i];
+      expect(v.role).toBe(e.from);
+      expect(v).toEqual({ role: e.from, ...shared });
+      // Pre-scale width is the canonical edgeVisual(kW).width (the AC3 contract).
+      expect(v.width).toBeCloseTo(edgeVisual(e.kW).width, 9);
+      expect(v.durSec).toBeCloseTo(edgeVisual(e.kW).durSec, 9);
+      expect(v.direction).toBe(e.direction);
+      expect(v.color).toBe(NODE_COLOR[e.from as keyof typeof NODE_COLOR]);
+      expect(v.active).toBe(e.direction !== 'none');
     });
   });
+});
 
-  test('only the COORDINATES differ: HeroSvg sources from NODE_XY/BUS_XY, SceneBus from stub-rect centres', () => {
-    const { hero, scene } = bothFrom(awake.states as Record<string, unknown>);
-    const heroSvg = (() => {
-      const c = document.createElement('div');
-      render(html`<svg>${hero.view()}</svg>`, c);
-      return c.querySelector('svg')!;
-    })();
-    const sceneSvg = mount(scene);
-
-    const heroSolar = heroSvg.querySelector('.fo-edge[data-role="solar"] .fo-flow')!;
-    const sceneSolar = sceneSvg.querySelector('.sb-edge[data-role="solar"] .sb-flow')!;
-    // Hero: solar (forward) sources at the static NODE_XY coordinate.
-    expect(Number(heroSolar.getAttribute('x1'))).toBe(NODE_XY.solar.x);
-    expect(Number(heroSolar.getAttribute('y1'))).toBe(NODE_XY.solar.y);
-    // SceneBus: solar sources at the stub-rect centre — a DIFFERENT coordinate space.
-    expect(Number(sceneSolar.getAttribute('x1'))).toBeCloseTo(centre(STUB.solar).x, 9);
-    expect(Number(sceneSolar.getAttribute('x1'))).not.toBe(NODE_XY.solar.x);
-    // Sanity: the two coordinate substrates genuinely differ (not an accidental alias).
-    expect(centre(STUB.solar).x).not.toBe(NODE_XY.solar.x);
-    expect(BUS_XY.x).not.toBe(centre(STUB[BUS_NODE_ID]).x);
+// ═══════════════════════════════════════════════════════════════════════════
+// RENDERER-CONTRACT VALUE PINS (Story 12.1 review patch). These literal-value and
+// formula assertions previously lived in the now-deleted `flow/hero-svg.test.ts`
+// (the de-facto test home for `flow/renderer.ts`, which has no `renderer.test.ts`).
+// They are re-homed here so the absolute constants stay pinned: TypeScript checks
+// the `Record<EnergyRole, …>` KEYS, not the VALUES — without these, a wrong copper
+// hex / Scene icon / edgeVisual coefficient would ship green. The R1 proof above is
+// self-referential (renderer output vs `edgeVisual()`'s own return), so it cannot
+// catch a regression in the formula itself; these absolute pins can.
+// ═══════════════════════════════════════════════════════════════════════════
+describe('renderer-contract value pins (re-homed from the deleted hero-svg.test.ts)', () => {
+  test('edgeVisual derives width/duration from |kW| with the canonical coefficients + 0.5 clamp', () => {
+    const cases: Array<{ kW: number; width: number; durSec: number }> = [
+      { kW: 0, width: 1.6, durSec: 1.7 }, // no kW → thinnest + slowest
+      { kW: 1, width: 1.6 + 1 * 0.55, durSec: 1.7 - 1 * 0.16 },
+      { kW: 5, width: 1.6 + 5 * 0.55, durSec: 1.7 - 5 * 0.16 },
+      { kW: 20, width: 1.6 + 20 * 0.55, durSec: 0.5 }, // dur clamped at 0.5 (1.7−3.2 < 0.5)
+    ];
+    for (const c of cases) {
+      const v = edgeVisual(c.kW);
+      expect(v.width).toBeCloseTo(c.width, 9);
+      expect(v.durSec).toBeCloseTo(c.durSec, 9);
+    }
   });
 
-  test('a quiescent (asleep) model → both renderers calm, every edge direction:none, no motion', () => {
-    const { model, hero, scene } = bothFrom(asleep.states as Record<string, unknown>, {
-      now: ASLEEP_NOW,
-    });
-    expect(scene.visuals).toEqual(hero.visuals);
-    expect(model.edges.every((e) => e.direction === 'none')).toBe(true);
-    expect(scene.visuals.every((v) => v.active === false)).toBe(true);
-    expect(hero.visuals.every((v) => v.active === false)).toBe(true);
+  test('edgeVisual is sign-agnostic (|kW|-driven): edgeVisual(-5) === edgeVisual(5)', () => {
+    expect(edgeVisual(-5)).toEqual(edgeVisual(5));
+  });
+
+  test('the generator role pins copper NODE_COLOR + the mdiGeneratorStationary icon', () => {
+    expect(NODE_COLOR.generator).toBe('var(--tc-copper, #c2855b)');
+    expect(NODE_ICON.generator).toBe(mdiGeneratorStationary);
   });
 });
 

@@ -12,6 +12,10 @@ test.describe('hero — render modes', () => {
   test('default: bundled generic-EV silhouette (zero-config)', async ({ demo }) => {
     await demo.open({ scenario: 'awake' });
     await expect(demo.heroSvg).toBeVisible();
+    // Story 12.1 (AC1 e2e arm) — the Hero emits NO energy-flow overlay, even on an
+    // awake card with an energy site present (the scenario that previously drew it).
+    // A regression that re-introduces `svg.tc-flow-overlay` fails here in a real browser.
+    await expect(demo.heroStage.locator('.tc-flow-overlay')).toHaveCount(0);
   });
 
   test('paint: generic EV tints with no external assets', async ({ demo }) => {
@@ -74,10 +78,9 @@ test.describe('hero — paint resolution (FR-1: forms + degradation)', () => {
     await demo.open({ scenario: 'awake', image: true, paint: '#23519e' });
     await expect(demo.heroImage).toBeVisible();
     await expect(demo.heroImage).not.toHaveAttribute('style', /--tc-paint/);
-    // No CAR-RENDER (contract) SVG in image mode — the car IS the flat <img>. The
-    // Epic-4 flow overlay (`svg.tc-flow-overlay`) legitimately composites over EVERY
-    // render mode (Story 4.6 AC1), so exclude it — we assert the car render, not the overlay.
-    await expect(demo.heroStage.locator('svg:not(.tc-flow-overlay)')).toHaveCount(0);
+    // No CAR-RENDER (contract) SVG in image mode — the car IS the flat <img>. (Story
+    // 12.1 removed the flow overlay, so the stage carries no SVG at all in image mode.)
+    await expect(demo.heroStage.locator('svg')).toHaveCount(0);
   });
 });
 
@@ -108,9 +111,9 @@ test.describe('hero — entity-driven paint (AC1c live read + degradation)', () 
 
 // AC3 — the 1024×687 coordinate contract, and AC1 — the .surface/xl stage —
 // locked at the integration level (real browser, built bundle), not just in the
-// car.test.ts render-function unit. Epic 4's HeroSvgRenderer and Story 3.5's
-// aperture overlays anchor to this exact viewBox, so a regression here breaks
-// downstream compositing — these gates catch it against the shipped dist.
+// car.test.ts render-function unit. Story 3.5's aperture overlays anchor to this
+// exact viewBox, so a regression here breaks downstream compositing — these gates
+// catch it against the shipped dist.
 test.describe('hero — 1024×687 coordinate contract (AC3) + surface stage (AC1)', () => {
   test('zero-config hero SVG carries the 1024×687 contract viewBox', async ({ demo }) => {
     await demo.open({ scenario: 'awake' });
@@ -137,10 +140,9 @@ test.describe('hero — 1024×687 coordinate contract (AC3) + surface stage (AC1
   }) => {
     await demo.open({ scenario: 'awake', image: true });
     await expect(demo.heroImage).toBeVisible();
-    // No CAR-RENDER (contract) SVG — image mode is a flat <img>. Exclude the Epic-4
-    // flow overlay (`svg.tc-flow-overlay`), which composites over all render modes
-    // (Story 4.6 AC1); it is a separate overlay, not the car render this asserts.
-    await expect(demo.heroStage.locator('svg:not(.tc-flow-overlay)')).toHaveCount(0);
+    // No CAR-RENDER (contract) SVG — image mode is a flat <img>. (Story 12.1 removed
+    // the flow overlay, so the stage carries no SVG at all in image mode.)
+    await expect(demo.heroStage.locator('svg')).toHaveCount(0);
   });
 });
 
