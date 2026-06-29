@@ -21,15 +21,17 @@ fixture, tests, and this artifact.
 
 ## Surface enumeration (the audit is exhaustive, not sampled)
 
-Complete card = shell + Hero + Flow overlay + quick-actions + commands + **seven
-panels** (charging, climate, closures, tyres, location, media, energy).
+Complete card = shell + Hero + quick-actions + commands + **seven
+panels** (charging, climate, closures, tyres, location, media, energy). *(The Hero
+**Flow overlay** this report originally audited was removed in Story 12.1; flow viz
+now lives on the Scene bus + Energy panel only.)*
 
 | Layer | Files |
 |---|---|
 | Shell / tabs | `src/tesla-card.ts` (panel-switch; the single `detectDialect` call) |
 | Hero / car | `src/components/{hero,car,quick-actions,commands,slider}.ts` |
 | Panels | `src/components/panel-{charging,climate,closures,tyres,location,media,energy}.ts` |
-| Flow overlay | `src/flow/{hero-svg,scene-bus,renderer,binding,model,balance}.ts` |
+| Flow viz (Hero overlay `hero-svg.ts` removed in 12.1; now Scene bus + Energy panel) | `src/flow/{scene-bus,renderer,binding,model,balance}.ts` |
 | Data boundary | `src/data/{dialect,freshness,wake,resolve,registry,energy,degradation}.ts` |
 | Shared | `src/{styles,ui,helpers,strings,const}.ts` |
 
@@ -70,14 +72,14 @@ legible read; no animation may *vanish* its data cue.
 | Hero charge halo | pulsing green halo | **static green glow** (not removed) | `carStyles` | `hero.spec.ts` L249-281 |
 | Hero plugged-idle | blue port glow | static blue (intact) | `carStyles` | `hero.spec.ts` L269 |
 | Hero apertures | opacity **crossfade** | **instant cut** (`transition: none`) | `carStyles` | (covered by carStyles guard) |
-| **Flow overlay edges** | `fo-flow-dash` stroke-dashoffset | `animation: none` + `stroke-dasharray: none`; arrowheads + kW chips survive | `flow/hero-svg.ts` `@media` L352-360 | **`audit-r6.spec.ts` (NEW — the prior gap)** |
+| **Flow overlay edges** *(Hero overlay removed in Story 12.1)* | `fo-flow-dash` stroke-dashoffset | (at audit time) `animation: none` + `stroke-dasharray: none`; arrowheads + kW chips survive | `flow/hero-svg.ts` `@media` L352-360 (file since removed) | **`audit-r6.spec.ts` (NEW — the prior gap)** |
 | Asleep wake-hint | presence change (no keyframe) | instant by construction | n/a | `commands.spec.ts` L169-180 |
 
-**The AC2 gap this checkpoint closed:** the live-energy **Flow overlay** dash had
-no reduced-motion assertion. `audit-r6.spec.ts` now pins both halves — the dash
-animates by default and `animation: none` under `prefers-reduced-motion`, while
-`.fo-head` (arrowheads) and `.fo-chip-val` (kW magnitude) remain (colour-blind-safe
-static read).
+**The AC2 gap this checkpoint closed** (for the Hero Flow overlay later removed in
+Story 12.1): the live-energy Flow overlay dash had no reduced-motion assertion.
+`audit-r6.spec.ts` pinned both halves — the dash animated by default and
+`animation: none` under `prefers-reduced-motion`, while `.fo-head` (arrowheads) and
+`.fo-chip-val` (kW magnitude) remained (colour-blind-safe static read).
 
 ---
 
@@ -202,10 +204,10 @@ red specs** on the `feat/epic-4-live-energy-flow` branch — confirmed red on th
 baseline (Story 5.11 changes stashed), so they predate this story:
 
 - `hero.spec.ts` image-mode (`:73`, `:132`) assert **0 SVGs** in `.car-stage` under
-  `?image=1`, but Epic-4's Hero-agnostic **Flow overlay** now composites an `<svg>`
+  `?image=1`, but at audit time Epic-4's Hero-agnostic **Flow overlay** composited an `<svg>`
   over image mode too (by design — CLAUDE.md "composites over all three Epic-3 render
-  modes"). The Epic-3 assertion is stale vs Epic-4; the *spec* needs updating, not the
-  card.
+  modes"). The Epic-3 assertion was stale vs Epic-4; the *spec* needed updating, not the
+  card. *(The Hero Flow overlay was removed in Story 12.1.)*
 - `commands.spec.ts` asleep wake-hint + degrade specs (`:59`, `:148`, `:169`, `:177`,
   `:231`, `:243`) — the asleep `.wake-hint` is not located in the demo asleep scenario.
 

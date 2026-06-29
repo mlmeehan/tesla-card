@@ -86,13 +86,12 @@ tesla-card/                       # public, standalone git repo
     │   ├── binding.ts            #   bindFlowModel + flowInputsFrom (hide + multi-instance seam); ENERGY_ROLES(6), POWER_KEY
     │   ├── instances.ts          #   ★Epic 9 (9.7) — DOM-free per-instance identity (instanceId/roleOfInstance/roleInstances/instanceSpecs)
     │   ├── renderer.ts           #   FlowRenderer seam + the ONE shared edgeVisual/NODE_COLOR/NODE_ICON (math-unchanged; +copper/generator)
-    │   ├── hero-svg.ts           #   HeroSvgRenderer (fixed 1024×687 coords)
-    │   ├── scene-bus.ts          #   SceneBusRenderer (live getBoundingClientRect anchors; per-instance chip by n.id)
+    │   ├── scene-bus.ts          #   SceneBusRenderer (live getBoundingClientRect anchors; per-instance chip by n.id) — the sole live FlowRenderer
     │   └── my-home.ts            #   "My Home" geometry + composed-Scene view math: gatewaySegments, wcVehicleEdge, selfPowered/ribbonTiles,
     │                             #     coupledRoles, rowOf, RafCoalescer, WRAP overflow, BUS_WIDTH_MAX (each a VIEW of computeBalance().net)
     │
     ├── components/               # ── COMPONENTS LAYER — Lit elements (tc-*) + pure render helpers ──
-    │   ├── hero.ts               #   tc-hero: living car + battery + flow overlay; compact-asleep last-known fallback
+    │   ├── hero.ts               #   tc-hero: living car + battery + status/lock line; compact-asleep last-known fallback
     │   ├── car.ts                #   carView()/carStyles render helper (NO element) — 3-mode recolorable hero; editor live-preview
     │   ├── quick-actions.ts      #   tc-quick-actions: optimistic toggles; exports RECONCILE_TIMEOUT_MS
     │   ├── commands.ts           #   tc-commands: fire-and-forget command buttons (wake-gated)

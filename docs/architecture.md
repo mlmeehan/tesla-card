@@ -99,8 +99,8 @@ The source is organized into three layers with a **one-way dependency direction*
             └──────┬──────┘    pure read-model + normalization boundary (8 modules)
                    │  (canonical, sign-normalized data)
             ┌──────▼──────┐
-   flow/    │   balance   │    model · binding · renderer · hero-svg · scene-bus · my-home · instances
-            └──────┬──────┘    pure energy-flow math (8 modules); imports data/, never components/
+   flow/    │   balance   │    model · binding · renderer · scene-bus · my-home · instances
+            └──────┬──────┘    pure energy-flow math (7 modules); imports data/, never components/
                    │  (FlowModel + visual derivations)
             ┌──────▼──────┐
 components/ │  tc-* + helpers │  hero/panels/quick-actions/commands/ecosystem/scene + car/weather/chart/node-hero
@@ -144,7 +144,7 @@ tesla-card  (src/tesla-card.ts)  — LitElement, implements LovelaceCard
 │  owns: design tokens on :host, tab bar, @open-panel routing, customCards registration,
 │        host attribute reflection (theme + compact)
 │
-├── tc-hero            components/hero.ts          living car (paint + charge + apertures) + battery + flow overlay
+├── tc-hero            components/hero.ts          living car (paint + charge + apertures) + battery + status/lock line
 ├── tc-quick-actions   components/quick-actions.ts optimistic toggles (lock/climate/port/sentry/…)
 ├── tc-commands        components/commands.ts      fire-and-forget command buttons (wake/honk/flash/…)
 └── tc-panel-*  (the active tab; exactly one in the DOM at a time)
@@ -283,12 +283,13 @@ one authority — there is **no private copy**.
   where node **hide** (a dedicated `readonly Role[]` param forcing `kW:undefined` via the shared
   `absentInput`, so **hidden == absent** structurally) and **multi-instance** (flat-map role→N inputs,
   instance override wins) are applied — never a render-only filter.
-- **`FlowRenderer { update(model) }` (`flow/renderer.ts`)** is the renderer seam. Two implementations
-  share **one** kW→visual helper (`edgeVisual`: `width = 1.6 + |kW|·0.55`, `durSec = max(0.5, 1.7 − |kW|·0.16)`;
+- **`FlowRenderer { update(model) }` (`flow/renderer.ts`)** is the renderer seam. Its sole live
+  implementation consumes **one** kW→visual helper (`edgeVisual`: `width = 1.6 + |kW|·0.55`, `durSec = max(0.5, 1.7 − |kW|·0.16)`;
   `NODE_COLOR`/`NODE_ICON`):
-  - `HeroSvgRenderer` (`flow/hero-svg.ts`) — node-id → the fixed **1024×687** Hero viewBox (× a local `STROKE_SCALE`).
   - `SceneBusRenderer` (`flow/scene-bus.ts`) — node-id → live `getBoundingClientRect()` anchors (screen px).
-  The two differ **only** in coordinate source; a test deep-equals their per-edge visuals.
+  A test deep-equals its per-edge visuals against the shared `edgeVisuals` (the renderer never forks the
+  math). The `FlowRenderer` interface seam remains (AR-7: one interface behind one model); the Hero
+  overlay renderer (`HeroSvgRenderer`/`flow/hero-svg.ts`) was removed in Story 12.1.
 - **Colour-blind safe:** every edge carries a node-anchored label + kW magnitude (source is never
   hue-only). **Reduced-motion → a legible static read** (arrowheads + kW labels, no animation).
 
@@ -303,9 +304,10 @@ FlowModel assertion** (Epic 9 adds `energy-generator.json`).
 ### 6.1 The frozen authority — AR-6 (replaces the old "FR-33 = six frozen files")
 
 The earlier rule that *all six `flow/` files* were frozen is **doubly retired.** First, `flow/` is now
-**8 non-test files** (`model`, `balance`, `binding`, `renderer`, `hero-svg`, `scene-bus`, `my-home`,
-**`instances`** added in Story 9.7). Second, Epic 9's new role and multi-instance support deliberately
-edited `binding.ts` / `renderer.ts` / `hero-svg.ts` / `scene-bus.ts` and added one additive seam to
+**7 non-test files** (`model`, `balance`, `binding`, `renderer`, `scene-bus`, `my-home`,
+**`instances`** added in Story 9.7; `hero-svg` removed in Story 12.1). Second, Epic 9's new role and
+multi-instance support deliberately edited `binding.ts` / `renderer.ts` / `hero-svg.ts` (since removed
+in Story 12.1) / `scene-bus.ts` and added one additive seam to
 `model.ts`. The surviving, precise invariant is **AR-6** (verified against git this scan):
 
 - **`flow/balance.ts` has ZERO production diff since Story 4.1** (a single commit in its history) — the
@@ -317,7 +319,7 @@ edited `binding.ts` / `renderer.ts` / `hero-svg.ts` / `scene-bus.ts` and added o
   is untouched, so a single instance (`input.id === undefined`) yields **byte-identical** pre-9.7 output.
 - **A new energy node/role is a registry + component-metadata edit — NEVER a `balance.ts`/`buildFlowModel`-math
   edit.** Adding to `ROLES` makes the compiler enumerate exactly the role-keyed tables
-  (`FUNCTION_KEYS`/`BUS_ORIENTATION`/`POWER_KEY`/`NODE_COLOR`/`NODE_ICON`/`NODE_XY`) to fill — the
+  (`FUNCTION_KEYS`/`BUS_ORIENTATION`/`POWER_KEY`/`NODE_COLOR`/`NODE_ICON`) to fill — the
   typecheck cascade is the witness that balance/model math is never named. `generator` (Story 9.14) is the
   live witness (§13.5).
 
@@ -632,7 +634,7 @@ the "not found" word sits at `--tc-text-dim` for AA, never `--tc-text-mute`).
 The witness for AR-6 (§6.1): adding `generator` to `ROLES` made the compiler enumerate exactly the
 role-keyed tables to fill — `FUNCTION_KEYS.generator = ['generator_power']`, **`BUS_ORIENTATION.generator
 = 1`** (source sign, like solar), `EnergyEntities.generator_power?`, `POWER_KEY`, `NODE_COLOR`,
-`NODE_ICON` (`mdiGeneratorStationary`), `NODE_XY`, editor `NODE_LABELS` — and **never** `balance.ts`/
+`NODE_ICON` (`mdiGeneratorStationary`), editor `NODE_LABELS` — and **never** `balance.ts`/
 `buildFlowModel` math. Because `ENERGY_ROLES = Object.keys(POWER_KEY)` and `SCENE_NODES = ENERGY_ROLES`,
 the generator auto-flows through binding→model→balance→ribbon→bus by construction. **Copper `#c2855b`**
 is the 8th `ACCENT_SEMANTICS` accent (with `--tc-copper` a real token — both halves the token-defined gate

@@ -5,11 +5,10 @@ export const CARD_VERSION = '0.2.0';
 /**
  * The hero's fixed coordinate contract: the 1024×687 SVG viewBox every hero
  * render mode shares. This is the single source of truth the body-layers default
- * size references, the bundled generic EV is fitted within, and — going forward —
- * Epic 4's `HeroSvgRenderer` (`flow/hero-svg.ts`) and the Story 3.5 aperture
- * overlays anchor to, so every render composites over the same coordinate space
- * (architecture.md:49 "fixed SVG viewBox 1024×687", :394, :749). Do NOT pick a
- * different number — Epic 4 treats 1024×687 as fixed.
+ * size references, the bundled generic EV is fitted within, and the Story 3.5
+ * aperture overlays (and the body-mode charge overlay) anchor to, so every render
+ * composites over the same coordinate space. Do NOT pick a different number — the
+ * hero render contract treats 1024×687 as fixed.
  */
 export const HERO_VIEWBOX = { width: 1024, height: 687 } as const;
 

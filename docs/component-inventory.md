@@ -40,7 +40,7 @@ element (render helpers / abstract base).
 ### Vehicle children (`tc-*`, extend `TcBase`)
 | Tag | File | Responsibility |
 |---|---|---|
-| `tc-hero` | `components/hero.ts` (~677 LOC) | Living hero: recolorable car (`carView`) + battery gauge + composited flow overlay + status/lock line; derived `_chargeVisual` **3 states** (parked/plugged/charging), `_apertures` **4 booleans**, `_security` (11.2); compact-variant **asleep → cached last-known SoC/range** |
+| `tc-hero` | `components/hero.ts` (~677 LOC) | Living hero: recolorable car (`carView`) + battery gauge + status/lock line; derived `_chargeVisual` **3 states** (parked/plugged/charging), `_apertures` **4 booleans**, `_security` (11.2); compact-variant **asleep → cached last-known SoC/range** |
 | `tc-quick-actions` | `components/quick-actions.ts` (~252 LOC) | The canonical **optimistic-then-reconcile** toggles (lock/climate/charge-port/sentry/…); exports **`RECONCILE_TIMEOUT_MS = 10_000`**; `:host([compact])` → 3-column |
 | `tc-commands` | `components/commands.ts` (~317 LOC) | Fire-and-forget command buttons (`button.press`: wake/honk/flash/HomeLink/…); `isMissing`-only degrade; wake-gated |
 | `tc-slider` | `components/slider.ts` (~234 LOC) | Reusable bar slider; commits `value-changed` **on release only** (never mid-drag); reused by charging/media panels **and the Powerwall backup-reserve control** |
@@ -104,12 +104,12 @@ to its `static styles`). They register **no** custom element.
 
 ## 4. Flow layer — `src/flow/` (pure energy-flow math; imports `data/`, never `components/`)
 
-**8** non-test modules.
+**7** non-test modules.
 
 > **AR-6 (supersedes the old "six engine files frozen / FR-33"):** only `flow/balance.ts` is the truly
 > frozen authority (**zero production diff since Story 4.1**). `model.ts` carries one additive
-> multi-instance seam (`id ?? role`). `binding.ts`/`renderer.ts`/`hero-svg.ts`/`scene-bus.ts` were edited
-> in Epic 9 for the new role + per-instance ids. A new node/role is a **registry + component-metadata**
+> multi-instance seam (`id ?? role`). `binding.ts`/`renderer.ts`/`hero-svg.ts` (since removed in Story
+> 12.1)/`scene-bus.ts` were edited in Epic 9 for the new role + per-instance ids. A new node/role is a **registry + component-metadata**
 > edit, never a balance/compute edit. The kW→visual math in `renderer.ts` is math-unchanged.
 
 | Module | Key exports | Purpose |
@@ -117,9 +117,8 @@ to its `static styles`). They register **no** custom element.
 | `flow/balance.ts` | `computeBalance`, `Balance`, `EPSILON_KW = 0.05` | **Sole** sign/unit-convention owner (kW; battery `+` = charging; grid `+` = import); per-node `net` + conservation (`balanced` ⇔ `\|residual\| ≤ EPSILON_KW`). Role-generic. **Frozen (AR-6, zero diff since 4.1)** |
 | `flow/model.ts` | `buildFlowModel`, `FlowNode`/`FlowEdge`/`FlowModel`/`FlowInput`, `BUS_NODE_ID = 'bus'`, `IDLE_KW = 0.05`, `senseOf`, `Provenance`, `Direction` | Flow data-model assembler; carries the additive `const id = input.id ?? input.role` identity seam (9.7); `senseOf` derives `forward`/`reverse`/`none` against `IDLE_KW` |
 | `flow/binding.ts` | `bindFlowModel`, `flowInputsFrom`, `POWER_KEY`, `ENERGY_ROLES` (**6**), `DEADBAND` (= `IDLE_KW`), `absentInput` | Turns `(hass, config)` into a `FlowModel`; auto-detects the **6** energy roles. `flowInputsFrom` is the seam for node **hide** (forces `kW:undefined` via `absentInput`) and **N-instance** (flat-maps role → N inputs); accepts a `hide` set |
-| `flow/renderer.ts` | `FlowRenderer` (interface `{update}`), `edgeVisual`/`edgeVisuals`, `NODE_COLOR`, `NODE_ICON` | The renderer seam + the **one shared** kW→visual derivation both renderers use: `width = 1.6 + \|kW\|·0.55`, `durSec = max(0.5, 1.7 − \|kW\|·0.16)`. `NODE_COLOR.generator` = copper, `NODE_ICON.generator` = `mdiGeneratorStationary` |
-| `flow/hero-svg.ts` | `HeroSvgRenderer`, `NODE_XY`, `BUS_XY` (`{512, 348}`), `flowOverlayStyles` | Draws the `FlowModel` as the Hero overlay in fixed **1024×687** coords; every edge runs role → `BUS_XY` |
-| `flow/scene-bus.ts` | `SceneBusRenderer`, `setAnchors`, `sceneBusStyles`, `RectLike` | Draws the same `FlowModel` against live `getBoundingClientRect` anchors; per-instance chip lookup by `n.id` |
+| `flow/renderer.ts` | `FlowRenderer` (interface `{update}`), `edgeVisual`/`edgeVisuals`, `NODE_COLOR`, `NODE_ICON` | The renderer seam + the **one shared** kW→visual derivation the renderer uses: `width = 1.6 + \|kW\|·0.55`, `durSec = max(0.5, 1.7 − \|kW\|·0.16)`. `NODE_COLOR.generator` = copper, `NODE_ICON.generator` = `mdiGeneratorStationary` |
+| `flow/scene-bus.ts` | `SceneBusRenderer`, `setAnchors`, `sceneBusStyles`, `RectLike` | The **sole live `FlowRenderer`** — draws the `FlowModel` against live `getBoundingClientRect` anchors; per-instance chip lookup by `n.id` |
 | `flow/my-home.ts` | `gatewaySegments`, `sceneAggregates`/`selfPowered`/`ribbonTiles`, `coupledRoles`/`roleKind`, `wcVehicleEdge`, `RafCoalescer`, `busAxis`/`axisForWidth`, `SCENE_PHONE_MAX = 540`, `BUS_WIDTH_MAX = 7`, `VEHICLE_NODE_ID = 'vehicle'` | "My Home" Scene geometry, reflow, and **all composed-Scene views** — every one a pure **VIEW** of `computeBalance().net` (not the frozen authority); `axisForWidth(w) = w ≤ SCENE_PHONE_MAX ? 'y' : 'x'`; `BUS_WIDTH_MAX` caps stroke width. **No `_trunk`/`P()` helper exists** (that was a doc phantom). `tc-my-home` delegates here |
 | `flow/instances.ts` | `instanceId`, `roleOfInstance`, `roleInstances`, `instanceSpecs` | **★Epic 9 (9.7)** — DOM-free per-instance identity: `instanceId = count<=1 ? role : ${role}:${i+1}` (**bare for single = zero-diff**); consumes the descriptor-list schema |
 
@@ -272,7 +271,6 @@ unknown/garbage values degrade gracefully (R9 / FR-24), never throw.
 | `DEADBAND` | `= IDLE_KW` (`0.05`) | `flow/binding.ts` |
 | `BUS_NODE_ID` | `'bus'` | `flow/model.ts` |
 | `VEHICLE_NODE_ID` | `'vehicle'` | `flow/my-home.ts` |
-| `BUS_XY` | `{ x: 512, y: 348 }` | `flow/hero-svg.ts` (the Hero junction) |
 | `edgeVisual` math | `width = 1.6 + \|kW\|·0.55`, `durSec = max(0.5, 1.7 − \|kW\|·0.16)` | `flow/renderer.ts` |
 | `BUS_WIDTH_MAX` | `7` (Scene stroke cap) | `flow/my-home.ts` |
 | `SCENE_PHONE_MAX` | `540` (`axisForWidth` → vertical bus at/below) | `flow/my-home.ts` |

@@ -335,7 +335,7 @@ function genericCar(
   // shared 1024×687 coordinate contract (HERO_VIEWBOX) and a nested <svg> places
   // the 1024×480 art inside it with `preserveAspectRatio="xMidYMid meet"` — so it
   // is centred and aspect-preserved (never stretched), sharing the same
-  // coordinate space the body layers and Epic 4's overlays anchor to.
+  // coordinate space the body layers and the charge-port/aperture overlays anchor to.
   return html`
     <svg
       class=${carClasses('car-img tc-car tc-ev', charge, apertures)}

@@ -205,7 +205,6 @@ exactly these:
   binding → model → balance → ribbon → bus by construction.)
 - `data/energy.ts`: `EnergyEntities.generator_power?` + the resolution `RULES`.
 - renderer: `NODE_COLOR` / `NODE_ICON` (`mdiGeneratorStationary`).
-- hero-svg: `NODE_XY` placement.
 - editor: `NODE_LABELS`.
 - `styles.ts`: a new accent — `ACCENT_SEMANTICS` copper `#c2855b` + the `--tc-copper` token (there are
   now **8 accents**); update the three `styles.test.ts` accent gates together.

@@ -278,8 +278,9 @@ exist). Any actual cap wiring is **follow-up**, to be driven by a real profiler 
   edge — no 6th vehicle node). `audit-r6-suite.test.ts` asserts they **agree** on the
   awake fixture (car `Charging` ⇒ an active wall_connector edge) — a mismatch is a
   defect. No Scene surface re-derives charge state with a private sign convention.
-- **One model serves both renderers (R1):** `SceneBusRenderer` and `HeroSvgRenderer`
-  derive edge visuals from the **shared** `edgeVisual`/`edgeVisuals` — proven by the
+- **One model behind the renderer seam (R1):** `SceneBusRenderer` (the sole live
+  `FlowRenderer` since the Hero overlay renderer was removed in Story 12.1) derives edge
+  visuals from the **shared** `edgeVisual`/`edgeVisuals` — proven by the
   deep-equal parity test (`flow/scene-bus.test.ts`, against `fixtures/scene-stub-rects.json`).
   The audit introduces no fork; the AC5 cap clamps the shared output.
 - **Arbitrary-topology composed:** the minimal→full sweep + the packed grid + the
@@ -345,7 +346,7 @@ The composed whole = the **6.8-audited MVP suite** *plus*:
 | 8.6 | **enriched Gateway bus** (kW pills · terminals · focus-highlight) | `components/my-home.ts` (`_pill`/`_terminal`/`_legs`), `flow/my-home.ts` |
 | 8.7 | **self-powered % ribbon** + per-node tiles | `components/my-home.ts` (`_ribbon`), `flow/my-home.ts` (`selfPowered`/`ribbonTiles`) |
 
-Frozen / read-only (confirmed un-touched): `flow/{model,balance,binding,renderer,hero-svg,scene-bus}.ts`, `data/{registry,resolve,dialect,energy,freshness}.ts`.
+Frozen / read-only at audit time (confirmed un-touched): `flow/{model,balance,binding,renderer,hero-svg,scene-bus}.ts`, `data/{registry,resolve,dialect,energy,freshness}.ts`. (`flow/hero-svg.ts` was later removed in Story 12.1; the rest are current.)
 
 ---
 
@@ -513,7 +514,7 @@ seam already exist). Any actual cap wiring is **follow-up**, driven by a real pr
   `vehicle` node; `ENERGY_ROLES` is exactly five; `wcVehicleEdge` active when charging) in
   **`audit-r6-suite.test.ts` (NEW)**. The frozen engine has **zero Epic-8 diff** (verified:
   `git diff c3503a0..HEAD -- src/flow/{model,balance,binding,renderer,hero-svg,scene-bus}.ts`
-  is empty).
+  was empty at the Epic-8 audit HEAD; `flow/hero-svg.ts` was later removed in Story 12.1).
 - **Bus / ribbon / cell agree by construction (8.7).** The self-powered %, the per-node
   tiles, and the bus segments all read the **same** `computeBalance(model).net` (computed
   once per `_ribbon` render, threaded). No second balance, no re-signed net. Pinned in

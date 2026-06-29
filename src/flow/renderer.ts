@@ -11,10 +11,10 @@ import type { Direction, FlowEdge, FlowModel } from './model';
 
 /**
  * D1 — the renderer SEAM (Story 4.3). `interface FlowRenderer { update(model) }`
- * is the ONE contract every energy renderer implements: `HeroSvgRenderer` (4.3,
- * static 1024×687 coords) and `SceneBusRenderer` (4.4, live `getBoundingClientRect`
- * anchors) both take a {@link FlowModel} and draw it — only the COORDINATE SOURCE
- * differs, never the data path or the kW→visual math.
+ * is the ONE contract an energy renderer implements: `SceneBusRenderer` (4.4, live
+ * `getBoundingClientRect` anchors) takes a {@link FlowModel} and draws it. The seam
+ * stays a published interface behind ONE model (AR-7), even though SceneBus is now
+ * the sole live implementer.
  *
  * `@unstable` / INTERNAL: this is NOT part of the public `TeslaCardConfig` surface.
  * The freeze is deferred to the Epic-6 Scene-bus productionization (architecture.md
@@ -83,12 +83,13 @@ export interface EdgeVisuals {
 
 /**
  * The ONE shared per-edge visual derivation (Story 4.4, R1 "consume the one
- * constant" discipline). BOTH `HeroSvgRenderer` and `SceneBusRenderer` call THIS —
- * never a private re-implementation — so the AC3 "two renderers derive identically"
+ * constant" discipline). `SceneBusRenderer` calls THIS — never a private
+ * re-implementation — so the AC3 "the renderer derives from the one model unforked"
  * property holds STRUCTURALLY (one call site), not by parallel formulas that could
  * silently drift. The coordinate `source`/`sink` points stay renderer-local; this
  * derives only the model-dependent visual (a function of the edge alone). A sign bug
- * here would flip every renderer at once — which is exactly why it lives in one place.
+ * here would flip the renderer (and any future `FlowRenderer`) at once — which is
+ * exactly why it lives in one place.
  */
 export function edgeVisuals(edge: FlowEdge): EdgeVisuals {
   const { width, durSec } = edgeVisual(edge.kW);

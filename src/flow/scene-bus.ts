@@ -13,14 +13,14 @@ import {
 } from './renderer';
 
 /**
- * D1 — the SECOND {@link FlowRenderer} (Story 4.4, AR-7 SceneBus, R1 pulled
- * forward). It draws the SAME {@link FlowModel} the {@link import('./hero-svg').
- * HeroSvgRenderer} draws, deriving every edge's visual from the ONE shared
- * {@link edgeVisuals} function — so "one model serves both renderers" is proven
- * structurally. The ONLY thing that differs from HeroSvg is the COORDINATE SOURCE:
- * HeroSvg reads a static `NODE_XY`/`BUS_XY` map in the fixed 1024×687 viewBox;
- * SceneBus reads the CENTRES of live `getBoundingClientRect()`-shaped anchors
- * (screen px). It consumes a `FlowModel` only — it NEVER reads `hass.states` or
+ * D1 — the sole live {@link FlowRenderer} (Story 4.4, AR-7 SceneBus, R1 pulled
+ * forward). It draws a {@link FlowModel}, deriving every edge's visual from the
+ * ONE shared {@link edgeVisuals} function — so the renderer never forks the
+ * model's visual language (AR-7: one interface behind one model). It locates each
+ * edge from a single COORDINATE SOURCE: the CENTRES of live
+ * `getBoundingClientRect()`-shaped anchors (screen px), recomputed from the real
+ * DOM rather than any static coordinate map. It consumes a `FlowModel` only — it
+ * NEVER reads `hass.states` or
  * re-resolves entities (the Story-4.2 binding owns that), so `no-bare-hass-states`
  * stays green by construction.
  *
@@ -97,7 +97,7 @@ export class SceneBusRenderer implements FlowRenderer {
 
   /**
    * Cache the model + precompute per-edge visuals (via the SHARED {@link edgeVisuals})
-   * and per-chip data — pure, NO DOM (mirrors `HeroSvgRenderer.update`). Geometry is
+   * and per-chip data — pure, NO DOM. Geometry is
    * NOT computed here: the anchor source is a SEPARATE, swappable input
    * ({@link setAnchors}/{@link anchorFor}), so `update(model)` stays DOM-free and the
    * same precompute serves any rect substrate. Honors the model's omission (AC2):
@@ -163,8 +163,8 @@ export class SceneBusRenderer implements FlowRenderer {
    * The per-edge SHARED derived visuals (`{role, width, durSec, direction, color,
    * active}`) — the PRE-presentation half. SceneBus draws in screen px and uses
    * `width` DIRECTLY (no `STROKE_SCALE`), so this IS what it renders. Exposed so the
-   * R1 proof compares it against `HeroSvgRenderer.visuals` and asserts they are
-   * IDENTICAL (the committed evidence that neither renderer forked the math).
+   * R1 proof pins each entry against the shared `edgeVisuals(e)` output and asserts
+   * they are IDENTICAL (the committed evidence that the renderer never forked the math).
    */
   get visuals(): readonly RoleVisual[] {
     return this._visuals;
@@ -222,9 +222,9 @@ export class SceneBusRenderer implements FlowRenderer {
   }
 
   /**
-   * A faint base track + (when active) a coloured animated dash with arrowhead —
-   * IDENTICAL grammar/logic to HeroSvg's `_edge`, sourcing the two points from rect
-   * CENTRES instead of `NODE_XY`/`BUS_XY`. `forward` = role→bus, `reverse` = bus→role,
+   * A faint base track + (when active) a coloured animated dash with arrowhead,
+   * sourcing the two points from rect CENTRES (live `getBoundingClientRect()` screen
+   * px). `forward` = role→bus, `reverse` = bus→role,
    * `none` = calm track only (no motion). Width is the shared `edgeVisual` width
    * DIRECTLY (screen px — no presentation scale).
    */
@@ -296,9 +296,9 @@ export class SceneBusRenderer implements FlowRenderer {
 }
 
 /**
- * Scene-bus CSS — the SceneBus equivalent of `flowOverlayStyles`. Same luminous
- * grammar (dashed `stroke-dashoffset` edges, glass chips, monoline icons via
- * `fill: currentColor`), drawn in screen px. Every `var(--tc-*)` carries its
+ * Scene-bus CSS — the luminous flow grammar drawn in screen px: dashed
+ * `stroke-dashoffset` edges, glass chips, monoline icons via
+ * `fill: currentColor`. Every `var(--tc-*)` carries its
  * DESIGN.md fallback (the `styles.test.ts` hard gate). The `sb-flow-dash` keyframe
  * lives OUTSIDE the locked `sharedStyles` `{tc-pulse, tc-shimmer}` a11y corpus.
  *
