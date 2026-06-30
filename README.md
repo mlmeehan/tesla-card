@@ -5,7 +5,7 @@ A Tesla-app-inspired vehicle card for Home Assistant, built for the
 quick-action controls, and purpose-built detail panels — a tappable
 closures diagram, live charging controls, climate with seat heaters, tyre
 pressures, a map, the media player, and — when an energy site is detected —
-a live energy-flow overlay. Set it up with **zero YAML** through the built-in
+a live energy-flow diagram. Set it up with **zero YAML** through the built-in
 visual editor, and compose your whole home-energy picture with the matching
 **My Home** scene.
 
@@ -170,22 +170,22 @@ hiding, reordering, promoting, and duplicating nodes — see
 | ------------------------ | ------------ | ------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `type`                   | string       | —            | `custom:tesla-card` (required).                                                                                                                                           |
 | `name`                   | string       | `Model Y`     | Vehicle name shown in the hero.                                                                                                                                           |
-| `image`                  | string       | _built-in EV_ | Custom flat car render URL. When unset (and no`body`), the card shows its built-in recolorable EV illustration.                                                           |
-| `body`                   | map          | _none_        | Recolorable car-body layer set — see[Recolorable car body](#recolorable-car-body).                                                                                       |
-| `paint`                  | string\| map | _silver_      | Body colour for the built-in render or a`body` layer set: a CSS colour, a generic colour-preset name, or an entity source — see [Paint](#paint).                         |
-| `appearance`             | map          | _auto_        | Card-only light/dark theme override — see[Theming](#theming).                                                                                                            |
+| `image`                  | string       | _built-in EV_ | Custom flat car render URL. When unset (and no `body`), the card shows its built-in recolorable EV illustration.                                                          |
+| `body`                   | map          | _none_        | Recolorable car-body layer set — see [Recolorable car body](#recolorable-car-body).                                                                                      |
+| `paint`                  | string\| map | _silver_      | Body colour for the built-in render or a `body` layer set: a CSS colour, a generic colour-preset name, or an entity source — see [Paint](#paint).                        |
+| `appearance`             | map          | _auto_        | Card-only light/dark theme override — see [Theming](#theming).                                                                                                           |
 | `device`                 | string       | _auto_        | Vehicle device id or name, if you have more than one Tesla.                                                                                                               |
-| `prefix`                 | string       | _auto_        | Force the entity-id prefix slug (e.g.`model_y`). Rarely needed.                                                                                                           |
+| `prefix`                 | string       | _auto_        | Force the entity-id prefix slug (e.g. `model_y`). Rarely needed.                                                                                                          |
 | `integration`            | string       | _auto_        | Force the integration dialect (`tesla_fleet` / `teslemetry`). Auto-detected; rarely needed.                                                                               |
-| `entities`               | map          | _auto_        | Per-key entity overrides — see[Entity overrides](#entity-overrides-escape-hatch).                                                                                        |
-| `default_panel`          | string       | `charging`    | One of`climate`, `charging`, `energy`, `closures`, `tyres`, `location`, `media`.                                                                                          |
+| `entities`               | map          | _auto_        | Per-key entity overrides — see [Entity overrides](#entity-overrides-escape-hatch).                                                                                       |
+| `default_panel`          | string       | `charging`    | One of `climate`, `charging`, `energy`, `closures`, `tyres`, `location`, `media`.                                                                                         |
 | `variant`                | string       | `full`        | `full`, or `compact` (hero + status line + battery gauge only — a small dashboard tile).                                                                                 |
 | `hide_quick_actions`     | boolean      | `false`       | Hide the circular quick-action row.                                                                                                                                       |
 | `hide_panels`            | boolean      | `false`       | Hide the tabbed detail panels.                                                                                                                                            |
 | `hide_commands`          | boolean      | `false`       | Hide the command buttons (wake/honk/flash/…).                                                                                                                            |
 | `tyres`                  | map          | _auto_        | Display units (`psi`/`bar`) and low-pressure thresholds — see [Tyres](#tyres).                                                                                           |
-| `energy`                 | map          | _auto_        | Energy-site / Wall-Connector wiring, hide switch, and My Home node customization — see[Energy panel](#energy-panel) and [Customising the scene](#customising-the-scene). |
-| `weather`                | map          | _auto_        | Source (or hide) the Solar card's live-weather vignette —`{ entity, sun, hide }`.                                                                                        |
+| `energy`                 | map          | _auto_        | Energy-site / Wall-Connector wiring, hide switch, and My Home node customization — see [Energy panel](#energy-panel) and [Customising the scene](#customising-the-scene). |
+| `weather`                | map          | _auto_        | Source (or hide) the Solar card's live-weather vignette — `{ entity, sun, hide }`.                                                                                       |
 | `wake_cooldown`          | number       | `1`           | Minutes to wait between implicit wake attempts (never blocks an explicit wake).                                                                                           |
 | `notify_hidden_detected` | boolean      | `true`        | Show the calm "detected but hidden" advisory in the My Home scene when a hidden node is actually live.                                                                    |
 
