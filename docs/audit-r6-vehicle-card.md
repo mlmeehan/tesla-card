@@ -1,5 +1,25 @@
 # R6 — Vehicle-card integration audit checkpoint
 
+## Result — ✅ vehicle card cleared R6 (Story 5.11)
+
+**PASS.** 686 Vitest green (incl. the 14 new `audit-r6` cases) + the new `audit-r6` E2E
+spec green.
+
+| AC | Verdict |
+|---|---|
+| AC1 — keyboard / focus order across panels | ✅ automated; "focus order reads naturally" is **[HUMAN]** |
+| AC2 — reduced-motion sweep | ✅ automated |
+| AC3 — freshness honesty | ✅ automated; whole-card "reads calm" is **[HUMAN]** |
+| AC4 — `tesla_custom` dialect | ✅ leak closed + pinned; corpus is **SYNTHETIC / ASSUMED** (not captured) |
+
+**Residues & scope:** 2 **[HUMAN]** sign-offs outstanding (AC1 focus-order, AC3 staleness
+sweep) · 1 synthetic-corpus caveat (AC4) · 1 known residue (the 2 Hero/charging reads
+consume the default normalizer, deferred) · 8 pre-existing red E2E specs flagged, out of scope.
+
+**Note:** the Hero **Flow overlay** audited in AC2 (and noted in Pre-existing findings) was
+removed in Story 12.1; flow viz now lives on the Scene bus + Energy panel. Its audit rows
+are retained below for the historical record.
+
 > **What this is.** The Definition of Done mandates a *named cross-component pass*
 > at the end of Epic 5 (vehicle card complete): keyboard navigation / focus order
 > **across** panels & controls, a reduced-motion **sweep** over all animations, a
@@ -13,25 +33,21 @@
 
 Scope reality: Story 5.11 is an **audit-and-remediate checkpoint**, not a feature
 build. No new panel, control, or config field. The only code change is closing the
-`tesla_custom` dialect leak (AC4) — routing the inline `=== 'open'` / `'locked'`
-status reads through the existing `data/dialect` normalizers — plus the audit
-fixture, tests, and this artifact.
+`tesla_custom` dialect leak (AC4) — plus the audit fixture, tests, and this artifact.
 
 ---
 
 ## Surface enumeration (the audit is exhaustive, not sampled)
 
 Complete card = shell + Hero + quick-actions + commands + **seven
-panels** (charging, climate, closures, tyres, location, media, energy). *(The Hero
-**Flow overlay** this report originally audited was removed in Story 12.1; flow viz
-now lives on the Scene bus + Energy panel only.)*
+panels** (charging, climate, closures, tyres, location, media, energy).
 
 | Layer | Files |
 |---|---|
 | Shell / tabs | `src/tesla-card.ts` (panel-switch; the single `detectDialect` call) |
 | Hero / car | `src/components/{hero,car,quick-actions,commands,slider}.ts` |
 | Panels | `src/components/panel-{charging,climate,closures,tyres,location,media,energy}.ts` |
-| Flow viz (Hero overlay `hero-svg.ts` removed in 12.1; now Scene bus + Energy panel) | `src/flow/{scene-bus,renderer,binding,model,balance}.ts` |
+| Flow viz | `src/flow/{scene-bus,renderer,binding,model,balance}.ts` |
 | Data boundary | `src/data/{dialect,freshness,wake,resolve,registry,energy,degradation}.ts` |
 | Shared | `src/{styles,ui,helpers,strings,const}.ts` |
 
@@ -72,11 +88,11 @@ legible read; no animation may *vanish* its data cue.
 | Hero charge halo | pulsing green halo | **static green glow** (not removed) | `carStyles` | `hero.spec.ts` L249-281 |
 | Hero plugged-idle | blue port glow | static blue (intact) | `carStyles` | `hero.spec.ts` L269 |
 | Hero apertures | opacity **crossfade** | **instant cut** (`transition: none`) | `carStyles` | (covered by carStyles guard) |
-| **Flow overlay edges** *(Hero overlay removed in Story 12.1)* | `fo-flow-dash` stroke-dashoffset | (at audit time) `animation: none` + `stroke-dasharray: none`; arrowheads + kW chips survive | `flow/hero-svg.ts` `@media` L352-360 (file since removed) | **`audit-r6.spec.ts` (NEW — the prior gap)** |
+| **Flow overlay edges** | `fo-flow-dash` stroke-dashoffset | (at audit time) `animation: none` + `stroke-dasharray: none`; arrowheads + kW chips survive | `flow/hero-svg.ts` `@media` L352-360 | **`audit-r6.spec.ts` (NEW — the prior gap)** |
 | Asleep wake-hint | presence change (no keyframe) | instant by construction | n/a | `commands.spec.ts` L169-180 |
 
-**The AC2 gap this checkpoint closed** (for the Hero Flow overlay later removed in
-Story 12.1): the live-energy Flow overlay dash had no reduced-motion assertion.
+**The AC2 gap this checkpoint closed:** the live-energy Flow overlay dash had no
+reduced-motion assertion.
 `audit-r6.spec.ts` pinned both halves — the dash animated by default and
 `animation: none` under `prefers-reduced-motion`, while `.fo-head` (arrowheads) and
 `.fo-chip-val` (kW magnitude) remained (colour-blind-safe static read).
@@ -99,7 +115,7 @@ surface stays honest by one of three mechanisms:
 
 Staleness copy uses `--tc-text-dim` (the freshness-honest tone), **never**
 `--tc-text-mute`. The freshness read-model is `data/freshness.ts`
-(`readKey`/`readRaw`, the `fresh`/`stale`/`asleep`/`unavailable` triple) — the sole
+(`readKey`/`readRaw`, the `fresh`/`stale`/`asleep`/`unavailable` set) — the sole
 `hass.states` reader, measuring age against HA's **own** time base (`referenceNow`,
 the max server stamp), never `Date.now()`.
 
@@ -207,7 +223,7 @@ baseline (Story 5.11 changes stashed), so they predate this story:
   `?image=1`, but at audit time Epic-4's Hero-agnostic **Flow overlay** composited an `<svg>`
   over image mode too (by design — CLAUDE.md "composites over all three Epic-3 render
   modes"). The Epic-3 assertion was stale vs Epic-4; the *spec* needed updating, not the
-  card. *(The Hero Flow overlay was removed in Story 12.1.)*
+  card.
 - `commands.spec.ts` asleep wake-hint + degrade specs (`:59`, `:148`, `:169`, `:177`,
   `:231`, `:243`) — the asleep `.wake-hint` is not located in the demo asleep scenario.
 

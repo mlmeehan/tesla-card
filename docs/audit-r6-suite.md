@@ -1,5 +1,23 @@
 # R6 — Suite-complete audit checkpoint
 
+## Result — ✅ suite cleared R6 at MVP depth (6.8) and Epic-8 depth (8.8)
+
+**PASS.** Every AC traces to an automated test or an honestly-labeled `[HUMAN]`/`[PROFILER]`
+caveat; the `audit-r6-suite.test.ts` (jsdom) + `audit-r6-suite.spec.ts` (E2E) harnesses are
+green, and the depth pass surfaced + fixed **one** cross-cutting honesty defect.
+
+| AC | Verdict |
+|---|---|
+| AC1 — keyboard + reduced-motion sweep (composed) | ✅ automated; "focus order reads naturally" + "reads at a glance with motion off" are **[HUMAN]** |
+| AC2 — freshness honesty (composed) | ✅ automated; whole-suite "reads calm" is **[HUMAN]**; **1 defect found + fixed** (`.ribbon-age` tone → `--tc-text-dim`, pinned) |
+| AC3 — composed ~60fps budget | ✅ **PASS (2026-06-21)** — **[PROFILER]**, manual (not CI), dev-workstation + validated 6× CPU throttle (not the kiosk); **closes the last open 1.0.0 trace-gate condition** |
+| AC4 — cross-dialect resolution | ✅ a **proof, not a fix** (resolution is prefix-agnostic by construction); the non-default prefix is **SYNTHETIC**; `wc_status` residue cross-referenced |
+| AC5 — graceful-degradation ladder | documented policy + reuse hooks; no rung wired (no measured miss) |
+
+**Residues:** evaluative AC1/AC2 sweeps are **[HUMAN]**; the ~60fps budget is **[PROFILER]**;
+the AC4 non-default prefix is synthetic. Pre-existing red E2E specs belong to the 5.11
+vehicle-card layer (out of scope); neither checkpoint adds new red.
+
 > **What this is.** The Definition of Done mandates a *named cross-component pass*
 > at the **end of Epic 6 (suite complete)**: keyboard navigation / focus order
 > **across cards & the "My Home" Scene**, a reduced-motion **sweep** over all Scene
@@ -28,7 +46,7 @@ only artifacts are the suite-audit tests + this document.
 
 ## Surface enumeration (the audit is exhaustive, not sampled)
 
-The composed whole = the vehicle card (already R6-audited in 5.11) **+ the six
+The composed whole = the vehicle card (already R6-audited in 5.11) **+ the five
 ecosystem cards + the My Home Scene**.
 
 | Layer | Files |
@@ -112,13 +130,9 @@ Per epics.md:358 the budget is measured on a **named reference device** via the
 **browser performance profiler over a ~10s steady-state Scene** — a sustained-frame
 target, **not** a Vitest assertion or a synthetic microbenchmark — so it is **not**
 claimed as CI-automated green. It was instead **measured in-session via an instrumented
-browser profiler** (headed real-vsync Chromium driven by Playwright + CDP) on the **dev
-workstation — explicitly NOT the physical kiosk** — and accepted by the release owner as
-the NFR-1 sign-off; the recorded number + its honest caveats are in **The recorded
-measurement** below. Claiming AC3 "green, **automated in CI**" would still be the
-dishonesty this checkpoint catches — this is a **manual [PROFILER]-class** read,
-instrument-driven rather than eyeballed in DevTools, on a workstation rather than the
-kiosk, and labeled as exactly that.
+browser profiler** (headed real-vsync Chromium driven by Playwright + CDP) and accepted
+by the release owner as the NFR-1 sign-off; the recorded number + its honest caveats are
+in **The recorded measurement** below.
 
 ### The enabling precondition (machined)
 
@@ -135,22 +149,14 @@ precondition is asserted:
 
 ### The profiler procedure (for the human to run) — [PROFILER]
 
-1. **Device:** the NFR-1 reference device — the **low-end tablet-kiosk class** (the
-   target the suite must hold ~60fps on, not a developer workstation).
-2. **Build + serve the composed Scene:** `npm run build`, then `npm run serve:demo`
-   and open **`http://127.0.0.1:4173/demo/?card=my-home`** — the `?card=my-home` demo
-   mode mounts the full `tc-my-home` Scene (six live cards + Gateway bus + weather
-   vignette) fed the demo's mock hass (energy site + `weather.home` present so the
-   vignette animates), hides the standalone vehicle card, and widens to the desktop
-   horizontal-bus layout. Confirm all six live cards + the bus + the vignette are
-   simultaneously visible and animating. **A full turnkey step-by-step lives in
-   [`profiler-checklist-nfr1.md`](profiler-checklist-nfr1.md).**
-3. **Capture:** open the browser performance profiler, record a **~10s steady-state**
-   (no interaction — the resting animated Scene), stop, read the sustained frame rate.
-4. **Pass bar:** **~60fps sustained** over the 10s window (transient dips on first
-   paint are not the target; the steady state is).
-5. **On a miss:** apply the AC5 degradation ladder below — a missed budget **degrades
-   motion, it is NOT a release blocker**.
+The full turnkey step-by-step (device = the NFR-1 low-end tablet-kiosk class; build +
+serve the composed `?card=my-home` Scene; capture) lives in
+[`profiler-checklist-nfr1.md`](profiler-checklist-nfr1.md).
+
+- **Pass bar:** **~60fps sustained** over a **~10s steady-state** window (transient dips
+  on first paint are not the target; the steady state is).
+- **On a miss:** apply the AC5 degradation ladder below — a missed budget **degrades
+  motion, it is NOT a release blocker**.
 
 ### The recorded measurement — ✅ PASS (2026-06-21)
 
@@ -188,9 +194,8 @@ validated 6× CPU throttle.**
   full 6-card + bus + **vignette** subject with zero console errors.
 - **No AC5 ladder rung was needed** (no miss to remediate) — it stays documented + unwired.
 
-**Status: ✅ PASS (manual [PROFILER]-class, instrument-driven; dev-workstation + validated
-6× CPU-throttle low-end emulation — see caveats). Closes the last open 1.0.0 trace-gate
-condition.**
+**Status: ✅ PASS** (manual **[PROFILER]**-class — see caveats). **Closes the last open
+1.0.0 trace-gate condition.**
 
 ---
 
@@ -249,7 +254,7 @@ vehicle-card layer's residue, unchanged here — see `docs/audit-r6-vehicle-card
 ## AC5 — documented graceful-degradation ladder (budget missed on the reference device)
 
 A missed composed-budget **degrades motion; it is NOT a recourse-less release
-blocker** (the AC's explicit framing). The ordered, cheap policy — applied when the
+blocker** (the AC's explicit framing). The ordered, cheap policy is applied when the
 AC3 profiler measurement misses ~60fps on the reference device. At **every** rung the
 data stays (arrowheads + kW labels survive):
 
@@ -294,22 +299,13 @@ exist). Any actual cap wiring is **follow-up**, to be driven by a real profiler 
   `strings.test.ts` green); no second 180° elevation gradient; **no `CARD_VERSION`
   bump** (stays `0.1.0`); `dist/` uncommitted.
 
-## Pre-existing findings (flagged, NOT introduced by Story 6.8)
-
-An R6 audit reports what it finds. The 5.11 vehicle-card audit records the
-`feat/epic-4-live-energy-flow` branch's pre-existing red E2E specs (`hero.spec.ts`
-image-mode, `commands.spec.ts` asleep wake-hint) — those are the vehicle-card layer's
-findings, unchanged here; see `docs/audit-r6-vehicle-card.md`. This checkpoint adds
-no new red; the suite-audit Vitest + E2E specs are green.
-
----
 ---
 
 # R6 — Epic-8 DEPTH audit (Story 8.8)
 
 > **What this is.** Story 8.8 is the depth-level R6 checkpoint that **closes Epic 8**.
 > 6.8 (above) swept the suite at **MVP depth**; 8.8 extends that SAME pass to **only
-> the richness Epic 8 added** — the six ecosystem cards now carrying detail shells +
+> the richness Epic 8 added** — the five ecosystem cards now carrying detail shells +
 > stat grids + per-node hero art + inline history charts + the Powerwall control
 > surface, the Vehicle node in the Scene, the enriched Gateway bus, and the
 > self-powered ribbon — layered over the already-passing 6.8 audit. It is the peer of
@@ -317,11 +313,9 @@ no new red; the suite-audit Vitest + E2E specs are green.
 > deeper**. It does **not** fork a parallel artifact — it extends this one, the
 > `audit-r6-suite.test.ts` jsdom harness, and the `audit-r6-suite.spec.ts` E2E harness.
 >
-> Same honesty discipline: evaluative items route to **[HUMAN]**; the heavier
-> ~60fps budget is a **[PROFILER]** task on physical kiosk hardware. Where a surface
-> needed no remediation it is recorded as a **proof, not a fix**. One concrete
-> cross-cutting defect WAS found and fixed (see AC2) — an R6 audit reports what it
-> finds, and a fabricated fix is the dishonesty this checkpoint exists to prevent.
+> Same honesty discipline as 6.8 above (**[HUMAN]** evaluative items, **[PROFILER]**
+> ~60fps budget, **proof, not a fix**). One concrete cross-cutting defect WAS found and
+> fixed here (see AC2) — an R6 audit reports what it finds.
 
 **Scope reality:** an audit-and-document checkpoint, NOT a feature build. No new card,
 panel, flow node, control, chart, config field, or engine edit. The artifacts are the
@@ -452,16 +446,12 @@ art) **without** adding a per-tick layout/fetch cost.
 
 ### The profiler procedure (for the human to run) — [PROFILER]
 
-1. **Device:** the NFR-1 reference device — the low-end tablet-kiosk class.
-2. **Build + serve the DEEPENED Scene:** `npm run build`, serve `demo/`, open the full
-   six-*detail*-card Scene (each with hero art + stat grid + inline charts) + the
-   enriched Gateway bus + the weather vignette, composed with the live vehicle cell —
-   the awake/charging + energy-site scenario, weather injected so the vignette animates
-   and history present so the charts draw. Confirm all are simultaneously visible/animating.
-3. **Capture:** profiler, **~10s steady-state** (no interaction), read the sustained FPS.
-4. **Pass bar:** **~60fps sustained** over the 10s window (first-paint dips are not the target).
-5. **On a miss:** apply the extended degradation ladder below — a missed budget
-   **degrades motion, it is NOT a release blocker**.
+Same procedure as 6.8 AC3 (see [`profiler-checklist-nfr1.md`](profiler-checklist-nfr1.md);
+pass bar **~60fps sustained** over a **~10s steady-state**; on a miss apply the extended
+ladder below). The only delta at depth is the **subject**: the full six-*detail*-card
+Scene (each with hero art + stat grid + inline charts) + the enriched Gateway bus + the
+weather vignette + the live vehicle cell — the awake/charging + energy-site scenario,
+weather injected so the vignette animates **and history present so the charts draw**.
 
 **Status: ✅ PASS (2026-06-21).** The measured `?card=my-home` Scene at HEAD **IS** the
 Epic-8-**deepened** composition — detail cards with stat grids + per-node hero art + the
@@ -481,26 +471,19 @@ AC5 rung needed.**
 
 ## AC5 — the EXTENDED graceful-degradation ladder (heavier Scene)
 
-The AC3 wording adds **"freeze charts/vignette first"** to the 6.8 ladder. Ordered,
-cheap, motion-only; at **every** rung the data stays (arrowheads + kW pills + the
-chart's final curve survive):
+Same ordered, cheap, motion-only ladder as 6.8 AC5 — at **every** rung the data stays
+(arrowheads + kW pills + the chart's final curve survive). The AC5 wording adds one delta
+at depth: rung 3 now **freezes the charts *and* the weather vignette first** (both already
+freeze via the reduced-motion path — `chart.ts` `chartIn`, `weather-vignette.ts` `wx-*` —
+so force them into `animation:none` while the bus still animates; a frozen chart still
+shows its final static curve). The rung-2 cap gains a depth precedent: the `BUS_WIDTH_MAX`
+ceiling in `flow/my-home.ts` for clamping the shared `edgeVisual` output (R1 — clamp,
+never fork the kW→visual formula).
 
-1. **Reduce bus-animation density** — fewer simultaneously-animated edges / longer dash
-   period. The static read (arrowheads + kW pills) is unchanged.
-2. **Cap simultaneously-animated edges** — clamp the **shared** `edgeVisual` output
-   (`flow/renderer.ts`; the `BUS_WIDTH_MAX` ceiling in `flow/my-home.ts` is the existing
-   precedent for clamping the shared output). **Clamp the shared output — never fork the
-   kW→visual formula** (R1). A capped edge keeps its arrowhead + kW pill.
-3. **Freeze the charts + the weather vignette first** — the **lowest-cost** rung: both
-   already freeze via the reduced-motion path (`chart.ts` `chartIn`,
-   `weather-vignette.ts` `wx-*`). Force them into their `animation:none` state while the
-   bus still animates. A frozen chart still shows its final static curve; a frozen sky
-   still shows the condition art.
-
-**Wiring status:** no rung is wired this session — there is **no measurement** to
-trigger one (physical hardware only). The deliverable is the **documented policy + the
-reuse hooks** (the chart/vignette freeze paths + the `edgeVisual`/`BUS_WIDTH_MAX` clamp
-seam already exist). Any actual cap wiring is **follow-up**, driven by a real profiler miss.
+**Wiring status:** unchanged from 6.8 — no rung is wired (no measurement to trigger one);
+the deliverable is the documented policy + the reuse hooks (the chart/vignette freeze paths
++ the `edgeVisual`/`BUS_WIDTH_MAX` clamp seam already exist). Any actual cap wiring is
+**follow-up**, driven by a real profiler miss.
 
 ---
 
@@ -519,7 +502,7 @@ seam already exist). Any actual cap wiring is **follow-up**, driven by a real pr
   tiles, and the bus segments all read the **same** `computeBalance(model).net` (computed
   once per `_ribbon` render, threaded). No second balance, no re-signed net. Pinned in
   `flow/my-home.test.ts` + the composed `.rib-big` honesty pin.
-- **One model serves both renderers (R1).** `SceneBusRenderer` derives edge visuals from
+- **One model behind the renderer seam (R1).** `SceneBusRenderer` derives edge visuals from
   the **shared** `edgeVisual`/`edgeVisuals` (`flow/renderer.ts`); the vehicle edge reuses
   the unforked helper; any degradation cap clamps the shared output, never re-implements it.
 
@@ -527,30 +510,35 @@ seam already exist). Any actual cap wiring is **follow-up**, driven by a real pr
 
 ## Cross-cutting DoD (deltas verified by this depth checkpoint)
 
+Only genuine deltas over 6.8's DoD are listed below; the unchanged 6.8 invariants
+(authority split, one-model seam, the `hass.states`-only / acyclic boundary, the
+synthetic-fixture trade-dress rule) still hold.
+
 - **Graceful degradation / NaN-safety:** the deepened suite renders calm against 0-data,
   asleep, short/empty-history, and the non-default `acme_*` dialect — no throw, blank, or
   false state / NaN (`audit-r6-suite.test.ts` composed degradation sweep, unchanged + the
   chart/ribbon honesty pins). Absent control entities ⇒ Powerwall stays a read-only Sensor;
   absent history ⇒ calm empty chart; absent vehicle ⇒ omitted cell + edge.
-- **Data boundary (AR-1):** `hass.states` only inside `src/data/`; the on-demand history
-  fetch (`data/history.ts`) rides `callWS` (NOT `hass.states`, sanctioned by
-  `no-network-egress`) and is id-gated/cached (never background-polled, UX-DR23).
-  `data/ ← flow/ ← components/` acyclic. `no-bare-hass.states` + `no-cycle` green.
-- **Trade-dress (AR-12):** the hero art is hand-rolled token SVG; the non-default fixture
-  is synthetic data (ids/states only). The added audit tests are **functional fixture-driven**
-  (no define-to-assert-absence file) ⇒ **no `CONTENT_SKIP` entry needed**; `trade-dress` green.
-- **Token fallbacks on REAL tokens; no second 180° gradient** (`styles.test.ts` green —
-  the `.ribbon-age` fix uses the real `--tc-text-dim` token). No new strings/logging literals.
+- **Data boundary (AR-1) — new seam:** the on-demand history fetch (`data/history.ts`)
+  rides `callWS` (NOT `hass.states`, sanctioned by `no-network-egress`) and is
+  id-gated/cached (never background-polled, UX-DR23).
+- **Trade-dress (AR-12) — new art:** the per-node hero art is hand-rolled token SVG;
+  `trade-dress` green.
+- **Token fallbacks — the `.ribbon-age` fix** uses the real `--tc-text-dim` token
+  (`styles.test.ts` green).
 - **Registration contract unchanged — 7 elements** (`node-hero.ts`/`chart.ts` register
   nothing); `tesla-card.contract.test.ts` green.
 - **No `CARD_VERSION` bump** — `0.2.0` synced across `package.json`/`const.ts`/`hacs.json`
   (`version-sync` 6th gate green); **`dist/` uncommitted** (CI-built).
 
-## Pre-existing findings (flagged, NOT introduced by Story 8.8)
+## Pre-existing findings (both checkpoints — flagged, NOT introduced by Story 6.8 or 8.8)
 
-The 5.11 vehicle-card layer's pre-existing red E2E specs are unchanged (see
-`docs/audit-r6-vehicle-card.md`). This depth checkpoint adds **no new red**: the
+An R6 audit reports what it finds. The 5.11 vehicle-card audit records the
+`feat/epic-4-live-energy-flow` branch's pre-existing red E2E specs (`hero.spec.ts`
+image-mode, `commands.spec.ts` asleep wake-hint) — those are the vehicle-card layer's
+findings, unchanged here and out of scope; see `docs/audit-r6-vehicle-card.md`. Neither
+checkpoint adds new red: the 6.8 suite-audit Vitest + E2E specs are green, and the 8.8
 extended `audit-r6-suite.test.ts` (jsdom) + `audit-r6-suite.spec.ts` (Playwright) are
-green, all per-story suites stay green (behavior-preserving), and the single remediation
+green — all per-story suites stay green (behavior-preserving) and the single remediation
 (`.ribbon-age` tone) is pinned. The evaluative AC1/AC2 residue is **[HUMAN]**; the
-heavier ~60fps budget is **[PROFILER]** — neither is claimed as automated.
+~60fps budget is **[PROFILER]** — neither is claimed as automated.

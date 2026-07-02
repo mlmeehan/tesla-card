@@ -20,9 +20,7 @@ How the card actually moves data:
 This is the distinction that matters: the claim is **no card-originated egress /
 no telemetry**, *not* "the card never causes any byte to leave HA." Causing HA to
 talk to your car on your behalf is the entire point of a Lovelace card. The
-**sanctioned** channel — `hass.callService` / `hass.callWS` / `hass.callApi` /
-`hass.connection.*` and reading `hass.states` — is allowed. The **forbidden**
-thing is the card opening its *own* connection to phone home.
+**forbidden** thing is the card opening its *own* connection to phone home.
 
 This is enforced in **two layers** — an automated gate and human review. The gate
 is **necessary, not sufficient**: a static scan can see the AST of the card's own
@@ -70,13 +68,13 @@ The card already complies today: the only outbound call anywhere in `src/` is
 `hass.callService`, so the gate ships **green**. Its value is making future drift
 **impossible to merge**.
 
-## Layer 2 — human review (the gate is necessary, not sufficient)
+## Layer 2 — human review
 
 A static scan can't catch every vector. When a change touches the network surface
 or adds runtime code, a reviewer should confirm:
 
 - [ ] No obfuscated or dynamically-constructed access to a network primitive
-      (`window['fet'+'ch']`, `eval(...)`, `new Function(...)`).
+      (per the obfuscation examples in the intro above).
 - [ ] No new runtime dependency that itself phones home (the `import-allowlist`
       gate freezes runtime deps to `{lit, @mdi/js}`, but eyeball any change there).
 - [ ] No analytics / telemetry / "usage ping" added under any name.

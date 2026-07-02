@@ -5,16 +5,13 @@
 > 3/4 camera, the 1024×687 anchor, and the named overlay nodes).
 
 The hero can recolour a single car render to **any paint colour** instead of
-needing one PNG per colour. This is optional and advanced: if you just want a
-fixed image, set `image:` and skip all of this.
+needing one PNG per colour. This is optional and advanced — if you just want a
+fixed image, set `image:` and skip all of this. Otherwise you bake, once per
+vehicle render, the four layers the card composites.
 
-This guide bakes the four layers the card composites. You only do it once per
-vehicle render.
-
-> **You bring your own render.** No vehicle artwork ships with this card. Use an
-> image you have the right to use; keep it for your personal install; don't
-> redistribute Tesla's designs or badges (they're trade dress / trademarks). A
-> generic EV silhouette is the safe choice for anything public.
+> **You bring your own render.** No vehicle artwork ships with this card — use an
+> image you have the right to use, and a generic EV silhouette is the safe choice
+> for anything public. See **[trade-dress.md](./trade-dress.md)** for the policy.
 
 ## The layer model
 
@@ -47,7 +44,7 @@ coordinate, which is why one generic component handles any vehicle.
 - A source render of the vehicle, ideally:
   - on a **transparent** background,
   - reasonably high-res (≈1024px wide is plenty),
-  - body in an **even, mid-tone** colour (a neutral grey render recolors best;
+  - body in an **even, mid-tone** colour (a neutral grey render recolours best;
     a very dark or very saturated source fights the blends).
 - [ImageMagick](https://imagemagick.org) (`magick`) for the mechanical steps.
 - An image editor (GIMP / Photoshop / Affinity / Krita) for the **mask**, which

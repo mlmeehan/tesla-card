@@ -5,23 +5,20 @@ release gate (`bmad-testarch-trace`) from 🟡 **CONCERNS** → ✅ **PASS**. St
 8.8 **AC3** requires that the composed "My Home" Scene — 6 live cards + Gateway bus +
 weather vignette — sustains **~60fps** on the NFR-1 reference device. By design this
 is a **[PROFILER]** measurement on physical hardware, not a CI assertion (see
-`docs/audit-r6-suite.md` § AC3). Everything that *can* be automated already is; this
-is the last human-in-the-loop item.
+`docs/audit-r6-suite.md` § AC3). Everything that *can* be automated already is.
 
-> **For a fresh Claude session:** you can run steps 1–3 and steps 6–7 for the user
-> (build, serve, confirm the Scene, then record the result). **Step 4 (the actual
-> profiler capture) needs a human at the reference device** — Claude cannot read the
-> hardware's frame rate. Hand the user steps 4–5, collect the number they report, and
-> do the recording in steps 6–7.
+> **For a fresh Claude session:** run steps 1–3 and 6–7 for the user (build, serve, confirm
+> the Scene, record the result). **Step 4 — the profiler capture — needs a human at the
+> reference device** (Claude cannot read the hardware's frame rate); hand the user steps 4–5
+> and collect the number they report.
 
-> **Instrumented shortcut (workstation, not the kiosk).** An automated counterpart to
-> steps 1–4 lives at [`scripts/profiler/`](../scripts/profiler/README.md): `npm run
-> profile:nfr1` builds, serves, opens the `?card=my-home` Scene in headed Chromium,
-> validates the CPU throttle, and measures ~10s of steady-state rAF cadence per rate
-> (writing `fps-results.json` + a scene screenshot). It is what produced the recorded
-> §AC3 sign-off — strong *supporting* evidence (CPU-throttle low-end emulation on a dev
-> display), **not** a substitute for a physical-kiosk read. Use it for fast re-runs and
-> regression checks; use the manual steps below for the gold-standard device capture.
+> **Instrumented shortcut (workstation, not the kiosk).** An automated counterpart to steps
+> 1–4 lives at [`scripts/profiler/`](../scripts/profiler/README.md): `npm run profile:nfr1`
+> builds, serves, opens the `?card=my-home` Scene in headed Chromium, validates the CPU
+> throttle, and measures ~10s of steady-state rAF cadence per rate (writing `fps-results.json`
+> + a scene screenshot). It produced the recorded §AC3 sign-off — strong *supporting* evidence
+> (CPU-throttle low-end emulation on a dev display), **not** a substitute for a physical-kiosk
+> read. Use it for fast re-runs; the manual steps below are the gold-standard device capture.
 
 ---
 

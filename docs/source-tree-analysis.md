@@ -163,21 +163,21 @@ tesla-card/                       # public, standalone git repo
 
 | File | Why it matters |
 |---|---|
-| `src/tesla-card.ts` | The card; the bundle entry — orchestrates everything and owns the Lovelace contract |
-| `src/editor.ts` | The Epic-9 no-YAML GUI editor (wizard + normal form + customization); the D7 `hass.states` exception |
+| `src/tesla-card.ts` | Bundle entry; orchestrates everything and owns the Lovelace contract |
+| `src/editor.ts` | The Epic-9 no-YAML GUI editor; the D7 `hass.states` exception |
 | `src/data/resolve.ts` + `src/data/registry.ts` + `src/const.ts` | Vehicle entity resolution — the card's core robustness mechanism |
 | `src/data/freshness.ts` | The sole runtime `hass.states` reader; the data boundary |
-| `src/data/history.ts` | The only recorder-history path (`callWS`, no-poll); the second data boundary |
-| `src/flow/balance.ts` | The single sign/unit authority + conservation — **frozen (AR-6, zero prod diff across Epics 9–11)**; top verification target |
-| `src/flow/instances.ts` | Per-instance identity — the load-bearing multi-instance enabler (9.7) |
-| `src/flow/my-home.ts` | All composed-Scene view math (VIEWs of `computeBalance().net`; the engine authority stays in `balance.ts`) |
-| `src/components/my-home.ts` | The live `tc-my-home` Scene element (Epics 10–11 render polish landed here) |
+| `src/data/history.ts` | The only recorder-history path; the second data boundary |
+| `src/flow/balance.ts` | The single sign/unit authority — **frozen (AR-6)**; top verification target |
+| `src/flow/instances.ts` | Per-instance identity — the multi-instance enabler (9.7) |
+| `src/flow/my-home.ts` | All composed-Scene view math (VIEWs of `computeBalance().net`) |
+| `src/components/my-home.ts` | The live `tc-my-home` Scene element (Epics 10–11 render polish) |
 | `src/data/wake.ts` | The CI-blocking wake-safety invariant |
-| `src/base.ts` | Defines the `hass`/`config` contract every vehicle child relies on |
-| `src/styles.ts` | Single source of `--tc-*` tokens + `LIGHT_TOKENS` + machine-checkable contract maps |
+| `src/base.ts` | The `hass`/`config` contract every vehicle child relies on |
+| `src/styles.ts` | Single source of `--tc-*` tokens + contract maps |
 | `tsconfig.json` | `useDefineForClassFields: false` is load-bearing for Lit reactivity |
 | `rollup.config.mjs` | Single-file bundle config; inlines the lazy editor |
-| `scripts/lint/*.mjs` | The **8** merge-blocking lint gates (boundary, cycle, trade-dress, imports, egress, version-sync, token-defined, no-planning-artifacts) |
+| `scripts/lint/*.mjs` | The **8** merge-blocking lint gates |
 
 ---
 

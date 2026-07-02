@@ -5,17 +5,17 @@
 > which is a published public surface but **not frozen**. It MAY change before it
 > freezes; the public freeze is gated behind asset-pipeline productionization
 > (architecture.md D6). If you author a pack against this shape, expect it to
-> shift — **pin the card version you built against**. Your packs are user-owned
-> and never committed to this repo, so a contract change only means re-baking.
+> shift — **pin the card version you built against**. Your packs are user-owned,
+> so a contract change only means re-baking.
 
 The card ships **no vehicle artwork**. The zero-config hero is a deliberately
 generic, inline EV silhouette that recolours to any [paint](../README.md#paint)
-with no assets — so a fresh install always shows a clean car and **never 404s**.
-This document is the **distribution / usage** layer: how to point the hero at
-*your* render, how to swap a *different model's* pack, and how packs are baked to
-WebP, served from Home Assistant, and **kept out of the card repo**.
+with no assets. This document is the **distribution / usage** layer: how to
+point the hero at *your* render, how to swap a *different model's* pack, and
+how packs are baked to WebP, served from Home Assistant, and **kept out of the
+card repo**.
 
-Three docs, three lanes — this one links to the other two, it does not restate them:
+Three docs, three lanes — this one links to the other two; it does not restate them:
 
 - **[Layer contract](./layer-contract.md)** — the *formal shape* a conforming
   render must have (named layers/nodes, registration, the 3/4 camera, the
@@ -61,10 +61,7 @@ body:
 ## WebP externalization workflow
 
 Photoreal / body-layer packs are **externalized to WebP and served by Home
-Assistant** — they are referenced by URL via the Layer contract and **never
-committed to the card repo**. The bundled generic EV stays inline either way
-(the externalization boundary — architecture.md D6): only your bring-your-own
-packs externalize; the zero-config default never does.
+Assistant** — they are referenced by URL via the Layer contract.
 
 1. **Bake the layers to WebP.** Follow the per-layer `magick … .webp` commands in
    [recolorable-body.md](./recolorable-body.md#2-color--the-base) — don't fork
@@ -122,8 +119,6 @@ failure. (See the Layer contract's
 
 ## Bring renders you have the right to use
 
-Use a render you have the right to use, keep it for your personal install, and
-**don't redistribute Tesla's designs or badges** — vehicle designs are trade
-dress and the badges/wordmark are trademarks. A generic EV silhouette is the safe
-choice for anything public. No vehicle artwork ships with this card, and none
-should be committed to it.
+Packs are user-owned — keep them for your personal install. A generic EV
+silhouette is the safe choice for anything public. See
+**[trade-dress.md](./trade-dress.md)** for the trade-dress / trademark policy.

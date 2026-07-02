@@ -6,8 +6,8 @@ vehicle artwork. The bundled hero is a deliberately **generic EV** silhouette.
 
 This is enforced in **two layers** — an automated gate and a human-review step.
 The gate is **necessary, not sufficient**: a regex can see source tokens and file
-names, but it **cannot see a logo inside a raster**, a traced silhouette, or
-paraphrased branding. Net-new asset categories must be reviewed by a human.
+names, but not rendered image content. Net-new asset categories must be reviewed
+by a human.
 
 ## Layer 1 — the automated gate (merge-blocking)
 
@@ -50,11 +50,9 @@ palette — a reviewer must manually confirm:
       and look — pixels, not filenames).
 - [ ] No traced/derivative Tesla vehicle silhouette is **committed** (personal
       verification art stays in `demo/local/`, gitignored; runtime art lives in
-      the user's `config/www/tesla-card/`, never in this repo).
+      the user's `config/www/tesla-card/`, never in this repo — such art is fine
+      on a private install).
 - [ ] No Tesla brand colour, marketing name, or option code is reintroduced (run
       `npm run lint` — but also eyeball anything a regex can't tokenise).
 - [ ] If a genuinely new leak vector appears, **add a pattern** to the gate's
       append-only denylist so it's caught automatically next time.
-
-Personal/derivative vehicle art is fine to use on a private install — it just must
-not be **redistributed** in this repo. The generic EV is the only bundled vehicle.

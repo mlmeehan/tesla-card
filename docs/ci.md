@@ -33,9 +33,8 @@ Three **independent** jobs (no `needs` — they fan out in parallel):
 - **`build`** (`validate.yml:build`) — Node 20: `npm ci` → `npm run typecheck` →
   `npm run build` → `test -s dist/tesla-card.js` (bundle was produced and is non-empty).
 - **`lint`** (`validate.yml:lint`) — Node 20: `npm ci` → `npm run lint` (all **8** structural
-  gates, in order). The job's leading comment names only 6 of the 8 gates — it predates
-  `token-defined` + `no-planning-artifacts` and is stale; the `npm run lint` run executes
-  all 8.
+  gates, in order). Its leading comment is stale — see the **Stale echoes (harmless)** note
+  under Local parity.
 
 ### `test.yml` stages
 
@@ -111,18 +110,15 @@ type-lint, and these gates are the structural/policy lint.
 
 A change is green when **every** job above passes:
 
-- **Type gate** (`Type-check`) — strict TS, bundle + E2E.
-- **Unit gate** (`Unit (Vitest)`) — the co-located Vitest unit suite must pass.
+- **Type gate** (`Type-check`)
+- **Unit gate** (`Unit (Vitest)`)
 - **E2E gate** (`E2E (Playwright)`) — 100% of the suite must pass (no partial-pass threshold;
   Playwright exits non-zero on any failure → the job fails). The 2 opt-in `@visual` baseline
   specs are **excluded** from the default gate (`grepInvert: /@visual/`); opt in with
   `VISUAL=1` / `npm run test:e2e:visual`.
-- **Flake gate** (`Burn-In`) — on PRs/cron/dispatch, the suite must survive `--repeat-each`
-  with retries off.
-- **Packaging + structural gate** (`validate.yml`) — `HACS` + `Type-check & build` (bundle
-  emitted) + `Structural gates (lint)` (the 8-gate `npm run lint` chain: `no-bare-hass-states`
-  → `no-cycle` → `trade-dress-denylist` → `import-allowlist` → `no-network-egress` →
-  `version-sync` → `token-defined` → `no-planning-artifacts`).
+- **Flake gate** (`Burn-In`)
+- **Packaging + structural gate** (`validate.yml`) — `HACS` + `Type-check & build` +
+  `Structural gates (lint)` (the 8-gate `npm run lint` chain — see §The 8 structural lint gates).
 
 ### Enforce as required checks (recommended)
 
@@ -164,8 +160,9 @@ gh api -X PUT repos/mlmeehan/tesla-card/branches/main/protection \
 `ci:local` is a strong predictor of a green pipeline.
 
 > **Stale echoes (harmless):** `ci-local.sh` prints a banner naming only 5 of the 8 gates, but
-> it runs `npm run lint` (all 8). Same for the comment block in `validate.yml`'s `lint` job.
-> The chain itself is the source of truth.
+> it runs `npm run lint` (all 8). Same for the comment block in `validate.yml`'s `lint` job,
+> which names only 6 — it predates `token-defined` + `no-planning-artifacts`. The chain itself
+> is the source of truth.
 
 ### The native pre-commit hook
 

@@ -2,11 +2,9 @@
 
 **Repo:** `tesla-card/` (public, standalone git repo) · **Date:** 2026-06-24 (Epics 9–11 doc regeneration)
 
-How to build, verify, preview, and release the card. Verification is **gate-based** (`typecheck` +
-the **8-gate `npm run lint` chain** + `build`) **and** a co-located **Vitest** unit suite plus a
-demo-driven **Playwright** E2E suite — together they complement the gates, they do not replace them.
-The demo harness (§3) provides visual verification and is the shared system-under-test for both the
-dev loop and E2E.
+How to build, verify, preview, and release the card. Verification is **gate-based**: `typecheck` +
+the **8-gate `npm run lint` chain** + `build`, backed by a co-located **Vitest** unit suite and a
+demo-driven **Playwright** E2E suite over a shared demo harness (§3).
 
 ---
 
@@ -36,12 +34,12 @@ it that way. Everything else (`rollup`, `vite`, `vitest`, `@playwright/test`, `h
 | `npm run build` | `rollup -c` — bundles `src/tesla-card.ts` → `dist/tesla-card.js`. **Must emit the bundle.** |
 | `npm run watch` | `rollup -c --watch` — rebuild on change (terser skipped; sourcemaps on). |
 | `npm run dev` | `vite` — dev server over `demo/` with HMR against live `src/` (see §3). |
-| `npm run test` | `vitest run` — the co-located unit suite (`src/**/*.test.ts`; **65 files / ~1,578 cases**). **Must stay green.** |
+| `npm run test` | `vitest run` — the co-located unit suite (`src/**/*.test.ts`). **Must stay green.** |
 | `npm run test:watch` | `vitest` — same suite in watch mode for the inner loop. |
 | `npm run lint` | the **8-gate** node-script chain (see below) — **not** ESLint; all merge-blocking. |
 | `npm run demo` | builds, then echoes a reminder to open `demo/index.html` (does **not** start a server). |
 | `npm run serve:demo` | `http-server . -a 127.0.0.1 -p 4173 -c-1 -s` — serves the repo root so the harness can import the built bundle. |
-| `npm run test:e2e` | `playwright test` — the E2E suite against the demo harness (**24 specs / ~293 cases**); excludes `@visual`. |
+| `npm run test:e2e` | `playwright test` — the E2E suite against the demo harness; excludes `@visual`. |
 | `npm run test:e2e:headed` / `:ui` / `:debug` / `:report` | `playwright test` variants: visible browser / UI time-travel / inspector / open the last HTML report. |
 | `npm run test:e2e:visual` | `VISUAL=1 playwright test --grep @visual` — the opt-in pixel-baseline specs (2 committed baselines). |
 | `npm run test:e2e:burn-in` | `bash scripts/burn-in.sh` — repeat-stress the suite (retries off) for flaky detection. |
@@ -53,11 +51,8 @@ guard is wired on first install.
 
 **The 8 lint gates** (`npm run lint`, in order — full guide: [`docs/ci.md`](./ci.md)):
 `no-bare-hass-states` → `no-cycle` → `trade-dress-denylist` → `import-allowlist` → `no-network-egress`
-→ `version-sync` → `token-defined` → `no-planning-artifacts`. Each is a `scripts/lint/*.mjs` CLI.
-`version-sync` asserts `package.json` `version` == `src/const.ts` `CARD_VERSION` and `hacs.json`
-`filename` == the rollup output basename (`tesla-card.js`); `token-defined` flags any
-`var(--tc-X, …)` whose `--tc-X` is never defined in `styles.ts`; `no-planning-artifacts` blocks
-BMAD/planning files from this public repo.
+→ `version-sync` → `token-defined` → `no-planning-artifacts`. Each is a `scripts/lint/*.mjs` CLI;
+what each gate asserts lives in the `ci.md` guide linked above.
 
 > ⚠️ `typecheck`, `test`, `lint`, **and** `build` must all be green before any release. E2E
 > (`test:e2e`) runs in CI and is part of the gate too.
@@ -161,10 +156,8 @@ excluded from the default gate via `grepInvert` unless `VISUAL=1`. Cross-OS AA d
 baselines machine-specific. The recolor specs are similarly **guarded** — they skip on a fresh
 checkout / CI because `demo/local/` art is gitignored.
 
-> **Process note (from retros):** the recurring "File-List omits e2e" wart means the DoD now wants a
-> **render-test-per-editor-key** — `my-home-scene.spec.ts` pins the *embedded* render per editor key
-> (Story 11.4). Add a card-side render test for every config key the editor writes, including nested
-> embeds.
+> **Process note (from retros):** `my-home-scene.spec.ts` pins the *embedded* render per editor key
+> (Story 11.4). The render-test-per-editor-key DoD lives in §6 (Adding a component).
 
 ---
 
@@ -182,7 +175,8 @@ checkout / CI because `demo/local/` art is gitignored.
 
 If you add a configurable option, surface it in `src/editor.ts` and `TeslaCardConfig` (`types.ts`),
 and keep it **additive / zero-diff-when-absent** (the R9 forward-compat spread; reset/clear DELETES
-the key, never blanks it). Write a card-side render test for every config key the editor writes.
+the key, never blanks it). Write a card-side render test for every config key the editor writes,
+including nested embeds.
 
 There are **20 custom elements** today (8 of them picker/ecosystem cards); the editor is registered
 lazily via `getConfigElement`.
@@ -213,11 +207,8 @@ exactly these:
 
 `balance.ts` / `buildFlowModel` math is left **untouched** — that is the AR-6 proof.
 
-There are **7 ROLES** today (`vehicle` + the six energy roles `solar` / `powerwall` / `grid` / `home`
-/ `wall_connector` / `generator`) and **22 energy function-keys** (some code comments still stale-say
-21); the vehicle side carries **84** function-keys. Layering is `data/` ← `flow/` ← `components/`
-(enforced by the `no-cycle` gate); only `src/data/` reads `hass.states` (plus the editor, under D7).
-`data/` = 8 modules, `flow/` = 8 non-test modules (including `instances.ts`).
+Layering is `data/` ← `flow/` ← `components/` (enforced by the `no-cycle` gate); only `src/data/`
+reads `hass.states` (plus the editor, under D7).
 
 ---
 
@@ -270,8 +261,7 @@ Mirror the whole gate locally with `npm run ci:local`; repeat-stress it with `np
   never flip it.
 - **No hard-coded entity IDs.** Resolve by stable function-name through `config.entities[key]`; the
   `no-bare-hass-states` gate keeps `hass.states` access inside `src/data/` (plus the editor).
-- **Never commit `dist/`** — it's built in CI and attached to releases.
-- **Import `RECONCILE_TIMEOUT_MS`** (and other shared constants) from `const.ts`; never re-declare a
+- **Import `RECONCILE_TIMEOUT_MS`** from `components/quick-actions.ts` (and other shared constants from their owning module); never re-declare a
   literal locally.
 - **`@mdi/js` named imports only** — no wildcard / default imports (keeps the bundle from pulling the
   whole icon set; checked by `import-allowlist`).
@@ -280,9 +270,6 @@ Mirror the whole gate locally with `npm run ci:local`; repeat-stress it with `np
 ---
 
 ## 11. Consuming the card in Home Assistant
-
-Once installed via HACS (or added manually), the card is registered as a Lovelace **resource**
-(HACS does this automatically for plugins) and used in a dashboard as:
 
 ```yaml
 type: custom:tesla-card
@@ -294,7 +281,7 @@ name: Model Y
 
 For the full user-facing options table and entity-resolution behaviour, see the card
 [`README.md`](../README.md); for the no-YAML setup experience, use the GUI editor (the card's
-**Edit** pencil in Lovelace) — no YAML required.
+**Edit** pencil in Lovelace).
 
 ---
 

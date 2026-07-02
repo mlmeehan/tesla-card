@@ -50,8 +50,6 @@ simply doesn't render (graceful by construction); no node is ever required.
 
 ## Registration — identical size, alignment, one camera
 
-Every layer **and** every overlay must share the **same canvas, the same car
-position/scale, and the same camera & lens** (aperture-render-spec.md:17-20).
 This is *registration*: the layers composite pixel-on-pixel, so a mask drawn for
 `color` lines up with `shade`, and an aperture overlay lines up with the body
 beneath it. Mis-registered layers composite wrong — a mask offset by a few pixels
@@ -71,8 +69,7 @@ Body packs are **never bundled** — no vehicle artwork ships with the card. The
 are WebP files **you** serve from Home Assistant (`config/www/tesla-card/…`,
 referenced as `/local/tesla-card/…`), and they are **never committed to the card
 repo**. This document defines the *shape* a conforming pack has; the
-bring-your-own / multi-model **distribution & usage** how-to — externalizing to
-WebP, placing packs under your HA install, swapping models by URL, and the
-never-committed boundary — lives in **[asset-packs.md](./asset-packs.md)**. Keep
-your packs to renders you have the right to use — a generic EV is the safe choice
-for anything public (trade dress / trademarks).
+bring-your-own / multi-model **distribution & usage** how-to lives in
+**[asset-packs.md](./asset-packs.md)**. Keep your packs to renders you have the
+right to use — a generic EV is the safe choice for anything public (see
+[trade-dress.md](./trade-dress.md)).
