@@ -86,6 +86,80 @@ test.describe('token contract — runtime resolution (Story 2.1)', () => {
     expect(colorOnLight, 'text colour is host-theme-independent').toBe(colorOnDark);
   });
 
+  test('Story 9.12 / K10: appearance.theme=light APPLIES on the rendered card and cascades into nested children', async ({
+    demo,
+  }) => {
+    // The unit corpus proves the pieces separately (attr reflection, the static
+    // :host([theme='light']) CSS text, the editor preview) — but a typo'd host
+    // selector or a broken shadow-DOM cascade would pass all three. This reads the
+    // COMPUTED values off the live bundled card: host token re-resolution, child
+    // consumption (the hero name's color), and accent stability.
+    await demo.open({ scenario: 'awake' });
+    const name = demo.card.locator('.name').first();
+    await expect(name).toBeVisible();
+    expect(await name.evaluate((el) => getComputedStyle(el).color)).toBe('rgb(241, 245, 249)'); // dark baseline
+
+    // Apply the override exactly as the editor writes it (public setConfig, R9 spread).
+    await demo.card.evaluate((host) => {
+      const el = host as unknown as {
+        _config?: Record<string, unknown>;
+        setConfig(c: unknown): void;
+        updateComplete: Promise<boolean>;
+      };
+      el.setConfig({ ...(el._config ?? { type: 'custom:tesla-card' }), appearance: { theme: 'light' } });
+      return el.updateComplete;
+    });
+    await expect(demo.card).toHaveAttribute('theme', 'light');
+
+    // Host: the LIGHT_TOKENS block re-resolves the colour tokens (computed, not static CSS text).
+    const light = await readTokens(demo.card);
+    expect(light['--tc-text'], 'light text token applied on the host').toBe('#101725');
+    expect(light['--tc-surface'], 'light surface ladder applied').toBe('rgba(10, 14, 26, 0.04)');
+    // Accents are semantic on BOTH grounds — they must NOT move under light.
+    expect(light['--tc-blue'], 'accents stay put under light').toBe('#38bdf8');
+
+    // Nested child CONSUMPTION: the hero name (inside tc-hero's shadow root) now reads
+    // the light text colour — the token override cascades with no per-child edit.
+    expect(await name.evaluate((el) => getComputedStyle(el).color)).toBe('rgb(16, 23, 37)');
+    // And a token READ inside a nested child host resolves light (shadow-DOM inheritance).
+    const heroSurface = await demo.card
+      .locator('tc-hero')
+      .evaluate((el) => getComputedStyle(el).getPropertyValue('--tc-surface').trim().toLowerCase());
+    expect(heroSurface).toBe('rgba(10, 14, 26, 0.04)');
+  });
+
+  test('Story 9.12 / K10: deleting the override (Auto) restores the dark default byte-for-byte', async ({
+    demo,
+  }) => {
+    await demo.open({ scenario: 'awake' });
+    const before = await readTokens(demo.card);
+    // light on, then Auto (key DELETED, the editor's reset shape — never theme:'')…
+    await demo.card.evaluate((host) => {
+      const el = host as unknown as {
+        _config?: Record<string, unknown>;
+        setConfig(c: unknown): void;
+        updateComplete: Promise<boolean>;
+      };
+      el.setConfig({ ...(el._config ?? { type: 'custom:tesla-card' }), appearance: { theme: 'light' } });
+      return el.updateComplete;
+    });
+    await expect(demo.card).toHaveAttribute('theme', 'light');
+    await demo.card.evaluate((host) => {
+      const el = host as unknown as {
+        _config?: Record<string, unknown>;
+        setConfig(c: unknown): void;
+        updateComplete: Promise<boolean>;
+      };
+      const next = { ...(el._config ?? { type: 'custom:tesla-card' }) } as Record<string, unknown>;
+      delete next.appearance;
+      el.setConfig(next);
+      return el.updateComplete;
+    });
+    // …→ attribute removed and every contract token back to its dark-first literal.
+    await expect(demo.card).not.toHaveAttribute('theme');
+    expect(await readTokens(demo.card)).toEqual(before);
+  });
+
   test('AC2: consumed var(--tc-*) reads resolve at runtime (fallback path is live)', async ({ demo }) => {
     // The demo provides NO host `--tc-*` theme override, so every consuming read
     // resolves through the token declaration / fallback chain. A real opaque colour

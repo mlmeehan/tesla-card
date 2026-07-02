@@ -1913,6 +1913,36 @@ describe('Story 9.11 AC3 — honest dead-pick: mirror ⚠ + announce, saved rega
     );
     el.remove();
   });
+
+  test('the VEHICLE surface mirrors the same honesty: a dead status pick saves entities.status + flips ⚠ + announces (K14)', async () => {
+    // Same contract, other write surface (`_writeOverride` surface 'vehicle' →
+    // config.entities.status) — pinned separately because the energy test can pass
+    // while a vehicle-branch regression ships (the two surfaces clone/prune
+    // DIFFERENT containers).
+    const el = makeEditor();
+    el.hass = {
+      states: {
+        'binary_sensor.garage_model_y_status': { entity_id: 'binary_sensor.garage_model_y_status', state: 'on', attributes: {} },
+        'sensor.my_home_solar_power': { entity_id: 'sensor.my_home_solar_power', state: '2.4', attributes: {} },
+        'binary_sensor.dead_status': { entity_id: 'binary_sensor.dead_status', state: 'unavailable', attributes: {} },
+      },
+    } as unknown as HomeAssistant;
+    el.setConfig(CONFIGURED);
+    await el.updateComplete;
+    const cap = captureEmit(el);
+    await openRemap(el, 'vehicle');
+    await pick(el, 'binary_sensor.dead_status');
+    // Saved regardless (honesty ≠ refusal) — on the VEHICLE surface: entities.status.
+    expect((cap.get() as unknown as TeslaCardConfig).entities?.status).toBe('binary_sensor.dead_status');
+    // The vehicle summary row mirrors the ⚠ unavailable state.
+    expect(summaryRowFor(el, STRINGS.editor.nodeVehicle).classList.contains('unavailable')).toBe(true);
+    // Announced in WORDS through the same polite live region.
+    const live = el.shadowRoot!.querySelector('.disco-summary .remap-live')!;
+    expect(live.textContent).toBe(
+      `${STRINGS.editor.nodeVehicle}, ${STRINGS.editor.remapMapped} — ${STRINGS.wizard.detect.unavailable}`
+    );
+    el.remove();
+  });
 });
 
 describe('Story 9.11 AC1 — wizard Step-2 Confirm: present-only full list', () => {

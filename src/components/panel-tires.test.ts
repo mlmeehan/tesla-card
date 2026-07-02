@@ -75,6 +75,23 @@ function psiStates(vals: { fl: string; fr: string; rl: string; rr: string }): Re
   for (const w of [ID.warnFL, ID.warnFR, ID.warnRL, ID.warnRR]) st[w].state = 'off';
   return st;
 }
+/** A kPa-unit clone (the psiStates mold): kPa is a REAL HA TPMS native unit — the
+ *  ÷100 bar-pivot branch of displayPressure needs its own corpus (units:'psi'/'bar'
+ *  only ever converts FROM what the sensor declares). TPMS flags cleared as in
+ *  psiStates so the computed check is the only warn lever. */
+function kpaStates(vals: { fl: string; fr: string; rl: string; rr: string }): Record<string, HassEntity> {
+  const st = awakeStates();
+  const set = (id: string, v: string) => {
+    st[id].state = v;
+    st[id].attributes = { ...(st[id].attributes ?? {}), unit_of_measurement: 'kPa' };
+  };
+  set(ID.fl, vals.fl);
+  set(ID.fr, vals.fr);
+  set(ID.rl, vals.rl);
+  set(ID.rr, vals.rr);
+  for (const w of [ID.warnFL, ID.warnFR, ID.warnRL, ID.warnRR]) st[w].state = 'off';
+  return st;
+}
 function asleepStates(): Record<string, HassEntity> {
   return JSON.parse(JSON.stringify(asleepFx.states)) as Record<string, HassEntity>;
 }
@@ -362,6 +379,70 @@ describe('Story 9.13 — tire display-unit conversion (config.tires.units)', () 
     const fl = cornerByPos(el, 'fl');
     expect(fl.textContent).toContain('2.9'); // 42 / 14.5038 = 2.896 → 1-dp
     expect(fl.textContent).toContain('bar');
+  });
+
+  test('kPa-native, units ABSENT ⇒ honest native render (240 kPa verbatim, 0-dp) — zero-diff', async () => {
+    const el = await mount(makeHass(kpaStates({ fl: '240', fr: '240', rl: '240', rr: '240' })));
+    const fl = cornerByPos(el, 'fl');
+    expect(fl.textContent).toContain('240'); // never a fabricated conversion without a pref
+    expect(fl.textContent).toContain('kPa');
+  });
+
+  test('units:psi converts a kPa-native reading through the bar pivot (240 kPa → 35 psi, 0-dp)', async () => {
+    // The ÷100 kPa branch of displayPressure (panel-tires) — the render half of the
+    // editor's P10b kPa pin (same 240 kPa fixture): 240 kPa = 2.4 bar = 34.8 psi → 0-dp.
+    const el = await mount(makeHass(kpaStates({ fl: '240', fr: '240', rl: '240', rr: '240' })), {
+      tires: { units: 'psi' },
+    });
+    const fl = cornerByPos(el, 'fl');
+    expect(fl.textContent).toContain('35');
+    expect(fl.textContent).toContain('psi');
+    expect(fl.textContent).not.toContain('kPa'); // never mislabelled
+    expect(fl.textContent).not.toContain('240'); // never the raw kPa under a psi label
+  });
+
+  test('units:bar converts a kPa-native reading (240 kPa → 2.4 bar, 1-dp)', async () => {
+    const el = await mount(makeHass(kpaStates({ fl: '240', fr: '240', rl: '240', rr: '240' })), {
+      tires: { units: 'bar' },
+    });
+    const fl = cornerByPos(el, 'fl');
+    expect(fl.textContent).toContain('2.4');
+    expect(fl.textContent).toContain('bar');
+    expect(fl.textContent).not.toContain('240');
+  });
+
+  test('units is display-only on kPa too: the warn comparison stays in native kPa', async () => {
+    // rr 200 kPa vs peer max 240 − default kPa margin 30 ⇒ 200 < 210 fires — computed
+    // in NATIVE kPa while the read-out shows converted psi (29). TPMS flags are off
+    // (kpaStates) so the computed check is the only lever.
+    const el = await mount(makeHass(kpaStates({ fl: '240', fr: '240', rl: '240', rr: '200' })), {
+      tires: { units: 'psi' },
+    });
+    const rr = cornerByPos(el, 'rr');
+    expect(rr.classList.contains('warn')).toBe(true);
+    expect(rr.textContent).toContain('29'); // 2.0 bar × 14.5038 = 29.0 → 0-dp
+    expect(rr.textContent).toContain('psi');
+  });
+
+  test('editor↔card parity: the editor\'s _convertPressure agrees with the rendered conversion (duplicated-constant pin)', async () => {
+    // PSI_PER_BAR and the kPa=bar×100 rule are deliberately DUPLICATED (editor.ts /
+    // panel-tires.ts — no shared import without breaking the module boundary). This
+    // cross-invokes the editor's converter against the panel's rendered output on the
+    // same input, so either copy drifting from the other fails here — the
+    // "one refactor from silent loss" trap (see renderer.ts value-pins).
+    const { TeslaCardEditor } = await import('../editor');
+    const convert = (
+      TeslaCardEditor.prototype as unknown as {
+        _convertPressure(v: number | undefined, from?: string, to?: string): number | undefined;
+      }
+    )._convertPressure;
+    const expected = convert.call(undefined, 240, 'kpa', 'psi'); // pure (args-only) — no instance needed
+    expect(expected).toBeCloseTo(34.809, 2); // both copies must mean 240 kPa = 34.8 psi
+    const el = await mount(makeHass(kpaStates({ fl: '240', fr: '240', rl: '240', rr: '240' })), {
+      tires: { units: 'psi' },
+    });
+    // The rendered 0-dp figure IS the editor's conversion, rounded exactly once.
+    expect(cornerByPos(el, 'fl').textContent).toContain(String(Math.round(expected!)));
   });
 
   test('units is display-only: a low corner still warns (comparison stays native) while shown in psi', async () => {

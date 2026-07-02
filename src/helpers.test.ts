@@ -7,6 +7,9 @@ import { describe, expect, test, vi } from 'vitest';
 import type { HomeAssistant, TeslaCardConfig } from './types';
 import { DEFAULT_ENTITIES, type EntityKey } from './const';
 import {
+  entityId,
+  stateObj,
+  rawState,
   isMissing,
   isUnavailable,
   isOn,
@@ -231,5 +234,46 @@ describe('service-call wrappers dispatch the right (domain, service, data)', () 
       entity_id: 'select.mode',
       option: 'self_consumption',
     });
+  });
+});
+
+// ───────────────────────────────────────────────────────────────────────────
+// entityId / stateObj — the `config.entities` override seam every component read
+// (num/rawState/attr/…) funnels through. The resolver's override-wins precedence
+// is pinned in data/resolve.test.ts; THIS pins the component-side read: an
+// explicit `config.entities[key]` must redirect the actual state lookup (trace
+// K14 — write-proven + resolver-proven is not read-proven).
+// ───────────────────────────────────────────────────────────────────────────
+describe('entityId / stateObj — config.entities override redirects the component read', () => {
+  const OVERRIDE: TeslaCardConfig = {
+    type: 'custom:tesla-card',
+    entities: { battery_level: 'sensor.custom_soc' },
+  };
+
+  test('entityId: absent/partial entities map falls back to the bundled default id', () => {
+    expect(entityId(CONFIG, 'battery_level')).toBe(DEFAULT_ENTITIES.battery_level);
+    // A partial map overrides ONLY its own key — siblings still resolve to defaults.
+    expect(entityId(OVERRIDE, 'battery_range')).toBe(DEFAULT_ENTITIES.battery_range);
+  });
+
+  test('entityId: an explicit override wins over the bundled default', () => {
+    expect(entityId(OVERRIDE, 'battery_level')).toBe('sensor.custom_soc');
+  });
+
+  test('stateObj/rawState read THROUGH the override — the overridden entity backs the value', () => {
+    const hass = makeHass({
+      ...state('battery_level', '72'), // the default entity is present AND readable…
+      'sensor.custom_soc': { state: '37', attributes: {} },
+    });
+    // …but the override redirects the read to the custom sensor, never the default.
+    expect(rawState(hass, OVERRIDE, 'battery_level')).toBe('37');
+    expect(stateObj(hass, OVERRIDE, 'battery_level')).toBe(hass.states['sensor.custom_soc']);
+    expect(num(hass, OVERRIDE, 'battery_level')).toBe(37);
+    // Honest degrade through the override: a dead pick reads unavailable, not the default.
+    const dead = makeHass({
+      ...state('battery_level', '72'),
+      'sensor.custom_soc': { state: 'unavailable', attributes: {} },
+    });
+    expect(num(dead, OVERRIDE, 'battery_level')).toBeUndefined();
   });
 });

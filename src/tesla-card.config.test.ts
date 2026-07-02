@@ -339,6 +339,112 @@ describe('Story 9.12 — appearance.theme is additive/tolerated + reflects onto 
   });
 });
 
+// ── Story 9.11 / trace K14 — a top-level `entities` override feeds the RENDERED surface ──
+// The editor's `_writeOverride` (vehicle surface) writes `config.entities[key]`; the
+// resolver's override-wins precedence is pinned in data/resolve.test.ts and the read
+// seam in helpers.test.ts. What no test proved is the PICTURE: mount the real card
+// with an override and assert the overridden entity's VALUE renders — the same
+// write-proven-but-picture-unproven blindness that shipped Story 11.4's no-ops.
+describe('Story 9.11 / K14 — entities override renders the overridden value', () => {
+  /** fullHass + a custom SoC sensor carrying a DISTINCT value from the default's 72. */
+  function overrideHass(): HomeAssistant {
+    const h = fullHass() as unknown as { states: Record<string, unknown> };
+    h.states['sensor.custom_soc'] = {
+      entity_id: 'sensor.custom_soc',
+      state: '37',
+      attributes: { unit_of_measurement: '%' },
+      last_updated: '2026-06-15T14:41:00Z',
+      last_changed: '2026-06-15T14:41:00Z',
+    };
+    return h as unknown as HomeAssistant;
+  }
+
+  /** The hero's battery read-out text (nested shadow root — the real consuming element). */
+  async function batteryText(el: CardEl): Promise<string> {
+    const hero = el.shadowRoot!.querySelector('tc-hero') as CardEl | null;
+    expect(hero).toBeTruthy();
+    await hero!.updateComplete;
+    return hero!.shadowRoot!.querySelector('.bat-pct')!.textContent ?? '';
+  }
+
+  test('baseline: no override → the hero shows the DEFAULT entity value (72%)', async () => {
+    const el = makeCard();
+    el.setConfig({ type: 'custom:tesla-card' });
+    el.hass = overrideHass();
+    await el.updateComplete;
+    expect(await batteryText(el)).toContain('72%');
+    el.remove();
+  });
+
+  test('entities.battery_level override → the hero renders the OVERRIDE value (37%), never the default 72%', async () => {
+    const el = makeCard();
+    el.setConfig({
+      type: 'custom:tesla-card',
+      entities: { battery_level: 'sensor.custom_soc' },
+    } as TeslaCardConfig);
+    el.hass = overrideHass();
+    await el.updateComplete;
+    const text = await batteryText(el);
+    expect(text).toContain('37%'); // the overridden sensor's value is the picture
+    expect(text).not.toContain('72%'); // the default entity is fully displaced
+    el.remove();
+  });
+
+  test('a dead override degrades honestly on the render (— , not the default value)', async () => {
+    const el = makeCard();
+    el.setConfig({
+      type: 'custom:tesla-card',
+      entities: { battery_level: 'sensor.custom_soc' },
+    } as TeslaCardConfig);
+    const h = overrideHass() as unknown as { states: Record<string, Record<string, unknown>> };
+    h.states['sensor.custom_soc'].state = 'unavailable';
+    el.hass = h as unknown as HomeAssistant;
+    await el.updateComplete;
+    const text = await batteryText(el);
+    // Honesty ≠ substitution: the dead pick renders the em-dash, NEVER the
+    // still-live default entity's 72% (that would silently un-apply the user's override).
+    expect(text).toContain('—');
+    expect(text).not.toContain('72%');
+    el.remove();
+  });
+});
+
+// ── trace K8 — `setup_complete` is INERT on the card render (R9 zero-diff) ──
+// The key is the editor's resume marker; the CARD merely tolerates it. The R9
+// expectation ("preserved, never consumed") implies the rendered picture is
+// byte-identical with the key absent / true / false — pinned here as a shadow-DOM
+// fingerprint so a future card-side read of the marker can't ship unnoticed.
+describe('K8 — setup_complete renders byte-identically (card-side inertness)', () => {
+  async function fingerprint(cfg: TeslaCardConfig): Promise<string> {
+    const el = makeCard();
+    el.setConfig(cfg);
+    el.hass = fullHass();
+    await el.updateComplete;
+    const hero = el.shadowRoot!.querySelector('tc-hero') as CardEl | null;
+    await hero?.updateComplete;
+    // Parent shell + the hero (the always-rendered child) — nested shadow DOM included.
+    const print = el.shadowRoot!.innerHTML + '␟' + (hero?.shadowRoot?.innerHTML ?? '');
+    el.remove();
+    return print;
+  }
+
+  test('absent vs true vs false → identical rendered shadow DOM', async () => {
+    const base = await fingerprint({ type: 'custom:tesla-card', name: 'Y' });
+    const done = await fingerprint({
+      type: 'custom:tesla-card',
+      name: 'Y',
+      setup_complete: true,
+    } as unknown as TeslaCardConfig);
+    const inProgress = await fingerprint({
+      type: 'custom:tesla-card',
+      name: 'Y',
+      setup_complete: false,
+    } as unknown as TeslaCardConfig);
+    expect(done).toBe(base); // done-marker: zero rendered diff
+    expect(inProgress).toBe(base); // in-progress marker: zero rendered diff
+  });
+});
+
 describe('AC3 — editor setConfig is equally tolerant', () => {
   test('unknown/future keys: editor setConfig does not throw and preserves them', async () => {
     const el = makeEditor();
