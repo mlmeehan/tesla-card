@@ -4,6 +4,10 @@ dist/
 .DS_Store
 .rollup.cache/
 
+# JetBrains IDE (project-local, per-developer)
+.idea/
+*.iml
+
 # Local-only AI toolchain & planning — never tracked in this (public-bound) repo.
 # BMad install + Claude config live here untracked; planning/implementation
 # artifacts live in the private sibling repo github.com/mlmeehan/tesla-card-planning.
