@@ -1,18 +1,18 @@
 // @vitest-environment jsdom
 //
-// Element-level gate for Story 5.8 (Tyres Panel). The panel + its four-corner
+// Element-level gate for Story 5.8 (Tires Panel). The panel + its four-corner
 // layout pre-existed (pre-BMAD prototype, token/string-migrated in Epic 2, wired
 // into the 5.1 shell); this story closes the AC + DoD gaps and these tests pin
 // them as regressions:
 //   AC1 — four corners each render their numeric pressure + native unit (1-dp on
-//         bar) and the British "Tyre pressure" title; the generic silhouette
+//         bar) and the American "Tire pressure" title; the generic silhouette
 //         renders.
 //   AC2 — the headline: a computed margin check warns a corner below
 //         `recommended − margin` EVEN WITH its TPMS binary_sensor off; the TPMS
 //         sensor alone still warns (OR — never under-warn); a UNIFORM overnight
 //         drop (all four lowered together) does NOT trip (temperature-robust); the
 //         threshold is CONFIGURABLE + relative, not a fixed PSI (tightening
-//         `config.tyres.margin` / setting `recommended` flips the result).
+//         `config.tires.margin` / setting `recommended` flips the result).
 //   AC3 — a missing corner degrades to `—` (NaN-safe, no warn fabricated, nothing
 //         throws); a stale/asleep corner shows last-known + a staleness stamp (the
 //         dim copy class) and the summary never claims a confident "All normal" it
@@ -20,12 +20,12 @@
 //
 // Freshness is deterministic by injection: every fixture entity is stamped at one
 // instant, so advancing the server reference (bumping one entity's last_updated)
-// back-dates the tyres into stale/asleep — exactly how HA pushes a fresh stamp on
+// back-dates the tires into stale/asleep — exactly how HA pushes a fresh stamp on
 // some entity while a sensor sits idle (mirrors src/data/freshness.test.ts and
 // panel-closures.test.ts). Entity ids come from const.ts DEFAULT_ENTITIES (never
 // inlined); a FRESH hass per swap.
 import { afterEach, describe, expect, test } from 'vitest';
-import './panel-tyres';
+import './panel-tires';
 import { STRINGS } from '../strings';
 import { DEFAULT_ENTITIES } from '../const';
 import awakeFx from '../fixtures/model-y-awake.json';
@@ -79,7 +79,7 @@ function asleepStates(): Record<string, HassEntity> {
   return JSON.parse(JSON.stringify(asleepFx.states)) as Record<string, HassEntity>;
 }
 
-/** Advance the HA time base: stamp one entity AFTER the tyres so referenceNow
+/** Advance the HA time base: stamp one entity AFTER the tires so referenceNow
  *  (max server stamp) sits ahead of their last_updated → they read stale/asleep. */
 function advanceNow(states: Record<string, HassEntity>): Record<string, HassEntity> {
   states[ID.battery].last_updated = ADVANCED_NOW;
@@ -95,7 +95,7 @@ async function mount(
   hass: HomeAssistant,
   config: Partial<TeslaCardConfig> = {}
 ): Promise<PanelEl> {
-  const el = document.createElement('tc-panel-tyres') as PanelEl;
+  const el = document.createElement('tc-panel-tires') as PanelEl;
   el.hass = hass;
   el.config = { type: 'custom:tesla-card', ...config }; // entities default to DEFAULT_ENTITIES
   document.body.appendChild(el);
@@ -114,7 +114,7 @@ afterEach(() => {
 });
 
 // ── AC1 — render ─────────────────────────────────────────────────────────────
-describe('AC1 — four corners render pressure + unit, British title', () => {
+describe('AC1 — four corners render pressure + unit, American title', () => {
   test('four corners each render their numeric pressure with the bar unit (1-dp)', async () => {
     const el = await mount(makeHass(awakeStates()));
     expect(corners(el)).toHaveLength(4);
@@ -124,9 +124,9 @@ describe('AC1 — four corners render pressure + unit, British title', () => {
     expect(cornerByPos(el, 'fl').textContent).toContain('bar');
   });
 
-  test('the British "Tyre pressure" title and the generic car silhouette render', async () => {
+  test('the American "Tire pressure" title and the generic car silhouette render', async () => {
     const el = await mount(makeHass(awakeStates()));
-    expect(sr(el).querySelector('.label')!.textContent).toContain(STRINGS.tyres.title);
+    expect(sr(el).querySelector('.label')!.textContent).toContain(STRINGS.tires.title);
     expect(sr(el).querySelector('.car svg')).not.toBeNull();
   });
 
@@ -151,7 +151,7 @@ describe('AC2 — computed margin check (augments TPMS, temperature-robust, conf
     const el = await mount(makeHass(states));
     // recommended = max(2.9,2.6,2.9,2.3)=2.9; margin=0.3 → threshold 2.6; 2.3 < 2.6 → warn.
     expect(cornerByPos(el, 'rr').classList.contains('warn')).toBe(true);
-    expect(cornerByPos(el, 'rr').textContent).toContain(STRINGS.tyres.low);
+    expect(cornerByPos(el, 'rr').textContent).toContain(STRINGS.tires.low);
   });
 
   test('the TPMS binary_sensor alone still warns (OR — never under-warn vs. the car)', async () => {
@@ -159,7 +159,7 @@ describe('AC2 — computed margin check (augments TPMS, temperature-robust, conf
     // but its tire_warn_fr is ON. The OR must still warn.
     const el = await mount(makeHass(awakeStates()));
     expect(cornerByPos(el, 'fr').classList.contains('warn')).toBe(true);
-    expect(cornerByPos(el, 'fr').textContent).toContain(STRINGS.tyres.low);
+    expect(cornerByPos(el, 'fr').textContent).toContain(STRINGS.tires.low);
   });
 
   test('a UNIFORM overnight drop (all four lowered together) does NOT trip — temperature-robust', async () => {
@@ -174,7 +174,7 @@ describe('AC2 — computed margin check (augments TPMS, temperature-robust, conf
     // recommended = max = 2.65; margin 0.3 → threshold 2.35; FR 2.35 is NOT < 2.35.
     // The gap between any corner and the peer max stayed small → nothing trips.
     expect(corners(el).every((c) => !c.classList.contains('warn'))).toBe(true);
-    expect(summaryText(el)).toContain(STRINGS.tyres.allNormal);
+    expect(summaryText(el)).toContain(STRINGS.tires.allNormal);
   });
 
   test('the threshold is CONFIGURABLE + relative, not a fixed PSI (margin flips the result)', async () => {
@@ -184,11 +184,11 @@ describe('AC2 — computed margin check (augments TPMS, temperature-robust, conf
     states[ID.warnFR].state = 'off';
 
     // A LOOSE margin (0.4) clears FR: threshold 2.9 − 0.4 = 2.5; 2.6 is NOT < 2.5.
-    const loose = await mount(makeHass(awakeStates_fr(states)), { tyres: { margin: 0.4 } });
+    const loose = await mount(makeHass(awakeStates_fr(states)), { tires: { margin: 0.4 } });
     expect(cornerByPos(loose, 'fr').classList.contains('warn')).toBe(false);
 
     // A TIGHTER margin (0.2) on the SAME reading trips FR: threshold 2.7; 2.6 < 2.7.
-    const tight = await mount(makeHass(awakeStates_fr(states)), { tyres: { margin: 0.2 } });
+    const tight = await mount(makeHass(awakeStates_fr(states)), { tires: { margin: 0.2 } });
     expect(cornerByPos(tight, 'fr').classList.contains('warn')).toBe(true);
   });
 
@@ -205,7 +205,7 @@ describe('AC2 — computed margin check (augments TPMS, temperature-robust, conf
     // default margin is real, not just "always clears".
     const low = await mount(makeHass(psiStates({ fl: '42', fr: '37', rl: '42', rr: '42' })));
     expect(cornerByPos(low, 'fr').classList.contains('warn')).toBe(true);
-    expect(cornerByPos(low, 'fr').textContent).toContain(STRINGS.tyres.low);
+    expect(cornerByPos(low, 'fr').textContent).toContain(STRINGS.tires.low);
   });
 
   test('a STALE high last-known peer does NOT inflate the baseline (fresh corners stay calm)', async () => {
@@ -237,12 +237,12 @@ describe('AC2 — computed margin check (augments TPMS, temperature-robust, conf
     expect(sr(el).querySelector('.c-stale')).not.toBeNull();
   });
 
-  test('an explicit config.tyres.recommended overrides the peer baseline', async () => {
+  test('an explicit config.tires.recommended overrides the peer baseline', async () => {
     const states = awakeStates();
     // All four normal + every TPMS off; an aggressive recommended makes them all low.
     for (const w of [ID.warnFL, ID.warnFR, ID.warnRL, ID.warnRR]) states[w].state = 'off';
     states[ID.fr].state = '2.9'; // lift FR so the peer baseline alone would clear all
-    const el = await mount(makeHass(states), { tyres: { recommended: 3.5, margin: 0.3 } });
+    const el = await mount(makeHass(states), { tires: { recommended: 3.5, margin: 0.3 } });
     // threshold 3.5 − 0.3 = 3.2; every corner (2.9) < 3.2 → all warn.
     expect(corners(el).every((c) => c.classList.contains('warn'))).toBe(true);
   });
@@ -281,8 +281,8 @@ describe('AC3 — missing degrades NaN-safe; stale shows last-known + staleness,
     const states = advanceNow(asleepStates());
     for (const w of [ID.warnFL, ID.warnFR, ID.warnRL, ID.warnRR]) states[w].state = 'off';
     const el = await mount(makeHass(states));
-    expect(summaryText(el)).not.toContain(STRINGS.tyres.allNormal);
-    expect(summaryText(el)).toContain(STRINGS.tyres.someUnconfirmed);
+    expect(summaryText(el)).not.toContain(STRINGS.tires.allNormal);
+    expect(summaryText(el)).toContain(STRINGS.tires.someUnconfirmed);
     expect(summaryEl(el).classList.contains('good')).toBe(false); // never confident green on stale
     expect(summaryEl(el).classList.contains('dim')).toBe(true);
   });
@@ -319,7 +319,7 @@ describe('AC3 — missing degrades NaN-safe; stale shows last-known + staleness,
     states[ID.rr].state = '2.3'; // but the pressure is genuinely low (< 2.9 − 0.3 = 2.6)
     const el = await mount(makeHass(states));
     expect(cornerByPos(el, 'rr').classList.contains('warn')).toBe(true); // computed still fires
-    expect(cornerByPos(el, 'rr').textContent).toContain(STRINGS.tyres.low);
+    expect(cornerByPos(el, 'rr').textContent).toContain(STRINGS.tires.low);
     // A normal corner whose TPMS is also missing stays calm — no fabricated warn.
     const calm = awakeStates();
     delete calm[ID.warnRL];
@@ -329,18 +329,18 @@ describe('AC3 — missing degrades NaN-safe; stale shows last-known + staleness,
   test('a fully-empty hass (0 corners present) renders "No data" without throwing', async () => {
     const el = await mount(makeHass({}));
     expect(corners(el)).toHaveLength(4); // the layout still renders four placeholders
-    expect(summaryText(el)).toContain(STRINGS.tyres.noData);
+    expect(summaryText(el)).toContain(STRINGS.tires.noData);
     expect(sr(el).querySelector('.car svg')).not.toBeNull();
   });
 });
 
-// ── Story 9.13 (Tune) — display-only unit conversion (config.tyres.units) ───────
+// ── Story 9.13 (Tune) — display-only unit conversion (config.tires.units) ───────
 // `units` converts the rendered corner read-out to psi/bar FOR DISPLAY ONLY. The
 // low-pressure comparison stays in the native unit (units never moves the warn
 // threshold). Absent ⇒ native value/unit verbatim (SM-C4 / FR-33 zero-diff). The ONE
 // factor: 1 bar = 14.5038 psi. An unrecognised native unit cannot be converted, so
 // the native value is shown unchanged (honest — never fabricated/mislabelled).
-describe('Story 9.13 — tyre display-unit conversion (config.tyres.units)', () => {
+describe('Story 9.13 — tire display-unit conversion (config.tires.units)', () => {
   test('absent units ⇒ native render unchanged (zero-diff): bar fixture shows 2.9 bar', async () => {
     const el = await mount(makeHass(awakeStates()));
     expect(cornerByPos(el, 'fl').textContent).toContain('2.9');
@@ -348,7 +348,7 @@ describe('Story 9.13 — tyre display-unit conversion (config.tyres.units)', () 
   });
 
   test('units:psi converts a bar-native reading to psi (2.9 bar → 42 psi, 0-dp)', async () => {
-    const el = await mount(makeHass(awakeStates()), { tyres: { units: 'psi' } });
+    const el = await mount(makeHass(awakeStates()), { tires: { units: 'psi' } });
     const fl = cornerByPos(el, 'fl');
     expect(fl.textContent).toContain('42'); // 2.9 × 14.5038 = 42.06 → 0-dp
     expect(fl.textContent).toContain('psi');
@@ -357,7 +357,7 @@ describe('Story 9.13 — tyre display-unit conversion (config.tyres.units)', () 
 
   test('units:bar converts a psi-native reading to bar (42 psi → 2.9 bar, 1-dp)', async () => {
     const el = await mount(makeHass(psiStates({ fl: '42', fr: '40', rl: '42', rr: '42' })), {
-      tyres: { units: 'bar' },
+      tires: { units: 'bar' },
     });
     const fl = cornerByPos(el, 'fl');
     expect(fl.textContent).toContain('2.9'); // 42 / 14.5038 = 2.896 → 1-dp
@@ -368,7 +368,7 @@ describe('Story 9.13 — tyre display-unit conversion (config.tyres.units)', () 
     const states = awakeStates();
     states[ID.rr].state = '2.3'; // < peer max 2.9 − 0.3 margin (native bar) ⇒ computed warn
     states[ID.warnRR].state = 'off'; // TPMS off — the COMPUTED check is the lever
-    const el = await mount(makeHass(states), { tyres: { units: 'psi' } });
+    const el = await mount(makeHass(states), { tires: { units: 'psi' } });
     const rr = cornerByPos(el, 'rr');
     expect(rr.classList.contains('warn')).toBe(true); // warn fires in native unit
     expect(rr.textContent).toContain('psi'); // displayed converted

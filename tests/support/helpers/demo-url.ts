@@ -23,7 +23,7 @@ export type PanelId =
   | 'climate'
   | 'charging'
   | 'closures'
-  | 'tyres'
+  | 'tires'
   | 'location'
   | 'media'
   | 'energy';

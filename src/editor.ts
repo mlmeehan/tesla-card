@@ -15,7 +15,7 @@ import type {
   HomeAssistant,
   TeslaCardConfig,
   AppearanceConfig,
-  TyresConfig,
+  TiresConfig,
   LovelaceCardEditor,
   PanelId,
   NodeCustomization,
@@ -45,12 +45,12 @@ const WIZARD_STEPS: { key: StepKey; label: string; skipDefault: string }[] = [
 ];
 const FINISH_STEP = WIZARD_STEPS.length - 1;
 
-// Sensible `ha-selector` `number` bounds for the tyre thresholds, keyed by the
+// Sensible `ha-selector` `number` bounds for the tire thresholds, keyed by the
 // chosen display unit (Story 9.13). `unit_of_measurement` reflects the chosen unit
 // so the native widget announces it (a11y: "Recommended pressure, 2.4 bar"); Auto /
 // native leaves the unit undefined (we cannot know the sensor's native unit without
 // a `hass.states` read — AR-1) and uses a permissive fine-step range that covers
-// both bar and psi. Thresholds are stored in the NATIVE unit (TyresConfig invariant);
+// both bar and psi. Thresholds are stored in the NATIVE unit (TiresConfig invariant);
 // these bounds only constrain the edit widget.
 function tuneNumberRanges(units: 'psi' | 'bar' | undefined): {
   unit: string | undefined;
@@ -64,14 +64,14 @@ function tuneNumberRanges(units: 'psi' | 'bar' | undefined): {
   return { unit: undefined, rec: { min: 0, max: 100, step: 0.1 }, margin: { min: 0, max: 20, step: 0.1 } };
 }
 
-/** Exact bar↔psi factor (the ONE conversion constant — shared with panel-tyres). */
+/** Exact bar↔psi factor (the ONE conversion constant — shared with panel-tires). */
 const PSI_PER_BAR = 14.5038;
 
 /** Spread-clone a config container, normalizing a malformed (non-object / array) value
  *  to `{}` — so a hand-edited garbage sibling (`energy: "on"`) never char-indexes
  *  (`{ ...'on' }` → `{0:'o',1:'n'}`) or rides back corrupted on an unrelated save, and a
  *  non-iterable never throws. ONE garbage policy for every editor write (mirrors the
- *  inline guard `_setTheme`/`_cloneTyres` use): FR-24 / SM-C4 / R9. */
+ *  inline guard `_setTheme`/`_cloneTires` use): FR-24 / SM-C4 / R9. */
 function safeClone<T extends object>(x: T | undefined): T {
   return (x && typeof x === 'object' && !Array.isArray(x) ? { ...x } : {}) as T;
 }
@@ -102,7 +102,7 @@ const PANELS: { id: PanelId; name: string }[] = [
   { id: 'climate', name: STRINGS.tabs.climate },
   { id: 'charging', name: STRINGS.tabs.charging },
   { id: 'closures', name: STRINGS.tabs.closures },
-  { id: 'tyres', name: STRINGS.tabs.tyres },
+  { id: 'tires', name: STRINGS.tabs.tires },
   { id: 'location', name: STRINGS.tabs.location },
   { id: 'media', name: STRINGS.tabs.media },
 ];
@@ -1559,7 +1559,7 @@ export class TeslaCardEditor extends LitElement implements LovelaceCardEditor {
   }
 
   // ── Tune controls (Story 9.13, D-9.13-1d) ───────────────────────────────────
-  // The "Tune" group — tyre units + thresholds, the panel/card hide toggles
+  // The "Tune" group — tire units + thresholds, the panel/card hide toggles
   // (re-homed here from their old standalone checkboxes), and Powerwall control
   // visibility — each on its PINNED `ha-selector` widget (no JS import; the element
   // is registered globally by the Lovelace runtime). The SAME method renders in the
@@ -1567,41 +1567,41 @@ export class TeslaCardEditor extends LitElement implements LovelaceCardEditor {
   // The polite live region announces the resolved Tune state after a change.
   @state() private _tuneAnnounce = '';
 
-  // Tyre display-unit preference — clone the `tyres` container, set/delete `units`,
+  // Tire display-unit preference — clone the `tires` container, set/delete `units`,
   // prune an emptied container (mirror `_setTheme`). Auto/reset ⇒ delete the key, so
   // today's native-unit render is restored byte-for-byte (SM-C4 / FR-33 zero-diff).
-  private _setTyresUnits(value: 'psi' | 'bar' | undefined): void {
+  private _setTiresUnits(value: 'psi' | 'bar' | undefined): void {
     const next = { ...this._config };
-    const tyres = this._cloneTyres(next);
-    if (value) tyres.units = value;
-    else delete tyres.units;
-    this._commitTyres(next, tyres);
+    const tires = this._cloneTires(next);
+    if (value) tires.units = value;
+    else delete tires.units;
+    this._commitTires(next, tires);
     this._announceTune();
   }
 
-  // A tyre threshold (recommended | margin) — stored in the sensor's NATIVE unit
-  // (the TyresConfig invariant is unchanged; `units` governs DISPLAY only). Empty /
+  // A tire threshold (recommended | margin) — stored in the sensor's NATIVE unit
+  // (the TiresConfig invariant is unchanged; `units` governs DISPLAY only). Empty /
   // non-finite ⇒ delete the key (reset = a removed key, never a blanked value, R9).
-  private _setTyresNum(key: 'recommended' | 'margin', value: number | undefined): void {
+  private _setTiresNum(key: 'recommended' | 'margin', value: number | undefined): void {
     const next = { ...this._config };
-    const tyres = this._cloneTyres(next);
-    if (value !== undefined && Number.isFinite(value)) tyres[key] = value;
-    else delete tyres[key];
-    this._commitTyres(next, tyres);
+    const tires = this._cloneTires(next);
+    if (value !== undefined && Number.isFinite(value)) tires[key] = value;
+    else delete tires[key];
+    this._commitTires(next, tires);
     this._announceTune();
   }
 
-  // Defensive clone of `config.tyres` (a garbage non-object is replaced, mirroring
+  // Defensive clone of `config.tires` (a garbage non-object is replaced, mirroring
   // `_setTheme`/`_commitNodes`).
-  private _cloneTyres(next: TeslaCardConfig): TyresConfig {
-    return next.tyres && typeof next.tyres === 'object' && !Array.isArray(next.tyres)
-      ? { ...next.tyres }
+  private _cloneTires(next: TeslaCardConfig): TiresConfig {
+    return next.tires && typeof next.tires === 'object' && !Array.isArray(next.tires)
+      ? { ...next.tires }
       : {};
   }
 
-  private _commitTyres(next: TeslaCardConfig, tyres: TyresConfig): void {
-    if (Object.keys(tyres).length > 0) next.tyres = tyres;
-    else delete next.tyres;
+  private _commitTires(next: TeslaCardConfig, tires: TiresConfig): void {
+    if (Object.keys(tires).length > 0) next.tires = tires;
+    else delete next.tires;
     this._emit(next);
   }
 
@@ -1635,31 +1635,31 @@ export class TeslaCardEditor extends LitElement implements LovelaceCardEditor {
 
   // Read the settled `value-changed`; coerce to the pinned `'psi'|'bar'` set (any
   // other value — the Auto option's '' — clears the key).
-  private _onTyresUnits(ev: CustomEvent): void {
+  private _onTiresUnits(ev: CustomEvent): void {
     const raw = (ev.detail as { value?: unknown } | undefined)?.value;
-    this._setTyresUnits(raw === 'psi' || raw === 'bar' ? raw : undefined);
+    this._setTiresUnits(raw === 'psi' || raw === 'bar' ? raw : undefined);
   }
 
-  private _onTyresNum(key: 'recommended' | 'margin', ev: CustomEvent): void {
+  private _onTiresNum(key: 'recommended' | 'margin', ev: CustomEvent): void {
     const raw = (ev.detail as { value?: unknown } | undefined)?.value;
     const v = typeof raw === 'number' && Number.isFinite(raw) ? raw : undefined;
     // Convert the edited DISPLAY-unit value back to the sensor's NATIVE storage unit so
-    // the threshold stays stored native (panel-tyres compares in native); identity when
+    // the threshold stays stored native (panel-tires compares in native); identity when
     // the units match or native is unknown (review fix D1 — no clamp/overwrite loss).
-    const native = this._tyreNativeUnit();
-    const display = native ? this._config.tyres?.units : undefined;
-    this._setTyresNum(key, this._convertPressure(v, display, native));
+    const native = this._tireNativeUnit();
+    const display = native ? this._config.tires?.units : undefined;
+    this._setTiresNum(key, this._convertPressure(v, display, native));
   }
 
-  // The tyre sensors' native unit, read live from hass (D7 editor liveness relaxation —
+  // The tire sensors' native unit, read live from hass (D7 editor liveness relaxation —
   // editor.ts is in the no-bare-hass-states baseline). Lets the Tune threshold widgets
   // convert the NATIVE-stored thresholds to/from the chosen DISPLAY unit so value, bounds
   // and label stay coherent (review fix D1). Undefined ⇒ no hass / no sensor / no unit ⇒
   // the caller falls back to honest native presentation (no display bounds/label).
   // kPa is a real HA TPMS native unit (display stays psi/bar) — recognise it so a kPa
   // sensor converts honestly here instead of dead-ending on the native fallback while
-  // the card (`panel-tyres.displayPressure`) DOES convert kPa (editor↔card parity).
-  private _tyreNativeUnit(): 'psi' | 'bar' | 'kpa' | undefined {
+  // the card (`panel-tires.displayPressure`) DOES convert kPa (editor↔card parity).
+  private _tireNativeUnit(): 'psi' | 'bar' | 'kpa' | undefined {
     const hass = this.hass?.states ? this.hass : undefined;
     if (!hass) return undefined;
     const ids = resolveEntities(hass, this._config);
@@ -1675,7 +1675,7 @@ export class TeslaCardEditor extends LitElement implements LovelaceCardEditor {
   }
 
   // Convert a threshold between units via the one PSI_PER_BAR factor (kPa = bar × 100,
-  // mirroring panel-tyres). Identity when either unit is unknown or they already match
+  // mirroring panel-tires). Identity when either unit is unknown or they already match
   // (an unconvertible value is shown verbatim, never mislabeled or clamped). The display
   // unit is only ever psi/bar; native may also be kPa (the card stores/compares native).
   private _convertPressure(
@@ -1693,7 +1693,7 @@ export class TeslaCardEditor extends LitElement implements LovelaceCardEditor {
   private _announceTune(): void {
     const c = this._config;
     const T = STRINGS.editor.tune;
-    const unitsWord = c.tyres?.units ?? T.tyreUnitsAuto;
+    const unitsWord = c.tires?.units ?? T.tireUnitsAuto;
     const pwWord = c.energy?.hide_powerwall_controls ? T.hidePowerwallControls : '';
     this._tuneAnnounce = `${T.announcePrefix}, ${unitsWord}${pwWord ? `, ${pwWord}` : ''}`;
   }
@@ -1754,16 +1754,16 @@ export class TeslaCardEditor extends LitElement implements LovelaceCardEditor {
   private _renderTune(): TemplateResult {
     const c = this._config;
     const T = STRINGS.editor.tune;
-    const units = c.tyres?.units; // undefined ⇒ Auto / native (zero-diff)
+    const units = c.tires?.units; // undefined ⇒ Auto / native (zero-diff)
     // Present the thresholds in the chosen DISPLAY unit only when we can convert honestly
     // (the sensor's native unit is known via D7). Otherwise fall back to native
     // presentation (permissive range, no unit label) so a native value is never shown
     // under mismatched bounds/label or clamped on edit (review fix D1).
-    const native = this._tyreNativeUnit();
+    const native = this._tireNativeUnit();
     const display = native ? units : undefined;
     const r = tuneNumberRanges(display);
-    const recValue = this._convertPressure(c.tyres?.recommended, native, display);
-    const marValue = this._convertPressure(c.tyres?.margin, native, display);
+    const recValue = this._convertPressure(c.tires?.recommended, native, display);
+    const marValue = this._convertPressure(c.tires?.margin, native, display);
     // a11y obligation #3 (EXPERIENCE.md:247-252): the number field announces its
     // unit AND min/max range ("Recommended pressure, bar, range 1.5–4"). Only when a
     // unit is chosen — Auto leaves both off (the permissive range is not meaningful to
@@ -1777,7 +1777,7 @@ export class TeslaCardEditor extends LitElement implements LovelaceCardEditor {
         <span class="group-heading">${T.heading}</span>
 
         <div class="tune-row">
-          <span class="tune-lbl">${T.tyreUnitsLabel}</span>
+          <span class="tune-lbl">${T.tireUnitsLabel}</span>
           <ha-selector
             class="tune-units"
             .hass=${this.hass}
@@ -1785,15 +1785,15 @@ export class TeslaCardEditor extends LitElement implements LovelaceCardEditor {
               select: {
                 mode: 'dropdown',
                 options: [
-                  { value: '', label: T.tyreUnitsAuto },
+                  { value: '', label: T.tireUnitsAuto },
                   { value: 'psi', label: 'psi' },
                   { value: 'bar', label: 'bar' },
                 ],
               },
             }}
             .value=${units ?? ''}
-            aria-label=${T.tyreUnitsLabel}
-            @value-changed=${(e: Event) => this._onTyresUnits(e as CustomEvent)}
+            aria-label=${T.tireUnitsLabel}
+            @value-changed=${(e: Event) => this._onTiresUnits(e as CustomEvent)}
           ></ha-selector>
         </div>
 
@@ -1807,7 +1807,7 @@ export class TeslaCardEditor extends LitElement implements LovelaceCardEditor {
             }}
             .value=${recValue}
             aria-label=${recAria}
-            @value-changed=${(e: Event) => this._onTyresNum('recommended', e as CustomEvent)}
+            @value-changed=${(e: Event) => this._onTiresNum('recommended', e as CustomEvent)}
           ></ha-selector>
         </div>
 
@@ -1821,7 +1821,7 @@ export class TeslaCardEditor extends LitElement implements LovelaceCardEditor {
             }}
             .value=${marValue}
             aria-label=${marAria}
-            @value-changed=${(e: Event) => this._onTyresNum('margin', e as CustomEvent)}
+            @value-changed=${(e: Event) => this._onTiresNum('margin', e as CustomEvent)}
           ></ha-selector>
         </div>
 

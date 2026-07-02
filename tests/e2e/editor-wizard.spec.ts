@@ -474,7 +474,7 @@ test.describe('Story 9.12 appearance pickers (real browser)', () => {
 // Harness gap (carried from 9.11/9.12): the Tune widgets are `ha-selector`s, which
 // are UNREGISTERED in the demo build — their bodies render zero-height, so the
 // interactive SET/prune/conversion behaviour is covered in jsdom (editor.test.ts /
-// panel-tyres.test.ts / powerwall.test.ts). Here we assert only what the browser can
+// panel-tires.test.ts / powerwall.test.ts). Here we assert only what the browser can
 // honestly show: section PRESENCE, step REACHABILITY, the per-card-global LABELS, and
 // that SKIPPING the step writes no Tune key (zero-diff).
 test.describe('Story 9.13 Tune step (real browser)', () => {
@@ -514,7 +514,7 @@ test.describe('Story 9.13 Tune step (real browser)', () => {
     const cfg = await ed.lastConfig();
     expect(cfg).not.toBeNull();
     // No Tune key injected by skipping — absent ⇒ today's behaviour byte-for-byte.
-    expect(cfg!.tyres).toBeUndefined();
+    expect(cfg!.tires).toBeUndefined();
     expect((cfg!.energy as { hide_powerwall_controls?: unknown } | undefined)?.hide_powerwall_controls).toBeUndefined();
   });
 
@@ -528,7 +528,7 @@ test.describe('Story 9.13 Tune step (real browser)', () => {
     await expect(ed.tuneSection).toBeAttached();
     const rows = ed.tuneRows;
     const count = await rows.count();
-    // tyre units + recommended + margin + 4 hide toggles + Powerwall visibility = 8 rows.
+    // tire units + recommended + margin + 4 hide toggles + Powerwall visibility = 8 rows.
     expect(count).toBeGreaterThanOrEqual(8);
     for (let i = 0; i < count; i++) {
       const box = await rows.nth(i).boundingBox();

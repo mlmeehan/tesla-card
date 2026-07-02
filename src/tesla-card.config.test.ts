@@ -123,7 +123,7 @@ describe('AC3 — card setConfig is forward-compatible (tolerates unknown keys)'
     const el = makeCard();
     const cfg = {
       type: 'custom:tesla-card',
-      tyres: 'not-an-object',
+      tires: 'not-an-object',
       energy: 7,
       weather: [],
       wake_cooldown: 'soon',

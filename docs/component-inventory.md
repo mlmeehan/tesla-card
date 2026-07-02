@@ -41,7 +41,7 @@ element (render helpers / abstract base).
 | `tc-panel-climate` | `components/panel-climate.ts` | Temp set, seat/wheel heaters, defrost, cabin-overheat (generalized optimistic contract) |
 | `tc-panel-energy` | `components/panel-energy.ts` | In-card energy overview (solar/powerwall/grid/home/vehicle/WC/generator tiles); reads **RAW** sensor signs; `THRESH = 0.05`; consumes an `entities` prop |
 | `tc-panel-closures` | `components/panel-closures.ts` | Doors/windows/lock closures with freshness; non-optimistic (physical closures); `normalizeCoverState`/`LockState` |
-| `tc-panel-tyres` | `components/panel-tyres.ts` | Per-corner tyre pressures; low-pressure warning from the **fresh-corner subset only**; `PSI_PER_BAR = 14.5038`; psi/bar/kPa display via `tyres.units` (9.13) |
+| `tc-panel-tires` | `components/panel-tires.ts` | Per-corner tire pressures; low-pressure warning from the **fresh-corner subset only**; `PSI_PER_BAR = 14.5038`; psi/bar/kPa display via `tires.units` (9.13) |
 | `tc-panel-location` | `components/panel-location.ts` | Map card + odometer/speed/coords tiles; the one sanctioned hard-coded gradient (135deg, `#1b2533`→`#0f1620`) |
 | `tc-panel-media` | `components/panel-media.ts` | Now-playing + transport + volume slider; optimistic; media-inverse (no age stamp) |
 
@@ -122,7 +122,7 @@ to its `static styles`). They register **no** custom element.
 | Module | Key exports | Purpose |
 |---|---|---|
 | `const.ts` | `CARD_VERSION` (**`'0.2.0'`**), `HERO_VIEWBOX` (`{width:1024, height:687}`), `DEFAULT_ENTITIES` (~84 keys `satisfies Record<VehicleKey,string>`), `EntityKey` | Constants + the live entity catalog. **No `DEFAULT_IMAGE`** (removed) |
-| `types.ts` | `TeslaCardConfig` + sub-shapes (`BodyLayers`, `EnergyConfig`, `NodeCustomization`, `InstanceSpec`, `SceneRow`, `TyresConfig`, `AppearanceConfig`) + HA-platform interfaces (`HassEntity`, `HomeAssistant` incl. optional `callWS?<T>`, `LovelaceCard`, `LovelaceCardEditor`, `PanelId`) | Shared TS types — **public config + sub-shapes + HA-platform interfaces only** (Hero-internal types live with their owners in `car.ts`) |
+| `types.ts` | `TeslaCardConfig` + sub-shapes (`BodyLayers`, `EnergyConfig`, `NodeCustomization`, `InstanceSpec`, `SceneRow`, `TiresConfig`, `AppearanceConfig`) + HA-platform interfaces (`HassEntity`, `HomeAssistant` incl. optional `callWS?<T>`, `LovelaceCard`, `LovelaceCardEditor`, `PanelId`) | Shared TS types — **public config + sub-shapes + HA-platform interfaces only** (Hero-internal types live with their owners in `car.ts`) |
 | `helpers.ts` | `UNAVAILABLE_STATES`, `entityId`, `stateObj`, `rawState`, `isUnavailable` / `isMissing`, `num`/`attr`/`unit`/`isOn`/`isAsleep`, `formatNumber`/`prettyText`/`formatAge`/`display`, `toggleEntity`/`pressButton`/`setNumber`/`selectOption`, `fireEvent`/`moreInfo`/`domainOf`, `srState`, `clamp` | Pure entity-read / format / service helpers. `isMissing` is **deliberately narrow** (`undefined`/`'unavailable'` only — so a never-pressed button stays wakeable); `isUnavailable` is the wider sensor/toggle guard |
 | `ui.ts` | shared render primitives + honest-age helpers (detailed in §6) | Shared render primitives (`TemplateResult` builders) + the honest-age helpers (here, not `helpers.ts`, to avoid a `helpers ↔ data/freshness` cycle) |
 | `styles.ts` | `tokens`, `sharedStyles`, `LIGHT_TOKENS`, `ACCENT_SEMANTICS` (**8**), `INTERACTION_PRIMITIVES`/`INTERACTION_BANS`, `FRESHNESS_STATES` (**6**), `BREAKPOINTS` (`{compact:540, full:760}`) | Design tokens + shared CSS + machine-checkable contract maps + the card-only light palette; the locked a11y keyframe corpus in `sharedStyles` is `{tc-pulse, tc-shimmer}` |
@@ -233,7 +233,7 @@ never throws on extras (R9). **Epic 9 added many additive, zero-diff-when-absent
 | **`setup_complete`** | **`boolean`** | **Wizard resume marker: `true` done / `false` in-progress / absent = bare stub (9.9)** |
 | `energy` | `EnergyConfig` | `entities?` + `hide?` + **`nodes?` (`NodeCustomization`)** + **`hide_powerwall_controls?`** (9.13) |
 | `wake_cooldown` | `number` | Per-instance implicit-wake cooldown, in **minutes** (built-in default ~1 min when unset/≤0) |
-| `tyres` | `TyresConfig` | `recommended?`/`margin?` (NATIVE unit) + **`units?: 'psi'\|'bar'`** (display-only; comparison stays native, 9.13) |
+| `tires` | `TiresConfig` | `recommended?`/`margin?` (NATIVE unit) + **`units?: 'psi'\|'bar'`** (display-only; comparison stays native, 9.13) |
 | `weather` | `{entity?, sun?, hide?}` | Solar-vignette tuning (6.4) |
 
 **Sub-shapes** — full TS definitions live in `src/types.ts` (the single source of truth). The
@@ -241,9 +241,9 @@ contributor-facing semantics not obvious from the shapes:
 - `NodeCustomization` — keyspace is **`Role`** (the **7** suite nodes **incl. `vehicle`**), not `EnergyRole`; precedence is **hide wins over order**; `rows` (9.15) is cross-row promotion (presentation only — never a sign source); `instances` is a **descriptor list** whose array LENGTH is the instance count.
 - `InstanceSpec` — `config` is consumed **only for the `vehicle` role** (a 2nd/3rd car's own embedded `tesla-card` config, 9.8); energy roles ignore it.
 
-(`EnergyConfig`, `SceneRow`, `TyresConfig`, `AppearanceConfig`, and `BodyLayers` are plain shapes — see `types.ts`.)
+(`EnergyConfig`, `SceneRow`, `TiresConfig`, `AppearanceConfig`, and `BodyLayers` are plain shapes — see `types.ts`.)
 
-`PanelId` = `'climate' | 'charging' | 'energy' | 'closures' | 'tyres' | 'location' | 'media'`. All
+`PanelId` = `'climate' | 'charging' | 'energy' | 'closures' | 'tires' | 'location' | 'media'`. All
 unknown/garbage values degrade gracefully (R9 / FR-24), never throw.
 
 ---
@@ -256,7 +256,7 @@ unknown/garbage values degrade gracefully (R9 / FR-24), never throw.
 | `HERO_VIEWBOX` | `{ width: 1024, height: 687 }` | `const.ts` |
 | `RECONCILE_TIMEOUT_MS` | `10_000` | `components/quick-actions.ts` (exported; `powerwall.ts` imports it, never redefines) |
 | `WAKE_COOLDOWN_DEFAULT_MS` | `60_000` | `data/wake.ts` |
-| `PSI_PER_BAR` | `14.5038` | `components/panel-tyres.ts` (the one bar↔psi factor) |
+| `PSI_PER_BAR` | `14.5038` | `components/panel-tires.ts` (the one bar↔psi factor) |
 | `EPSILON_KW` | `0.05` | `flow/balance.ts` (bus-balance tolerance) |
 | `IDLE_KW` | `0.05` | `flow/model.ts` (`senseOf` threshold) |
 | `DEADBAND` | `= IDLE_KW` (`0.05`) | `flow/binding.ts` |

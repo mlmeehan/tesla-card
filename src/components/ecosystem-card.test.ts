@@ -17,7 +17,7 @@
 //   AC4 — presence-tolerant: a minimal/empty hass with no peers still renders the
 //         surface calmly, no throw.
 //
-// Freshness is deterministic by injection (mirrors panel-tyres / panel-closures /
+// Freshness is deterministic by injection (mirrors panel-tires / panel-closures /
 // freshness.test.ts): every fixture entity is stamped at one instant, so advancing
 // the server reference (bumping one entity's last_updated) back-dates the read into
 // stale/asleep — referenceNow is the max stamp. Entity ids come from const.ts

@@ -7,7 +7,7 @@
     "ha_version": "2026.6",
     "capture_method": "Hand-trimmed snapshot of the live Garage Model Y (Tesla Fleet) awake state, promoted to full HA state shape (entity_id/last_changed/last_updated ISO-8601). Location scrubbed to a non-identifying placeholder.",
     "entity_count": 96,
-    "notes": "Single-model vehicle corpus (one Model Y) plus the co-located Tesla energy site + Wall Connector present in the same snapshot. Other models/dialects carry their OWN corpus (Story 1.3 AC2). Anchored (garage_model_y_*) AND bare (sensor.odometer, cover.sunroof, tyres, rear-seat heaters, …) IDs are both included on purpose — the bare-device quirk is real."
+    "notes": "Single-model vehicle corpus (one Model Y) plus the co-located Tesla energy site + Wall Connector present in the same snapshot. Other models/dialects carry their OWN corpus (Story 1.3 AC2). Anchored (garage_model_y_*) AND bare (sensor.odometer, cover.sunroof, tires, rear-seat heaters, …) IDs are both included on purpose — the bare-device quirk is real."
   },
   "states": {
     "sensor.garage_model_y_battery_level": {

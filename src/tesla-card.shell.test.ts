@@ -94,13 +94,13 @@ describe('AC2 — default_panel opens first; default is charging', () => {
     el.remove();
   });
 
-  test('default_panel: tyres → tyres opens (not charging)', async () => {
+  test('default_panel: tires → tires opens (not charging)', async () => {
     const el = await renderCard(
-      { type: 'custom:tesla-card', default_panel: 'tyres' },
+      { type: 'custom:tesla-card', default_panel: 'tires' },
       hassFrom(allUnresolved)
     );
-    expect(activeTabLabel(el)).toBe(STRINGS.tabs.tyres);
-    expect(activePanelTag(el)).toBe('tc-panel-tyres');
+    expect(activeTabLabel(el)).toBe(STRINGS.tabs.tires);
+    expect(activePanelTag(el)).toBe('tc-panel-tires');
     el.remove();
   });
 });
@@ -312,9 +312,9 @@ describe('AC1 — one card switching content (a single panel region that swaps)'
     expect(panel.childElementCount).toBe(1); // one card switching content, not a stack
     expect(activePanelTag(el)).toBe('tc-panel-charging');
 
-    await clickTab(el, STRINGS.tabs.tyres);
+    await clickTab(el, STRINGS.tabs.tires);
     expect(panel.childElementCount).toBe(1); // still exactly one — swapped, not added
-    expect(activePanelTag(el)).toBe('tc-panel-tyres');
+    expect(activePanelTag(el)).toBe('tc-panel-tires');
     expect(el.shadowRoot!.querySelector('tc-panel-charging')).toBeNull(); // prior panel gone
 
     await clickTab(el, STRINGS.tabs.location);
@@ -422,13 +422,13 @@ describe('Story 11.4 — variant:"compact" is PRESENTATION only; the embed honor
     el.remove();
   });
 
-  test('compact + default_panel:"tyres" → the tyres tab opens (not charging)', async () => {
+  test('compact + default_panel:"tires" → the tires tab opens (not charging)', async () => {
     const el = await renderCard(
-      { type: 'custom:tesla-card', variant: 'compact', default_panel: 'tyres' },
+      { type: 'custom:tesla-card', variant: 'compact', default_panel: 'tires' },
       hassFrom(awake)
     );
-    expect(activeTabLabel(el)).toBe(STRINGS.tabs.tyres);
-    expect(activePanelTag(el)).toBe('tc-panel-tyres');
+    expect(activeTabLabel(el)).toBe(STRINGS.tabs.tires);
+    expect(activePanelTag(el)).toBe('tc-panel-tires');
     el.remove();
   });
 });

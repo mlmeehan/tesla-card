@@ -55,7 +55,7 @@ export type PanelId =
   | 'charging'
   | 'energy'
   | 'closures'
-  | 'tyres'
+  | 'tires'
   | 'location'
   | 'media';
 
@@ -184,10 +184,10 @@ export interface EnergyConfig {
 }
 
 /**
- * Tyre low-pressure check tuning (FR-19). Values are in the sensor's NATIVE
+ * Tire low-pressure check tuning (FR-19). Values are in the sensor's NATIVE
  * unit (bar or psi) — never assume one.
  */
-export interface TyresConfig {
+export interface TiresConfig {
   /**
    * Recommended cold pressure. Default: the MAX of the four live corner
    * readings (peer baseline — a cold morning lowers all four together, so a
@@ -292,7 +292,7 @@ export interface BodyLayers {
  * The single public, **forward-compatible** card configuration (AR-14, FR-29,
  * R9). This is the ONE public type the card exposes; every Lovelace YAML config
  * is a `TeslaCardConfig`. It grew field-by-field across Epics 1–6 (D2 `integration`,
- * D3 `tyres`, D6 `body`/`paint` layer-pack refs, plus energy/weather/visibility
+ * D3 `tires`, D6 `body`/`paint` layer-pack refs, plus energy/weather/visibility
  * tuning) and is consolidated here (Story 7.1) into one coherent, reviewed surface.
  *
  * **Forward-compatibility contract (the R9 back-compat obligation):** unknown keys
@@ -429,12 +429,12 @@ export interface TeslaCardConfig {
    */
   wake_cooldown?: number;
   /**
-   * Tyre low-pressure check tuning (Story 5.8 / FR-19). When omitted, the panel
+   * Tire low-pressure check tuning (Story 5.8 / FR-19). When omitted, the panel
    * derives a peer-baseline `recommended` (max of the four live corners) and a
    * unit-aware default `margin` — values are in the sensor's NATIVE unit. See
-   * {@link TyresConfig}.
+   * {@link TiresConfig}.
    */
-  tyres?: TyresConfig;
+  tires?: TiresConfig;
   /**
    * Live-weather vignette tuning for the Solar card (Story 6.4 / UX-DR15). The
    * vignette reads HA CORE `weather.home` (condition) + `sun.sun` (day/night) by

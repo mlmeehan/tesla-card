@@ -375,7 +375,7 @@ describe('AC1 — the default-panel select presents the full panel union', () =>
       'select:not(.row-select) option'
     ) as NodeListOf<HTMLOptionElement>;
     const values = Array.from(options).map((o) => o.value);
-    expect(values).toEqual(['climate', 'charging', 'closures', 'tyres', 'location', 'media']);
+    expect(values).toEqual(['climate', 'charging', 'closures', 'tires', 'location', 'media']);
     el.remove();
   });
 });
@@ -2125,7 +2125,7 @@ describe('Story 9.12 — present-gated default-panel chooser', () => {
     el.setConfig(APP_BASE);
     await el.updateComplete;
     const values = Array.from(panelSelect(el).querySelectorAll('option')).map((o) => o.value);
-    expect(values).toEqual(['climate', 'charging', 'closures', 'tyres', 'location', 'media']);
+    expect(values).toEqual(['climate', 'charging', 'closures', 'tires', 'location', 'media']);
     el.remove();
   });
 
@@ -2240,14 +2240,14 @@ describe('Story 9.12 — LIGHT_TOKENS import wiring', () => {
 // ha-selector widgets (select/number/boolean) are inert UNDEFINED elements in jsdom —
 // we assert their bound `.selector`/`.value` and drive a synthetic `value-changed`.
 const TUNE_BASE = { type: 'custom:tesla-card', setup_complete: true } as TeslaCardConfig;
-// A hass exposing a tyre sensor's native unit so the Tune threshold widgets can present
+// A hass exposing a tire sensor's native unit so the Tune threshold widgets can present
 // in (and convert to/from) the chosen DISPLAY unit — review fix D1 makes the display-unit
 // bounds/label conditional on the native unit being knowable (else honest native fallback).
 // The explicit `tire_fl` override makes resolution deterministic in jsdom.
-const TYRE_BAR_HASS = {
+const TIRE_BAR_HASS = {
   states: { 'sensor.fl_bar': { entity_id: 'sensor.fl_bar', state: '2.4', attributes: { unit_of_measurement: 'bar' } } },
 } as unknown as HomeAssistant;
-const TUNE_TYRE = { ...TUNE_BASE, entities: { tire_fl: 'sensor.fl_bar' } } as TeslaCardConfig;
+const TUNE_TIRE = { ...TUNE_BASE, entities: { tire_fl: 'sensor.fl_bar' } } as TeslaCardConfig;
 
 describe('Story 9.13 AC-D — Tune lives in BOTH homes (un-stubs the wizard Step 4)', () => {
   test('the normal form renders a pinned Tune section', async () => {
@@ -2279,7 +2279,7 @@ describe('Story 9.13 AC-D — Tune lives in BOTH homes (un-stubs the wizard Step
 });
 
 describe('Story 9.13 AC-D — pinned widget bindings', () => {
-  test('tyre units is a select selector (Auto/psi/bar dropdown)', async () => {
+  test('tire units is a select selector (Auto/psi/bar dropdown)', async () => {
     const el = makeEditor();
     el.setConfig(TUNE_BASE);
     await el.updateComplete;
@@ -2289,10 +2289,10 @@ describe('Story 9.13 AC-D — pinned widget bindings', () => {
     el.remove();
   });
 
-  test('tyre thresholds are number selectors (mode:box) with a unit reflecting the chosen units', async () => {
+  test('tire thresholds are number selectors (mode:box) with a unit reflecting the chosen units', async () => {
     const el = makeEditor();
-    el.hass = TYRE_BAR_HASS; // native unit must be known to present in a display unit (review fix D1)
-    el.setConfig({ ...TUNE_TYRE, tyres: { units: 'bar' } } as TeslaCardConfig);
+    el.hass = TIRE_BAR_HASS; // native unit must be known to present in a display unit (review fix D1)
+    el.setConfig({ ...TUNE_TIRE, tires: { units: 'bar' } } as TeslaCardConfig);
     await el.updateComplete;
     const rec = tuneSel(el, 'tune-recommended')!.selector as { number?: { mode?: string; unit_of_measurement?: string } };
     expect(rec.number?.mode).toBe('box');
@@ -2311,26 +2311,26 @@ describe('Story 9.13 AC-D — pinned widget bindings', () => {
 });
 
 describe('Story 9.13 AC-D — Tune writers (SET writes the key; reset/default deletes it, R9 zero-diff)', () => {
-  test('picking a tyre unit writes config.tyres.units; Auto deletes the key (prunes tyres)', async () => {
+  test('picking a tire unit writes config.tires.units; Auto deletes the key (prunes tires)', async () => {
     const el = makeEditor();
     el.setConfig(TUNE_BASE);
     await el.updateComplete;
     const cap = captureEmit(el);
     await tuneFire(el, el.shadowRoot!.querySelector('.tune .tune-units')!, 'bar');
-    expect(cap.get()?.tyres).toEqual({ units: 'bar' });
-    // Auto ('') ⇒ delete units ⇒ tyres (now empty) pruned entirely.
+    expect(cap.get()?.tires).toEqual({ units: 'bar' });
+    // Auto ('') ⇒ delete units ⇒ tires (now empty) pruned entirely.
     await tuneFire(el, el.shadowRoot!.querySelector('.tune .tune-units')!, '');
-    expect('tyres' in (cap.get() ?? {})).toBe(false);
+    expect('tires' in (cap.get() ?? {})).toBe(false);
     el.remove();
   });
 
-  test('a tyre unit change PRESERVES existing native-unit thresholds (units is display-only)', async () => {
+  test('a tire unit change PRESERVES existing native-unit thresholds (units is display-only)', async () => {
     const el = makeEditor();
-    el.setConfig({ ...TUNE_BASE, tyres: { recommended: 2.4, margin: 0.3 } } as TeslaCardConfig);
+    el.setConfig({ ...TUNE_BASE, tires: { recommended: 2.4, margin: 0.3 } } as TeslaCardConfig);
     await el.updateComplete;
     const cap = captureEmit(el);
     await tuneFire(el, el.shadowRoot!.querySelector('.tune .tune-units')!, 'psi');
-    expect(cap.get()?.tyres).toEqual({ recommended: 2.4, margin: 0.3, units: 'psi' });
+    expect(cap.get()?.tires).toEqual({ recommended: 2.4, margin: 0.3, units: 'psi' });
     el.remove();
   });
 
@@ -2340,9 +2340,9 @@ describe('Story 9.13 AC-D — Tune writers (SET writes the key; reset/default de
     await el.updateComplete;
     const cap = captureEmit(el);
     await tuneFire(el, el.shadowRoot!.querySelector('.tune .tune-recommended')!, 2.5);
-    expect((cap.get()?.tyres as { recommended?: number }).recommended).toBe(2.5);
+    expect((cap.get()?.tires as { recommended?: number }).recommended).toBe(2.5);
     await tuneFire(el, el.shadowRoot!.querySelector('.tune .tune-recommended')!, undefined);
-    expect('tyres' in (cap.get() ?? {})).toBe(false);
+    expect('tires' in (cap.get() ?? {})).toBe(false);
     el.remove();
   });
 
@@ -2389,7 +2389,7 @@ describe('Story 9.13 AC-D — zero-diff + a11y', () => {
     el.setConfig(TUNE_BASE);
     await el.updateComplete;
     const units = el.shadowRoot!.querySelector('.tune .tune-units') as HTMLElement;
-    expect(units.getAttribute('aria-label')).toBe(STRINGS.editor.tune.tyreUnitsLabel);
+    expect(units.getAttribute('aria-label')).toBe(STRINGS.editor.tune.tireUnitsLabel);
     const pw = el.shadowRoot!.querySelector('.tune .tune-hide-powerwall') as HTMLElement;
     expect(pw.getAttribute('aria-label')).toBe(STRINGS.editor.tune.hidePowerwallControls);
     // The label is the bare global string — NEVER suffixed with an instance title.
@@ -2399,8 +2399,8 @@ describe('Story 9.13 AC-D — zero-diff + a11y', () => {
 
   test('the threshold number fields announce unit + min/max range when a unit is chosen (a11y #3)', async () => {
     const el = makeEditor();
-    el.hass = TYRE_BAR_HASS; // native unit known ⇒ the chosen display unit + range are announced (review fix D1)
-    el.setConfig({ ...TUNE_TYRE, tyres: { units: 'bar' } } as TeslaCardConfig);
+    el.hass = TIRE_BAR_HASS; // native unit known ⇒ the chosen display unit + range are announced (review fix D1)
+    el.setConfig({ ...TUNE_TIRE, tires: { units: 'bar' } } as TeslaCardConfig);
     await el.updateComplete;
     const rec = el.shadowRoot!.querySelector('.tune .tune-recommended') as HTMLElement;
     const mar = el.shadowRoot!.querySelector('.tune .tune-margin') as HTMLElement;
@@ -2620,7 +2620,7 @@ describe('Story 10.1 AC7 — every write path preserves the custom:tc-my-home ty
 // findings from the 3-layer review: non-string name (P1), garbage container spreads
 // (P2), wizard dialog role (P3), preview tab ARIA (P4), focus ring (P5), swatch
 // Space/Enter (P6), empty row heading (P7), empty-Detect skip label (P8) + manual
-// fallback (P9), and tyre unit conversion (P10).
+// fallback (P9), and tire unit conversion (P10).
 describe('Code review regressions — Epic 9 Group A (editor)', () => {
   test('P1: a non-string config.name (YAML number) does not crash the editor on open', async () => {
     const el = makeEditor();
@@ -2735,19 +2735,19 @@ describe('Code review regressions — Epic 9 Group A (editor)', () => {
     el.remove();
   });
 
-  test('P10: a tyre threshold is shown in the chosen display unit, converted from the sensor native unit', async () => {
-    const TYRE_HASS = {
+  test('P10: a tire threshold is shown in the chosen display unit, converted from the sensor native unit', async () => {
+    const TIRE_HASS = {
       states: {
         'sensor.fl_psi': { entity_id: 'sensor.fl_psi', state: '35', attributes: { unit_of_measurement: 'psi' } },
       },
     } as unknown as HomeAssistant;
     const el = makeEditor();
-    el.hass = TYRE_HASS;
+    el.hass = TIRE_HASS;
     el.setConfig({
       type: 'custom:tesla-card',
       setup_complete: true,
       entities: { tire_fl: 'sensor.fl_psi' },
-      tyres: { units: 'bar', recommended: 35 },
+      tires: { units: 'bar', recommended: 35 },
     } as unknown as TeslaCardConfig);
     await el.updateComplete;
     const rec = tuneSel(el, 'tune-recommended')!;
@@ -2756,27 +2756,27 @@ describe('Code review regressions — Epic 9 Group A (editor)', () => {
     // editing in bar stores back to native psi (no clamp/overwrite loss)
     const cap = captureEmit(el);
     await tuneFire(el, el.shadowRoot!.querySelector('.tune .tune-recommended')!, 2.5);
-    const tyres = cap.get()!.tyres as Record<string, unknown>;
-    expect(tyres.recommended as number).toBeCloseTo(2.5 * 14.5038, 1);
+    const tires = cap.get()!.tires as Record<string, unknown>;
+    expect(tires.recommended as number).toBeCloseTo(2.5 * 14.5038, 1);
     el.remove();
   });
 
   test('P10b: a kPa-native sensor converts to/from the chosen display unit (editor↔card parity)', async () => {
-    // kPa is a real HA TPMS native unit; panel-tyres.displayPressure converts it (÷100),
+    // kPa is a real HA TPMS native unit; panel-tires.displayPressure converts it (÷100),
     // so the editor must too — else a kPa sensor dead-ends on the native fallback and a
     // bar threshold is stored as raw kPa, warning at the wrong pressure (review follow-on).
-    const TYRE_KPA_HASS = {
+    const TIRE_KPA_HASS = {
       states: {
         'sensor.fl_kpa': { entity_id: 'sensor.fl_kpa', state: '240', attributes: { unit_of_measurement: 'kPa' } },
       },
     } as unknown as HomeAssistant;
     const el = makeEditor();
-    el.hass = TYRE_KPA_HASS;
+    el.hass = TIRE_KPA_HASS;
     el.setConfig({
       type: 'custom:tesla-card',
       setup_complete: true,
       entities: { tire_fl: 'sensor.fl_kpa' },
-      tyres: { units: 'bar', recommended: 240 }, // stored native kPa
+      tires: { units: 'bar', recommended: 240 }, // stored native kPa
     } as unknown as TeslaCardConfig);
     await el.updateComplete;
     const rec = tuneSel(el, 'tune-recommended')!;
@@ -2785,8 +2785,8 @@ describe('Code review regressions — Epic 9 Group A (editor)', () => {
     // editing in bar stores back to native kPa (× 100)
     const cap = captureEmit(el);
     await tuneFire(el, el.shadowRoot!.querySelector('.tune .tune-recommended')!, 2.5);
-    const tyres = cap.get()!.tyres as Record<string, unknown>;
-    expect(tyres.recommended as number).toBeCloseTo(250, 1);
+    const tires = cap.get()!.tires as Record<string, unknown>;
+    expect(tires.recommended as number).toBeCloseTo(250, 1);
     el.remove();
   });
 });

@@ -13,7 +13,7 @@
 ## Overview
 
 `tesla-card` renders a single Tesla (default: "Garage Model Y") as a Tesla-app-style Lovelace card:
-a centered living hero with a tab bar over feature panels (charging, climate, closures, tyres,
+a centered living hero with a tab bar over feature panels (charging, climate, closures, tires,
 location, media, and — when an energy site is detected — a live **Energy** flow panel), plus
 quick-action toggles and command buttons. The same bundle also ships standalone **ecosystem cards**
 (solar / powerwall / grid / home / wall-connector / **generator**) and a composed **"My Home" energy

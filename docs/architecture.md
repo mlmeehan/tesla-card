@@ -20,7 +20,7 @@
 `tesla-card` is a Tesla-app-style custom [Lovelace](https://www.home-assistant.io/dashboards/)
 card for Home Assistant, built in **TypeScript (strict) + [Lit](https://lit.dev) 3**. It renders a
 single vehicle as a centred **living hero** (recolorable inline-SVG car with charge/aperture state)
-over a **tab bar** of feature panels (charging, climate, energy, closures, tyres, location, media),
+over a **tab bar** of feature panels (charging, climate, energy, closures, tires, location, media),
 plus quick-action toggles and command buttons. Beyond the vehicle card it also ships a set of
 standalone **ecosystem cards** (solar / powerwall / grid / home / wall-connector / **generator**) and a
 composed **"My Home" energy Scene**, all from the same bundle.
@@ -148,7 +148,7 @@ tesla-card  (src/tesla-card.ts)  — LitElement, implements LovelaceCard
     ├── tc-panel-climate    panel-climate.ts
     ├── tc-panel-energy     panel-energy.ts     (Energy tab — inserted only when a site is detected)
     ├── tc-panel-closures   panel-closures.ts
-    ├── tc-panel-tyres      panel-tyres.ts
+    ├── tc-panel-tires      panel-tires.ts
     ├── tc-panel-location   panel-location.ts
     └── tc-panel-media      panel-media.ts      ── uses ─▶ tc-slider
 
@@ -210,7 +210,7 @@ from the registry vocabulary. There is **no `DEFAULT_IMAGE`** — the old `/loca
 was removed so a fresh install never 404s; the zero-config default hero is the bundled inline-SVG generic EV.
 
 > ⚠️ **Tesla Fleet IDs are NOT uniformly prefixed.** ~30 of the keys point at *bare* device
-> entities — `sensor.odometer`, `cover.sunroof`, `sensor.shift_state`, all tyre pressure sensors,
+> entities — `sensor.odometer`, `cover.sunroof`, `sensor.shift_state`, all tire pressure sensors,
 > rear seat heaters, `sensor.speed`, `sensor.power`, climate cabin-overheat, … The rest carry the
 > `garage_model_y_` device prefix. Blindly prefixing the bare ones yields `unavailable`.
 > `DEFAULT_ENTITIES` encodes the exact mix.
@@ -337,7 +337,7 @@ The control surface declares **two opposite feedback contracts, once each**:
   (10 s)** — a bounded `setTimeout`, cleared on reconcile and `disconnectedCallback`. *Import it; never
   redefine the magic number* (four consumers do exactly this).
 - **Fire-and-forget** (`commands.ts`): a one-shot `button.press`, no optimistic flip / reconcile /
-  timer. Read-only panels (tyres/location), physical-closure actions, and media prev/next are also
+  timer. Read-only panels (tires/location), physical-closure actions, and media prev/next are also
   deliberately non-optimistic (an optimistic flip would be false certainty).
 
 **The three glanceable charge states** are the *hero's* derived read, not a raw dialect value:
@@ -365,7 +365,7 @@ unless every closure is `available && closed`; even a permitted stale "All close
 green to a `dim` tone. Stale/asleep surfaces show last-known + an "updated N ago" stamp via
 `keyAgeHint`/`formatAgeHint` and `referenceNow(hass)` (the max server stamp, computed once per render) —
 **never** `Date.now()`. (Media is the inverse: no stamp — a stale player degrades to a calm empty state.)
-Peer-derived thresholds (tyres) use the **fresh-corner subset only** so a stale reading can't inflate the
+Peer-derived thresholds (tires) use the **fresh-corner subset only** so a stale reading can't inflate the
 baseline. Cover/lock reads go through `normalizeCoverState`/`normalizeLockState` (`data/dialect`), never
 inline `=== 'open'`/`'locked'`.
 
@@ -592,9 +592,9 @@ the "not found" word sits at `--tc-text-dim` for AA, never `--tc-text-mute`).
 - **Tune step + version floor (9.13 / D8)** — editor floor = runtime floor = **`2024.4.0`, no raise**
   (every chosen widget predates it; the entity-selector `filter:` form shipped HA 2023.3). The README
   caveat is **API-stability** (`ha-selector` is HA-internal, non-SemVer), **not** version exclusion.
-  `TyresConfig.units?: 'psi'|'bar'` is **display-only** (thresholds stay stored in the sensor's native unit);
-  `_convertPressure` pivots through bar (psi/bar/**kPa**, `PSI_PER_BAR = 14.5038`), and `_tyreNativeUnit()`
-  sniffs the sensor unit — **the kPa branch mirrors `panel-tyres`** (the `fix/epic9-editor-review-hardening`
+  `TiresConfig.units?: 'psi'|'bar'` is **display-only** (thresholds stay stored in the sensor's native unit);
+  `_convertPressure` pivots through bar (psi/bar/**kPa**, `PSI_PER_BAR = 14.5038`), and `_tireNativeUnit()`
+  sniffs the sensor unit — **the kPa branch mirrors `panel-tires`** (the `fix/epic9-editor-review-hardening`
   branch's kPa-parity fix). Tune toggles/dropdowns are per-card globals — never instance-suffixed.
 
 ### 13.4 "My Home" node customization (9.1–9.4, 9.7, 9.8, 9.15) — `energy.nodes`
@@ -645,7 +645,7 @@ and is the 8th `window.customCards` picker entry.
 | Identity / render | `type`, `name`, `image`, `body`, `paint`, **`appearance` `{ theme? }`** |
 | Entity resolution | `device`, `prefix`, `entities`, `integration` |
 | Panels / visibility | `default_panel`, `hide_panels`, `hide_quick_actions`, `hide_commands`, **`notify_hidden_detected`**, **`setup_complete`**, **`variant` (`'full'`/`'compact'`)** |
-| Per-feature | `energy` `{ entities, hide, `**`nodes` (`hide`/`order`/`rows`/`instances`)**`, `**`hide_powerwall_controls`**` }`, `wake_cooldown`, `tyres` `{ recommended, margin, `**`units`**` }`, `weather` |
+| Per-feature | `energy` `{ entities, hide, `**`nodes` (`hide`/`order`/`rows`/`instances`)**`, `**`hide_powerwall_controls`**` }`, `wake_cooldown`, `tires` `{ recommended, margin, `**`units`**` }`, `weather` |
 
 ---
 

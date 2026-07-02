@@ -16,7 +16,7 @@ export const HERO_VIEWBOX = { width: 1024, height: 687 } as const;
  * Complete default entity map for a Tesla Fleet "Model Y".
  *
  * IMPORTANT: Tesla Fleet entity IDs are NOT uniformly prefixed — ~30 live on
- * the bare device (e.g. `sensor.odometer`, `cover.sunroof`, the tyre sensors,
+ * the bare device (e.g. `sensor.odometer`, `cover.sunroof`, the tire sensors,
  * the rear seat heaters). These defaults are the exact live IDs. Users with a
  * differently-named vehicle override individual keys via `config.entities`.
  */
@@ -88,7 +88,7 @@ export const DEFAULT_ENTITIES = {
   // ── security ─────────────────────────────────────────────────────────
   sentry: 'switch.garage_model_y_sentry_mode',
   dashcam: 'binary_sensor.dashcam',
-  // ── tyres ────────────────────────────────────────────────────────────
+  // ── tires ────────────────────────────────────────────────────────────
   tire_fl: 'sensor.tire_pressure_front_left',
   tire_fr: 'sensor.tire_pressure_front_right',
   tire_rl: 'sensor.tire_pressure_rear_left',

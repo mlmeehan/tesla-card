@@ -3,7 +3,7 @@
 A Tesla-app-inspired vehicle card for Home Assistant, built for the
 **Tesla Fleet** / **Teslemetry** integrations. A centred car render, circular
 quick-action controls, and purpose-built detail panels for charging, climate,
-closures, tyres, location, and media. Set it up with **zero YAML** through the
+closures, tires, location, and media. Set it up with **zero YAML** through the
 built-in visual editor, and compose your whole home-energy picture with the
 matching **My Home** scene.
 
@@ -24,7 +24,7 @@ matching **My Home** scene.
   see [Energy panel](#energy-panel).
 - **Climate** — temperature stepper, per-seat heater cyclers (Off→Low→Med→High),
   steering-wheel heater, defrost, and cabin-overheat protection.
-- **Tyres** — pressure at each corner with low-pressure warnings, in **psi or
+- **Tires** — pressure at each corner with low-pressure warnings, in **psi or
   bar** to taste.
 - **Location** — embedded OpenStreetMap with odometer, speed, power, and live
   ETA when a route is active.
@@ -52,8 +52,8 @@ matching **My Home** scene.
 
 |                                          |                                        |                                      |
 | :---------------------------------------: | :-------------------------------------: | :-----------------------------------: |
-| ![Closures](docs/screenshot-closures.png) | ![Climate](docs/screenshot-climate.png) |  ![Tyres](docs/screenshot-tyres.png)  |
-|       Tappable **closures** diagram       |       **Climate** & seat heaters       |          **Tyre** pressures          |
+| ![Closures](docs/screenshot-closures.png) | ![Climate](docs/screenshot-climate.png) |  ![Tires](docs/screenshot-tires.png)  |
+|       Tappable **closures** diagram       |       **Climate** & seat heaters       |          **Tire** pressures          |
 |    ![Media](docs/screenshot-media.png)    |  ![Asleep](docs/screenshot-asleep.png)  | ![Energy](docs/screenshot-energy.png) |
 |             **Media** player             |        Graceful **asleep** state        |          Live **energy** flow          |
 
@@ -143,7 +143,7 @@ pencil*), and the editor walks you through everything.
    remap a miss early.
 3. **Appearance** — paint from the swatch grid, Auto / Light / Dark, and the
    default panel, with a live card preview.
-4. **Tune** — psi-or-bar tyre units and thresholds, which sections to show, and
+4. **Tune** — psi-or-bar tire units and thresholds, which sections to show, and
    whether to surface the Powerwall write-controls.
 5. **Finish** — done; re-run the wizard any time from the normal editor.
 
@@ -175,12 +175,12 @@ hiding, reordering, promoting, and duplicating nodes — see
 | `prefix`                 | string       | _auto_        | Force the entity-id prefix slug (e.g. `model_y`). Rarely needed.                                                                                                          |
 | `integration`            | string       | _auto_        | Force the integration dialect (`tesla_fleet` / `teslemetry`). Auto-detected; rarely needed.                                                                               |
 | `entities`               | map          | _auto_        | Per-key entity overrides — see [Entity overrides](#entity-overrides-escape-hatch).                                                                                       |
-| `default_panel`          | string       | `charging`    | One of `climate`, `charging`, `energy`, `closures`, `tyres`, `location`, `media`.                                                                                         |
+| `default_panel`          | string       | `charging`    | One of `climate`, `charging`, `energy`, `closures`, `tires`, `location`, `media`.                                                                                         |
 | `variant`                | string       | `full`        | `full`, or `compact` (hero + status line + battery gauge only — a small dashboard tile).                                                                                 |
 | `hide_quick_actions`     | boolean      | `false`       | Hide the circular quick-action row.                                                                                                                                       |
 | `hide_panels`            | boolean      | `false`       | Hide the tabbed detail panels.                                                                                                                                            |
 | `hide_commands`          | boolean      | `false`       | Hide the command buttons (wake/honk/flash/…).                                                                                                                            |
-| `tyres`                  | map          | _auto_        | Display units (`psi`/`bar`) and low-pressure thresholds — see [Tyres](#tyres).                                                                                           |
+| `tires`                  | map          | _auto_        | Display units (`psi`/`bar`) and low-pressure thresholds — see [Tires](#tires).                                                                                           |
 | `energy`                 | map          | _auto_        | Energy-site / Wall-Connector wiring, hide switch, and My Home node customization — see [Energy panel](#energy-panel) and [Customising the scene](#customising-the-scene). |
 | `weather`                | map          | _auto_        | Source (or hide) the Solar card's live-weather vignette — `{ entity, sun, hide }`.                                                                                       |
 | `wake_cooldown`          | number       | `1`           | Minutes to wait between implicit wake attempts (never blocks an explicit wake).                                                                                           |
@@ -306,16 +306,16 @@ dashboard chrome is untouched, and the accent colours stay meaningful on either
 ground. The editor's **Appearance** step exposes this as an Auto / Light / Dark
 segmented control with a live preview.
 
-## Tyres
+## Tires
 
-The Tyres panel shows pressure at each corner and warns when one drops below a
+The Tires panel shows pressure at each corner and warns when one drops below a
 recommended baseline. By default it reads the sensor's native unit and derives a
 peer baseline (the max of the four live corners) with an overnight-temp-robust
 margin. To pin the display unit or the thresholds:
 
 ```yaml
 type: custom:tesla-card
-tyres:
+tires:
   units: psi              # 'psi' | 'bar' for the read-outs; omit for the native unit
   recommended: 42         # cold-pressure baseline, in the sensor's native unit
   margin: 4               # how far below 'recommended' a corner must fall to warn

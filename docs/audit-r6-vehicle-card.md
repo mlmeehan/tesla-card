@@ -40,13 +40,13 @@ build. No new panel, control, or config field. The only code change is closing t
 ## Surface enumeration (the audit is exhaustive, not sampled)
 
 Complete card = shell + Hero + quick-actions + commands + **seven
-panels** (charging, climate, closures, tyres, location, media, energy).
+panels** (charging, climate, closures, tires, location, media, energy).
 
 | Layer | Files |
 |---|---|
 | Shell / tabs | `src/tesla-card.ts` (panel-switch; the single `detectDialect` call) |
 | Hero / car | `src/components/{hero,car,quick-actions,commands,slider}.ts` |
-| Panels | `src/components/panel-{charging,climate,closures,tyres,location,media,energy}.ts` |
+| Panels | `src/components/panel-{charging,climate,closures,tires,location,media,energy}.ts` |
 | Flow viz | `src/flow/{scene-bus,renderer,binding,model,balance}.ts` |
 | Data boundary | `src/data/{dialect,freshness,wake,resolve,registry,energy,degradation}.ts` |
 | Shared | `src/{styles,ui,helpers,strings,const}.ts` |
@@ -110,7 +110,7 @@ surface stays honest by one of three mechanisms:
 | Closures | **stamped last-known + `unknown` neutral** | `_closure` → `unknown` when `!available` (never a false "closed"); "All closed" GREEN reserved for fresh+locked+all-confirmed; any stale/unknown degrades tone to dim + "updated Nm ago" stamp |
 | Location | **stamped last-known** | last-known coords + "updated Nm ago"; never presented as live |
 | Media | **structural** | `media_player: 'off'` → calm empty state, never "playing" |
-| Charging / tyres | **hidden / dimmed** | absent/unavailable → tile hides or dims, never a fabricated value/`NaN` |
+| Charging / tires | **hidden / dimmed** | absent/unavailable → tile hides or dims, never a fabricated value/`NaN` |
 | Hero status | **stamped** | "Asleep · updated 47m ago"; falls back to wake affordance, never a fabricated time |
 
 Staleness copy uses `--tc-text-dim` (the freshness-honest tone), **never**
@@ -123,7 +123,7 @@ the max server stamp), never `Date.now()`.
 |---|---|---|
 | Whole card renders on asleep / 0-data / tesla_custom — no throw, no blank, no `NaN`, no false state | Vitest `audit-r6.test.ts` (sweep all panels) | ✅ automated |
 | Closures NEVER paints confident green "All closed" on an asleep car | Vitest + E2E `audit-r6` | ✅ automated |
-| Per-panel freshness/empty states (closures `unknown`, media `off`, location last-known, tyres no-data) | existing per-panel suites | ✅ automated (prior) |
+| Per-panel freshness/empty states (closures `unknown`, media `off`, location last-known, tires no-data) | existing per-panel suites | ✅ automated (prior) |
 | **"Staleness everywhere reads calm, not broken; nothing overstates"** whole-card | manual sweep against EXPERIENCE.md | **[HUMAN]** |
 
 ---

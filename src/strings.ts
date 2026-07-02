@@ -7,8 +7,8 @@
 // consistent and localizable later (English-first now).
 //
 // Voice is encoded AS the values (UX-DR18): fixed status terms verbatim,
-// sentence-case buttons ("Start charging," not Title Case / SHOUTING), British
-// "Tyres", honest staleness (never "Offline"). Do NOT reword on the move — these
+// sentence-case buttons ("Start charging," not Title Case / SHOUTING), American
+// "Tires", honest staleness (never "Offline"). Do NOT reword on the move — these
 // are the exact strings the components render today.
 //
 // OUT OF SCOPE (not here): entity-state values formatted by HA
@@ -33,14 +33,14 @@ export const STRINGS = {
     unlocked: 'Unlocked',
   },
 
-  // Tab / panel titles. British "Tyres" (UX-DR18). Shared by the card chrome
+  // Tab / panel titles. American "Tires" (UX-DR18). Shared by the card chrome
   // (tesla-card.ts) and the editor's default-panel picker.
   tabs: {
     climate: 'Climate',
     charging: 'Charging',
     energy: 'Energy',
     closures: 'Closures',
-    tyres: 'Tyres',
+    tires: 'Tires',
     location: 'Location',
     media: 'Media',
   },
@@ -203,8 +203,8 @@ export const STRINGS = {
     },
   },
 
-  tyres: {
-    title: 'Tyre pressure',
+  tires: {
+    title: 'Tire pressure',
     checkPressure: 'Check pressure',
     allNormal: 'All normal',
     // Freshness-honest summary (Story 5.8 / UX-DR18): shown instead of a confident
@@ -563,7 +563,7 @@ export const STRINGS = {
       announcePrefix: 'Preview',
     },
     // ── Tune controls (Story 9.13, D-9.13-1d) ─────────────────────────────────
-    // The "Tune" group: tyre-pressure units + thresholds, the panel/card hide
+    // The "Tune" group: tire-pressure units + thresholds, the panel/card hide
     // toggles (re-homed here from their old standalone checkboxes), and Powerwall
     // control visibility — each on its pinned `ha-selector` widget. British English,
     // calm/plain/honest voice (no hype). `announcePrefix` composes the polite
@@ -574,8 +574,8 @@ export const STRINGS = {
     // and the `tuneNumberRanges` bounds — no separate string key needed.
     tune: {
       heading: 'Tune',
-      tyreUnitsLabel: 'Tyre pressure units',
-      tyreUnitsAuto: 'Auto (sensor unit)',
+      tireUnitsLabel: 'Tire pressure units',
+      tireUnitsAuto: 'Auto (sensor unit)',
       recommendedLabel: 'Recommended pressure',
       marginLabel: 'Warn margin',
       hidePowerwallControls: 'Hide Powerwall controls',

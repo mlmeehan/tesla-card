@@ -17,10 +17,10 @@ interface Corner {
 }
 
 const CORNERS: Corner[] = [
-  { key: 'tire_fl', warn: 'tire_warn_fl', label: STRINGS.tyres.corners.fl, pos: 'fl' },
-  { key: 'tire_fr', warn: 'tire_warn_fr', label: STRINGS.tyres.corners.fr, pos: 'fr' },
-  { key: 'tire_rl', warn: 'tire_warn_rl', label: STRINGS.tyres.corners.rl, pos: 'rl' },
-  { key: 'tire_rr', warn: 'tire_warn_rr', label: STRINGS.tyres.corners.rr, pos: 'rr' },
+  { key: 'tire_fl', warn: 'tire_warn_fl', label: STRINGS.tires.corners.fl, pos: 'fl' },
+  { key: 'tire_fr', warn: 'tire_warn_fr', label: STRINGS.tires.corners.fr, pos: 'fr' },
+  { key: 'tire_rl', warn: 'tire_warn_rl', label: STRINGS.tires.corners.rl, pos: 'rl' },
+  { key: 'tire_rr', warn: 'tire_warn_rr', label: STRINGS.tires.corners.rr, pos: 'rr' },
 ];
 
 /**
@@ -42,7 +42,7 @@ const PSI_PER_BAR = 14.5038;
 
 /**
  * DISPLAY-ONLY unit conversion for a corner read-out (Story 9.13). `pref` is the
- * `config.tyres.units` display preference. ABSENT ⇒ the native value/unit verbatim,
+ * `config.tires.units` display preference. ABSENT ⇒ the native value/unit verbatim,
  * byte-for-byte today's render (SM-C4 / FR-33 zero-diff). When set, the native value
  * is converted to the chosen unit FOR DISPLAY ONLY (the low-pressure comparison still
  * runs in native unit upstream). An unrecognised native unit — or an absent value —
@@ -99,8 +99,8 @@ interface CornerView {
   ageHint: string | undefined;
 }
 
-@customElement('tc-panel-tyres')
-export class TcPanelTyres extends TcBase {
+@customElement('tc-panel-tires')
+export class TcPanelTires extends TcBase {
   /** Read one corner once (freshness + value + unit + TPMS), reused for both the
    *  baseline derivation and the per-corner view — no repeated `hass.states` walks. */
   private _read(c: Corner, now: number): CornerRead {
@@ -139,7 +139,7 @@ export class TcPanelTyres extends TcBase {
       read.value !== undefined &&
       recommended !== undefined &&
       read.value < recommended - margin;
-    const disp = displayPressure(read.value, read.unit, this.config.tyres?.units);
+    const disp = displayPressure(read.value, read.unit, this.config.tires?.units);
     return {
       c: read.c,
       value: disp.value,
@@ -160,7 +160,7 @@ export class TcPanelTyres extends TcBase {
           ${text}<span class="c-unit">${v.value !== undefined ? v.unit : ''}</span>
         </span>
         ${v.warn
-          ? html`<span class="c-warn">${icon(mdiAlertCircle, { size: 13 })} ${STRINGS.tyres.low}</span>`
+          ? html`<span class="c-warn">${icon(mdiAlertCircle, { size: 13 })} ${STRINGS.tires.low}</span>`
           : nothing}
         ${v.ageHint
           ? html`<span class="c-stale tc-stale-copy">${v.ageHint}</span>`
@@ -179,7 +179,7 @@ export class TcPanelTyres extends TcBase {
     // FRESH values (spec: "max of the four LIVE corner readings"): a stale
     // last-known reading is not confirmable, so it must NOT inflate the baseline and
     // false-trip a fresh, uniformly-lower corner (UX-DR18 — never assert off
-    // unconfirmable data). An explicit `config.tyres.recommended` overrides. ≤1
+    // unconfirmable data). An explicit `config.tires.recommended` overrides. ≤1
     // fresh ⇒ derived recommended is the lone value (no corner is `< itself − margin`)
     // ⇒ no computed warn — only TPMS.
     const freshVals = reads
@@ -191,8 +191,8 @@ export class TcPanelTyres extends TcBase {
       reads.find((x) => x.value !== undefined);
     const unitStr = unitSrc ? unitSrc.unit : '';
     const recommended =
-      this.config.tyres?.recommended ?? (freshVals.length >= 1 ? Math.max(...freshVals) : undefined);
-    const margin = this.config.tyres?.margin ?? defaultMargin(unitStr);
+      this.config.tires?.recommended ?? (freshVals.length >= 1 ? Math.max(...freshVals) : undefined);
+    const margin = this.config.tires?.margin ?? defaultMargin(unitStr);
 
     const views = reads.map((x) => this._view(x, now, recommended, margin));
 
@@ -205,17 +205,17 @@ export class TcPanelTyres extends TcBase {
     const anyStale = present_.some((v) => v.stale);
     const summaryTone = anyWarn ? 'warn' : !anyData ? '' : anyStale ? 'dim' : 'good';
     const summaryText = anyWarn
-      ? STRINGS.tyres.checkPressure
+      ? STRINGS.tires.checkPressure
       : !anyData
-        ? STRINGS.tyres.noData
+        ? STRINGS.tires.noData
         : anyStale
-          ? STRINGS.tyres.someUnconfirmed
-          : STRINGS.tyres.allNormal;
+          ? STRINGS.tires.someUnconfirmed
+          : STRINGS.tires.allNormal;
 
     return html`
       <section class="surface block">
         <div class="head">
-          <span class="label">${STRINGS.tyres.title}</span>
+          <span class="label">${STRINGS.tires.title}</span>
           <span class="summary ${summaryTone}">${summaryText}</span>
         </div>
 
@@ -371,6 +371,6 @@ export class TcPanelTyres extends TcBase {
 
 declare global {
   interface HTMLElementTagNameMap {
-    'tc-panel-tyres': TcPanelTyres;
+    'tc-panel-tires': TcPanelTires;
   }
 }

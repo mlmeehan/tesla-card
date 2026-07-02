@@ -215,7 +215,7 @@ describe('AC1 — shell renders one panel at a time (no hidden cross-panel focus
     // cross-panel focus trap; the per-panel a11y tests can't see this seam).
     expect(panelHost.children.length).toBe(1);
     const before = activePanelTag(el);
-    await clickTab(el, STRINGS.tabs.tyres);
+    await clickTab(el, STRINGS.tabs.tires);
     const after = activePanelTag(el);
     expect(after).not.toBe(before); // swapped, not stacked
     expect(panelHost.children.length).toBe(1); // still exactly one

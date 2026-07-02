@@ -211,7 +211,7 @@ export class TeslaEditorPage {
     return this.editor.locator(`.tune .tune-bool[data-key="${key}"]`);
   }
 
-  /** The tyre-units / threshold / Powerwall-visibility ha-selectors (inert in the demo). */
+  /** The tire-units / threshold / Powerwall-visibility ha-selectors (inert in the demo). */
   get tuneUnits(): Locator {
     return this.editor.locator('.tune .tune-units');
   }

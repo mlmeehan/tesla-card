@@ -60,7 +60,7 @@ export const ALL_PANELS = [
   'Climate',
   'Charging',
   'Closures',
-  'Tyres',
+  'Tires',
   'Location',
   'Media',
   'Energy',

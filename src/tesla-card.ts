@@ -33,7 +33,7 @@ import './components/panel-climate';
 import './components/panel-charging';
 import './components/panel-energy';
 import './components/panel-closures';
-import './components/panel-tyres';
+import './components/panel-tires';
 import './components/panel-location';
 import './components/panel-media';
 // Epic 6 — standalone ecosystem cards (Story 6.2 + Wall Connector in 6.3).
@@ -67,7 +67,7 @@ const PANELS: Tab[] = [
   { id: 'climate', name: STRINGS.tabs.climate, icon: mdiThermometer },
   { id: 'charging', name: STRINGS.tabs.charging, icon: mdiEvStation },
   { id: 'closures', name: STRINGS.tabs.closures, icon: mdiCarDoor },
-  { id: 'tyres', name: STRINGS.tabs.tyres, icon: mdiCarTireAlert },
+  { id: 'tires', name: STRINGS.tabs.tires, icon: mdiCarTireAlert },
   { id: 'location', name: STRINGS.tabs.location, icon: mdiMapMarkerRadius },
   { id: 'media', name: STRINGS.tabs.media, icon: mdiPlayCircleOutline },
 ];
@@ -275,8 +275,8 @@ export class TeslaCard extends LitElement implements LovelaceCard {
         ></tc-panel-energy>`;
       case 'closures':
         return html`<tc-panel-closures .hass=${this.hass} .config=${cfg}></tc-panel-closures>`;
-      case 'tyres':
-        return html`<tc-panel-tyres .hass=${this.hass} .config=${cfg}></tc-panel-tyres>`;
+      case 'tires':
+        return html`<tc-panel-tires .hass=${this.hass} .config=${cfg}></tc-panel-tires>`;
       case 'location':
         return html`<tc-panel-location .hass=${this.hass} .config=${cfg}></tc-panel-location>`;
       case 'media':

@@ -21,7 +21,7 @@
 // instant, so advancing the server reference (bumping battery_level's last_updated)
 // back-dates the location/odometer into stale/asleep — exactly how HA pushes a fresh
 // stamp on some entity while a sensor sits idle (mirrors src/data/freshness.test.ts
-// and panel-tyres.test.ts). Entity ids come from const.ts DEFAULT_ENTITIES (never
+// and panel-tires.test.ts). Entity ids come from const.ts DEFAULT_ENTITIES (never
 // inlined); a FRESH hass per swap. Read-only panel → no callService.
 import { afterEach, describe, expect, test } from 'vitest';
 import './panel-location';

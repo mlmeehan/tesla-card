@@ -123,7 +123,7 @@ test.describe('AC3 — freshness honesty: no false "closed" on an asleep car', (
 
 // ── AC4 — the whole card under the costly tesla_custom dialect ───────────────
 test.describe('AC4 — tesla_custom dialect renders the whole card cleanly', () => {
-  const PANELS = ['Climate', 'Charging', 'Closures', 'Tyres', 'Location', 'Media'] as const;
+  const PANELS = ['Climate', 'Charging', 'Closures', 'Tires', 'Location', 'Media'] as const;
 
   test('every panel opens under env=tesla_custom with no console error', async ({ demo }) => {
     await demo.open({ scenario: 'awake', env: 'tesla_custom' });

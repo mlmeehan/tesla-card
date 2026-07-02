@@ -4,7 +4,7 @@
 // asserted against the actual exported values, and the migration itself is
 // backed by a real corpus scan — not the Dev Agent Record's word.
 //   (a) fixed status terms exist verbatim and single-sourced (UX-DR18);
-//   (b) British "Tyres" is the label, and NO user-facing "Tires" survives in src/;
+//   (b) American "Tires" is the label, and NO British "Tyres" survives in src/;
 //   (c) button/command labels are sentence-case (first word capitalized, the
 //       rest lower — not Title-Cased multi-word);
 //   (d) the key copy-bearing components actually import from `./strings`
@@ -44,16 +44,17 @@ describe('centralized strings — voice contract (Story 2.5)', () => {
     });
   });
 
-  test('AC1: tab/panel label is British "Tyres"', () => {
-    expect(STRINGS.tabs.tyres).toBe('Tyres');
-    expect(STRINGS.tyres.title).toBe('Tyre pressure');
+  test('AC1: tab/panel label is American "Tires"', () => {
+    expect(STRINGS.tabs.tires).toBe('Tires');
+    expect(STRINGS.tires.title).toBe('Tire pressure');
   });
 
-  test('AC1: no user-facing "Tires" (American spelling) anywhere in src/', () => {
-    // The internal entity function-keys are `tire_*` (lower-case, singular) and
-    // are out of scope; the American plural "Tires" must never reach the user.
-    const offenders = srcFiles(SRC_DIR).filter((f) => /Tires/.test(readFileSync(f, 'utf8')));
-    expect(offenders, `found "Tires" in: ${offenders.join(', ')}`).toEqual([]);
+  test('AC1: no British "Tyres" spelling anywhere in src/', () => {
+    // The label is American "Tires" now; the British "Tyre"/"Tyres" spelling must
+    // never survive. The entity function-keys `tire_*` are already American and
+    // do not match this scan.
+    const offenders = srcFiles(SRC_DIR).filter((f) => /tyres?/i.test(readFileSync(f, 'utf8')));
+    expect(offenders, `found "Tyres" in: ${offenders.join(', ')}`).toEqual([]);
   });
 
   test('AC1: button/command labels are sentence-case (not Title-Cased multi-word)', () => {
@@ -91,7 +92,7 @@ describe('centralized strings — voice contract (Story 2.5)', () => {
       else if (node && typeof node === 'object') Object.values(node).forEach(walk);
     };
     walk(STRINGS);
-    const offenders = values.filter((v) => /\boffline\b/i.test(v) || /\bTires\b/.test(v));
+    const offenders = values.filter((v) => /\boffline\b/i.test(v) || /\bTyres?\b/.test(v));
     expect(offenders, `forbidden copy in STRINGS values: ${offenders.join(', ')}`).toEqual([]);
   });
 
@@ -199,14 +200,14 @@ describe('centralized strings — voice contract (Story 2.5)', () => {
     }
   });
 
-  test('Story 5.8: tyres panel gains the freshness-honest summary fragment', () => {
+  test('Story 5.8: tires panel gains the freshness-honest summary fragment', () => {
     // The honesty-first summary needs a fragment for "present but unconfirmable"
     // corners — surfaced instead of a confident "All normal" on stale data
     // (UX-DR18). Single-sourced here; the per-corner staleness stamp reuses
     // STRINGS.hero.updatedPrefix/ago/justNow (no duplicate age copy).
-    expect(STRINGS.tyres.someUnconfirmed).toBe('Some readings unconfirmed');
+    expect(STRINGS.tires.someUnconfirmed).toBe('Some readings unconfirmed');
     // Sentence-case (first word capitalized, the rest lower) like the other copy.
-    const words = STRINGS.tyres.someUnconfirmed.split(' ');
+    const words = STRINGS.tires.someUnconfirmed.split(' ');
     expect(words[0]).toMatch(/^[A-Z]/);
     for (const w of words.slice(1)) expect(w).toMatch(/^[a-z]/);
   });
@@ -280,7 +281,7 @@ describe('centralized strings — voice contract (Story 2.5)', () => {
       'components/panel-charging.ts',
       'components/panel-climate.ts',
       'components/panel-closures.ts',
-      'components/panel-tyres.ts',
+      'components/panel-tires.ts',
       'components/panel-media.ts',
       'components/panel-location.ts',
       'components/panel-energy.ts',

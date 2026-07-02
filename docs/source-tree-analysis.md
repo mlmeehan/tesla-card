@@ -99,7 +99,7 @@ tesla-card/                       # public, standalone git repo
     │   ├── panel-charging.ts     #   tc-panel-charging
     │   ├── panel-climate.ts      #   tc-panel-climate
     │   ├── panel-closures.ts     #   tc-panel-closures (non-optimistic; dialect cover/lock)
-    │   ├── panel-tyres.ts        #   tc-panel-tyres (fresh-corner-subset warning; psi/bar/kPa display unit)
+    │   ├── panel-tires.ts        #   tc-panel-tires (fresh-corner-subset warning; psi/bar/kPa display unit)
     │   ├── panel-location.ts     #   tc-panel-location (sanctioned map gradient)
     │   ├── panel-media.ts        #   tc-panel-media (optimistic; no age stamp)
     │   ├── panel-energy.ts       #   tc-panel-energy (reads RAW sensor signs; incl. generator tile)

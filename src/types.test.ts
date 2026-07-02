@@ -18,7 +18,7 @@ import type {
   AppearanceConfig,
   PanelId,
   EnergyConfig,
-  TyresConfig,
+  TiresConfig,
   BodyLayers,
   NodeCustomization,
   InstanceSpec,
@@ -61,7 +61,7 @@ describe('AC1 — types.ts is the PUBLIC TeslaCardConfig surface only (E9/AR-14)
         'PanelId',
         'SceneRow',
         'TeslaCardConfig',
-        'TyresConfig',
+        'TiresConfig',
       ].sort()
     );
   });
@@ -92,15 +92,15 @@ describe('AC1 — types.ts is the PUBLIC TeslaCardConfig surface only (E9/AR-14)
 });
 
 describe('AC2 — the D2/D3/D6 additions are one reviewed, coherent delta', () => {
-  test('D2 integration, D3 tyres, D6 body/paint/image are all on the public surface', () => {
+  test('D2 integration, D3 tires, D6 body/paint/image are all on the public surface', () => {
     expectTypeOf<TeslaCardConfig>().toHaveProperty('integration'); // D2 (Epic 1)
-    expectTypeOf<TeslaCardConfig>().toHaveProperty('tyres'); // D3 threshold-overrides (Epic 5)
+    expectTypeOf<TeslaCardConfig>().toHaveProperty('tires'); // D3 threshold-overrides (Epic 5)
     expectTypeOf<TeslaCardConfig>().toHaveProperty('body'); // D6 layer-pack ref (Epic 3)
     expectTypeOf<TeslaCardConfig>().toHaveProperty('paint'); // D6
     expectTypeOf<TeslaCardConfig>().toHaveProperty('image'); // D6
     // Sub-shapes stay part of the public config surface (not relocated).
     expectTypeOf<TeslaCardConfig['energy']>().toEqualTypeOf<EnergyConfig | undefined>();
-    expectTypeOf<TeslaCardConfig['tyres']>().toEqualTypeOf<TyresConfig | undefined>();
+    expectTypeOf<TeslaCardConfig['tires']>().toEqualTypeOf<TiresConfig | undefined>();
     expectTypeOf<TeslaCardConfig['body']>().toEqualTypeOf<BodyLayers | undefined>();
     expectTypeOf<TeslaCardConfig['default_panel']>().toEqualTypeOf<PanelId | undefined>();
   });

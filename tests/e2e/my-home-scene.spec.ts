@@ -926,7 +926,7 @@ test.describe('tc-my-home Scene — Story 11.4 embedded vehicle honors configure
     page,
   }) => {
     // Set on the My-Home Scene config; it spreads into the embed (my-home.ts:1164).
-    await mountScene(page, { config: { hide_commands: true, default_panel: 'tyres' } });
+    await mountScene(page, { config: { hide_commands: true, default_panel: 'tires' } });
     await waitForTrunk(page);
 
     const card = vehCell(page).locator('tesla-card');
@@ -935,8 +935,8 @@ test.describe('tc-my-home Scene — Story 11.4 embedded vehicle honors configure
     await expect(card.locator('tc-commands')).toHaveCount(0);
     await expect(card.locator('.tabs')).toHaveCount(1);
     await expect(card.locator('tc-quick-actions')).toHaveCount(1);
-    // default_panel:'tyres' opens the tyres panel in the embed (not the charging default).
-    await expect(card.locator('tc-panel-tyres')).toHaveCount(1);
+    // default_panel:'tires' opens the tires panel in the embed (not the charging default).
+    await expect(card.locator('tc-panel-tires')).toHaveCount(1);
     await expect(card.locator('tc-panel-charging')).toHaveCount(0);
   });
 

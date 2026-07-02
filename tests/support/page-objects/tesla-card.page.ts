@@ -12,7 +12,7 @@ export type PanelName =
   | 'Climate'
   | 'Charging'
   | 'Closures'
-  | 'Tyres'
+  | 'Tires'
   | 'Location'
   | 'Media'
   | 'Energy';
@@ -183,30 +183,30 @@ export class TeslaCardPage {
     return this.chargingPanel.locator('.cstatus');
   }
 
-  // ── Tyres panel (Story 5.8) ────────────────────────────────────────────────
-  /** The tyres panel root (`tc-panel-tyres`) — rendered only when the Tyres tab is open. */
-  get tyresPanel(): Locator {
-    return this.card.locator('tc-panel-tyres');
+  // ── Tires panel (Story 5.8) ────────────────────────────────────────────────
+  /** The tires panel root (`tc-panel-tires`) — rendered only when the Tires tab is open. */
+  get tiresPanel(): Locator {
+    return this.card.locator('tc-panel-tires');
   }
 
   /** All four corner cards in render order (fl, fr, rl, rr). */
-  get tyreCorners(): Locator {
-    return this.tyresPanel.locator('.corner');
+  get tireCorners(): Locator {
+    return this.tiresPanel.locator('.corner');
   }
 
   /** A single corner card by position ('fl' | 'fr' | 'rl' | 'rr'). */
-  tyreCorner(pos: 'fl' | 'fr' | 'rl' | 'rr'): Locator {
-    return this.tyresPanel.locator(`.corner.${pos}`);
+  tireCorner(pos: 'fl' | 'fr' | 'rl' | 'rr'): Locator {
+    return this.tiresPanel.locator(`.corner.${pos}`);
   }
 
   /** The freshness-honest head summary ("Check pressure" / "All normal" / "No data"). */
-  get tyresSummary(): Locator {
-    return this.tyresPanel.locator('.summary');
+  get tiresSummary(): Locator {
+    return this.tiresPanel.locator('.summary');
   }
 
   /** Every warned-corner "Low" chip (icon + text — the colour-not-only-signal cue). */
-  get tyreWarnChips(): Locator {
-    return this.tyresPanel.locator('.c-warn');
+  get tireWarnChips(): Locator {
+    return this.tiresPanel.locator('.c-warn');
   }
 
   // ── Location panel (Story 5.9) ─────────────────────────────────────────────
