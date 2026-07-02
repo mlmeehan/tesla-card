@@ -27,9 +27,9 @@ composed **"My Home" energy Scene**, all from the same bundle.
 
 Three capability arcs define the current shape:
 
-- **Live, honest energy flow.** A single sign/unit convention and a balance authority drive both the
-  Hero charge overlay and the Scene's Gateway bus, so the visuals never disagree with the numbers and
-  never animate a false flow (Epics 4/6/8).
+- **Live, honest energy flow.** One sign/unit convention and a single balance authority drive the
+  Scene's Gateway bus, while the Hero's charge halo reads the discrete `charging_status` entity — a test
+  asserts the two agree, so the visuals never disagree with the numbers or animate a false flow (Epics 4/6/8).
 - **No-YAML Enhanced Configuration (Epic 9 / the 1.0.0 net-new).** A ~2,650-line HA-native GUI editor
   delivers a guided first-run wizard + a normal form for theming, per-entity overrides, and "My Home"
   Scene customization (hide / reorder / cross-row promote / duplicate nodes), plus a brand-new

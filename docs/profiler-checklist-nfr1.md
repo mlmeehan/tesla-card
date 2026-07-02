@@ -105,8 +105,8 @@ rung; **keep the data** (arrowheads + kW labels survive) at every rung:
 2. **Cap simultaneously-animated edges** — clamp the **shared** `edgeVisual`
    width/`durSec` output (the seam is noted at `flow/renderer.ts` / `my-home.ts`).
    **Never fork the kW→visual formula** (FR-33 — the flow engine is frozen).
-3. **Freeze the weather vignette first** — it already freezes via the reduced-motion
-   path; reuse that as the lowest-cost rung.
+3. **Freeze the weather vignette** — it already freezes via the reduced-motion
+   path, so reusing that makes it the cheapest rung to wire.
 
 Stop at the first rung that restores the budget. Wire only the rung(s) the
 measurement actually demands.
