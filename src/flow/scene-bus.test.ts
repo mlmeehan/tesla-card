@@ -14,7 +14,6 @@ import { describe, expect, test, vi } from 'vitest';
 import { html, render } from 'lit';
 import { SceneBusRenderer, sceneBusStyles, type RectLike } from './scene-bus';
 import { edgeVisual, edgeVisuals, NODE_COLOR, NODE_ICON } from './renderer';
-import { mdiGeneratorStationary } from '@mdi/js';
 import { bindFlowModel, ENERGY_ROLES } from './binding';
 import { buildFlowModel, BUS_NODE_ID, type FlowInput, type FlowModel } from './model';
 import { STRINGS } from '../strings';
@@ -203,40 +202,9 @@ describe('R1 — the renderer consumes the shared edge-visual math UNFORKED (AC3
   });
 });
 
-// ═══════════════════════════════════════════════════════════════════════════
-// RENDERER-CONTRACT VALUE PINS (Story 12.1 review patch). These literal-value and
-// formula assertions previously lived in the now-deleted `flow/hero-svg.test.ts`
-// (the de-facto test home for `flow/renderer.ts`, which has no `renderer.test.ts`).
-// They are re-homed here so the absolute constants stay pinned: TypeScript checks
-// the `Record<EnergyRole, …>` KEYS, not the VALUES — without these, a wrong copper
-// hex / Scene icon / edgeVisual coefficient would ship green. The R1 proof above is
-// self-referential (renderer output vs `edgeVisual()`'s own return), so it cannot
-// catch a regression in the formula itself; these absolute pins can.
-// ═══════════════════════════════════════════════════════════════════════════
-describe('renderer-contract value pins (re-homed from the deleted hero-svg.test.ts)', () => {
-  test('edgeVisual derives width/duration from |kW| with the canonical coefficients + 0.5 clamp', () => {
-    const cases: Array<{ kW: number; width: number; durSec: number }> = [
-      { kW: 0, width: 1.6, durSec: 1.7 }, // no kW → thinnest + slowest
-      { kW: 1, width: 1.6 + 1 * 0.55, durSec: 1.7 - 1 * 0.16 },
-      { kW: 5, width: 1.6 + 5 * 0.55, durSec: 1.7 - 5 * 0.16 },
-      { kW: 20, width: 1.6 + 20 * 0.55, durSec: 0.5 }, // dur clamped at 0.5 (1.7−3.2 < 0.5)
-    ];
-    for (const c of cases) {
-      const v = edgeVisual(c.kW);
-      expect(v.width).toBeCloseTo(c.width, 9);
-      expect(v.durSec).toBeCloseTo(c.durSec, 9);
-    }
-  });
-
-  test('edgeVisual is sign-agnostic (|kW|-driven): edgeVisual(-5) === edgeVisual(5)', () => {
-    expect(edgeVisual(-5)).toEqual(edgeVisual(5));
-  });
-
-  test('the generator role pins copper NODE_COLOR + the mdiGeneratorStationary icon', () => {
-    expect(NODE_COLOR.generator).toBe('var(--tc-copper, #c2855b)');
-    expect(NODE_ICON.generator).toBe(mdiGeneratorStationary);
-  });
-});
+// (Absolute renderer value pins — edgeVisual coefficients, NODE_COLOR/NODE_ICON
+// literals — live in `renderer.test.ts`, their authoritative home. This file keeps
+// only the R1 integration proof: renderer output vs `edgeVisual()`'s own return.)
 
 // ───────────────────────────────────────────────────────────────────────────
 // AC4 — SCOPE GUARD: the proof uses STATIC stub rects only. It does NOT measure live
