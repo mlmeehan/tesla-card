@@ -1,54 +1,51 @@
 # Tesla Card
 
 A Tesla-app-inspired vehicle card for Home Assistant, built for the
-**Tesla Fleet** / **Teslemetry** integrations. Centred car render, circular
-quick-action controls, and purpose-built detail panels — a tappable
-closures diagram, live charging controls, climate with seat heaters, tyre
-pressures, a map, the media player, and — when an energy site is detected —
-a live energy-flow diagram. Set it up with **zero YAML** through the built-in
-visual editor, and compose your whole home-energy picture with the matching
-**My Home** scene.
+**Tesla Fleet** / **Teslemetry** integrations. A centred car render, circular
+quick-action controls, and purpose-built detail panels for charging, climate,
+closures, tyres, location, and media. Set it up with **zero YAML** through the
+built-in visual editor, and compose your whole home-energy picture with the
+matching **My Home** scene.
 
 ![Tesla Card — charging](docs/screenshot-charging.png)
 
 ## Features
 
 - **Centred hero** — your car render front-and-centre with a live battery bar,
-  charge-limit marker, charging shimmer, and a status line (*Charging · 1h 30m
-  to 80%*, *Parked · Locked*, *Driving*, *Asleep*).
+  charge-limit marker, charging shimmer, and a state-aware status line.
 - **Quick actions** — circular toggles for lock, climate, charge port, frunk,
-  trunk, and sentry, each lighting up in its own accent colour.
+  trunk, and sentry, each in its own accent colour.
 - **Closures diagram** — a tappable top-down schematic for frunk, trunk,
-  windows, charge port, and doors, instead of a wall of identical buttons.
+  windows, charge port, and doors.
 - **Charging** — battery summary, start/stop, draggable charge-limit and
-  charge-current sliders, plus power / rate / energy / time-to-full / voltage.
+  charge-current sliders, plus power, rate, energy, time-to-full, and voltage.
 - **Energy** — an auto-appearing power-flow diagram with status tiles when a
-  Tesla **Powerwall** / **Wall Connector** (and an optional **generator**) is
-  detected — see [Energy panel](#energy-panel).
+  **Powerwall** / **Wall Connector** (and optional **generator**) is detected —
+  see [Energy panel](#energy-panel).
 - **Climate** — temperature stepper, per-seat heater cyclers (Off→Low→Med→High),
   steering-wheel heater, defrost, and cabin-overheat protection.
-- **Tyres** — pressures at each corner of the car with low-pressure warnings,
-  shown in **psi or bar** to taste.
+- **Tyres** — pressure at each corner with low-pressure warnings, in **psi or
+  bar** to taste.
 - **Location** — embedded OpenStreetMap with odometer, speed, power, and live
   ETA when a route is active.
 - **Media** — now-playing, transport, and a volume slider.
-- **No-YAML visual editor** — a guided first-run setup wizard plus a full GUI
-  config surface: confirm or remap any entity, pick a paint colour and a
-  light/dark theme, choose units, and lay out the My Home scene — all without
-  touching YAML — see [Visual editor & guided setup](#visual-editor--guided-setup).
+- **No-YAML visual editor** — a guided first-run wizard plus a full GUI config
+  surface: confirm or remap entities, pick paint and a light/dark theme, choose
+  units, and lay out the My Home scene — see
+  [Visual editor & guided setup](#visual-editor--guided-setup).
 - **Make it yours** — a card-only light/dark theme override and a paint-swatch
   picker, with a live preview as you choose — see [Theming](#theming).
 - **Graceful asleep state** — when the vehicle is offline the card dims rather
   than showing a wall of *Unknown*.
 - **Built-in car render** — a clean, recolorable EV illustration so a zero-config
   card looks right immediately; swap in your own `image:` or a layered `body:`
-  render whenever you like — see [Recolorable car body](#recolorable-car-body).
+  render — see [Recolorable car body](#recolorable-car-body).
 - **Zero entity config** — auto-detects your Tesla and resolves every entity by
   its stable function-name, so it works whatever your vehicle is called; every
   key stays overridable — see [Entity resolution](#entity-resolution-automatic).
 - **Private by design** — no telemetry, no analytics, no phone-home; all traffic
-  rides your Home Assistant's own connection, enforced by a merge-blocking CI
-  gate — see [Privacy](docs/privacy.md).
+  rides your Home Assistant's own connection, enforced by a CI gate — see
+  [Privacy](docs/privacy.md).
 
 ## Screenshots
 
@@ -67,12 +64,6 @@ visual editor, and compose your whole home-energy picture with the matching
 - The **Fleet / energy** features (live charging, the My Home scene, Powerwall
   controls) effectively need **2024.8+** with the `tesla_fleet` (or Teslemetry)
   integration providing the entities.
-
-> The GUI editor uses Home Assistant's built-in `ha-form`/`ha-selector` components.
-> These are not part of a guaranteed-stable public API; the editor is verified
-> against HA 2024.4+ and may need updates if HA changes these internals. (This is
-> an API-stability caveat, not a version cut-off — every widget the editor uses
-> predates the 2024.4.0 floor.)
 
 ## Installation
 
@@ -136,22 +127,28 @@ pencil*), and the editor walks you through everything.
 
 ![Guided setup wizard](docs/screenshot-editor.png)
 
+> The editor uses Home Assistant's built-in `ha-form`/`ha-selector` components.
+> These are not part of a guaranteed-stable public API; the editor is verified
+> against HA 2024.4+ and may need updates if HA changes these internals. (This is
+> an API-stability caveat, not a version cut-off — every widget the editor uses
+> predates the 2024.4.0 floor.)
+
 **First-run guided setup.** A fresh card opens a short, skippable wizard:
 
 1. **Detect** — finds your Tesla (and any Powerwall / Wall Connector / generator)
    automatically. Nothing found? Map entities by hand right here — it never
    dead-ends.
-2. **Confirm** — every resolved entity is listed with a live status marker
-   (✓ online · ⚠ unavailable · ⚠ no data yet · — not found), so you can spot and
-   remap a miss before it matters.
-3. **Appearance** — pick a paint colour from the swatch grid, choose Auto / Light
-   / Dark, and set the default panel, with a live card preview.
-4. **Tune** — psi-or-bar tyre units and low-pressure thresholds, which sections
-   to show, and whether to surface the Powerwall write-controls.
-5. **Finish** — done. Re-run the wizard any time from the normal editor.
+2. **Confirm** — every resolved entity, with a live status marker
+   (✓ online · ⚠ unavailable · ⚠ no data yet · — not found), so you spot and
+   remap a miss early.
+3. **Appearance** — paint from the swatch grid, Auto / Light / Dark, and the
+   default panel, with a live card preview.
+4. **Tune** — psi-or-bar tyre units and thresholds, which sections to show, and
+   whether to surface the Powerwall write-controls.
+5. **Finish** — done; re-run the wizard any time from the normal editor.
 
-Each step saves as you go, so closing the editor, refreshing the browser, or
-hopping to another device **resumes exactly where you left off**.
+Each step saves as you go, so closing the editor, refreshing, or hopping to
+another device **resumes exactly where you left off**.
 
 **Everyday editing.** An already-configured card opens straight to the normal
 form: the discovery summary (with the same live status markers and an
@@ -364,12 +361,12 @@ out of the diagram.
 
 ## My Home scene
 
-If you run a **Powerwall**, **Wall Connector** and/or **generator**, a second,
-standalone card — **`tc-my-home`** — composes your whole home-energy picture into
-one view: Solar, Powerwall, Grid, Home, Wall Connector and (when present)
-Generator cards laid out in two rows, with your car joining the load row, all tied
-together by a live **Gateway bus** that shows power flowing between them. A summary
-ribbon leads with how *self-powered* your home is right now.
+The same Powerwall / Wall Connector / generator hardware also powers a second,
+**standalone** card — **`tc-my-home`** — that composes your whole home-energy
+picture into one view: Solar, Powerwall, Grid, Home, Wall Connector and (when
+present) Generator cards laid out in two rows, with your car joining the load row,
+all tied together by a live **Gateway bus** that shows power flowing between them.
+A summary ribbon leads with how *self-powered* your home is right now.
 
 ![My Home scene](docs/screenshot-my-home.png)
 
@@ -440,18 +437,10 @@ npm run test:e2e   # Playwright end-to-end tests
 card against a mock `hass` object (awake / charging and asleep scenarios) with no
 Home Assistant required, handy for visual work. (`npm run build` then
 `npm run serve:demo` serves the built bundle at `http://127.0.0.1:4173/demo/`.)
-URL params:
-
-- `?panel=energy` (or `climate`, `closures`, …) — open a panel directly.
-- `?scenario=asleep` — the offline/dimmed state.
-- `?editor=1` — open the GUI editor; `?setup=1` — open the guided setup wizard.
-- `?env=renamed` — re-prefix the vehicle entities (`my_tesla_*`) to prove
-  name-based resolution.
-- `?paint=Deep%20Blue` (or `%232f6ab0`) — tint the built-in EV render live.
-- `?image=1` — show a custom flat `<img>` instead of the built-in render.
-- `?recolor=1&paint=Deep%20Blue` — exercise the photoreal recolorable body
-  (needs your own layers in `demo/local/`, which is gitignored).
-- `?colorentity=blue` — drive the paint from a mock colour entity.
+The harness exposes scenario and mode URL params (`?panel=`, `?scenario=`,
+`?editor=`, `?env=`, `?paint=`, `?recolor=`, …) — see the full contract, plus the
+rest of the build/test/release workflow, in the
+**[Development Guide](docs/development-guide.md)**.
 
 ## License
 
