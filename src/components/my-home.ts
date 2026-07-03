@@ -99,6 +99,36 @@ const SCENE_TRACK_MAX_PX = 560;
  *  overflow sub-row centres on a near-row channel at `(trackWidth + SCENE_BUS_GAP_PX) / 2`. */
 const SCENE_BUS_GAP_PX = 80;
 
+/** Story 13.1 (D-RL-1, DSD-1): the fixed quarter-arc corner radius (px) of a ROUTED
+ *  overflow leg's elbows — calm, matching the card `rounded.xl` language, never a hard 90°.
+ *  The ONLY fixed constant in the routed geometry: every other coordinate is derived from
+ *  the live channel/anchor geometry so the path scales with the fluid track (AC2). */
+const LEG_ELBOW_R = 8;
+
+/**
+ * Story 13.1 — the per-leg render plan for an overflow card's bus leg (D-RL-1).
+ * `straight` keeps the single vertical `<line>` (byte-identical to Stories 8.6/9.7)
+ * but pins its along-axis `x` to the ANALYTICALLY-derived channel centre (from the
+ * PRIMARY sub-row anchors, never the possibly-stale overflow-card anchor — DSD-2/AC3),
+ * so leg and card agree by construction and the post-mount-widen stale-anchor defect
+ * cannot recur. `route` replaces it with an orthogonal `<path>` that drops into the
+ * inter-sub-row gap, hops to a claimed clear channel, and drops to the trunk (AC2/AC4).
+ */
+type LegPlan =
+  | { kind: 'straight'; x: number }
+  | {
+      kind: 'route';
+      d: string;
+      /** the overflow card's near-edge tap origin (channel centre, card end) */
+      start: { x: number; y: number };
+      /** the trunk tap (claimed channel x, trunk y) */
+      end: { x: number; y: number };
+      /** the horizontal-hop y (in the clear inter-sub-row gap) */
+      gapY: number;
+      /** +1 when the trunk is below the card (source band), -1 when above (load band) */
+      dir: number;
+    };
+
 /**
  * The Scene's two LAYOUT rows (Story 6.6/6.7) — a fixed role partition, NOT the
  * dynamic net-sign source/load (a Powerwall discharging still sits in the top
@@ -1541,10 +1571,272 @@ export class TcMyHome extends LitElement implements LovelaceCard {
   }
 
   /**
+   * Story 13.1 (D-RL-1) — the per-overflow-leg render plans for the WRAPPED bands.
+   * HORIZONTAL bus + wrapped band ONLY (the ≤540px phone reflow stacks single-column with
+   * no channel offset, so there is no overflow leg to route — mirrors the `.long` horiz-gate).
+   * For each overflow card (the cells past {@link WRAP_MAX_PER_ROW} in a band) it:
+   *   1. derives the leg's along-axis x ANALYTICALLY as the card's channel centre, from the
+   *      PRIMARY sub-row anchors + the CSS `(track+80)/2` pitch — NOT the overflow card's own
+   *      (post-mount-widen-stale) measured centre (DSD-2/AC3). Leg and card agree by
+   *      construction, so the stale-anchor defect the README shot exposed cannot recur. (The
+   *      primary sub-row does NOT move on the `--subrow-offset`/`--scene-track` publish that
+   *      repositions only the overflow row, so its anchors are the current, non-stale side.)
+   *   2. tests whether a straight vertical drop at that x would intersect ANY other card box
+   *      in the band (primary sub-row AND sibling overflow cards). Clear ⇒ a `straight` plan
+   *      (byte-identical `<line>`, just re-pinned x). Blocked ⇒ a `route` plan: drop into the
+   *      inter-sub-row gap, hop to the nearest CLAIMED clear channel, drop to the trunk (AC2).
+   * Lane claiming (AC4) is deterministic: blocked legs are processed in ascending tap-x order,
+   * each greedily claiming its nearest still-unclaimed clear channel (between-primary gaps,
+   * then the band outer edges), ties broken toward the outer edge. A leg with no unclaimed
+   * lane falls back to a straight drop (never an overlapping route) — unreachable under the
+   * current WRAP caps (≤3 blocked legs vs ≥4 lanes), a defensive guard only.
+   */
+  private _overflowLegPlans(
+    cfg: TeslaCardConfig,
+    anchors: Readonly<Record<string, RectLike>>,
+    cross: number
+  ): Map<string, LegPlan> {
+    const plans = new Map<string, LegPlan>();
+    const R = LEG_ELBOW_R;
+    const cX = (r: RectLike): number => r.left + r.width / 2;
+    const cY = (r: RectLike): number => r.top + r.height / 2;
+    const rightOf = (r: RectLike): number => r.left + r.width;
+    const bottomOf = (r: RectLike): number => r.top + r.height;
+    // A vertical segment at `x` over [y0,y1] pierces rect `r`'s BODY (strict — a touch at an
+    // edge is not a crossing; the 80px channels leave the true midpoint 40px clear each side).
+    const piercesVert = (x: number, y0: number, y1: number, r: RectLike): boolean =>
+      x > r.left && x < rightOf(r) && Math.max(y0, y1) > r.top && Math.min(y0, y1) < bottomOf(r);
+    // The mirror for the HORIZONTAL hop: a segment at `y` over [x0,x1] pierces `r`'s body. A
+    // routed leg's hop was never clearance-tested (only its trunk-approach drop was), so a card
+    // straddling the gap could be crossed by the hop — this closes that gap (AC2).
+    const piercesHoriz = (y: number, x0: number, x1: number, r: RectLike): boolean =>
+      y > r.top && y < bottomOf(r) && Math.max(x0, x1) > r.left && Math.min(x0, x1) < rightOf(r);
+
+    const { source, load } = this._orderedRows(cfg);
+    for (const bandCells of [source, load]) {
+      const { visible } = this._clampBand(bandCells);
+      if (visible.length <= WRAP_MAX_PER_ROW) continue; // no wrap ⇒ no overflow leg
+      const primaryCells = visible.slice(0, WRAP_MAX_PER_ROW);
+      const overflowCells = visible.slice(WRAP_MAX_PER_ROW);
+      // Primary anchors L→R (the CURRENT, non-stale side).
+      const primary = primaryCells
+        .map((c) => anchors[c.id])
+        .filter((r): r is RectLike => !!r)
+        .sort((a, b) => cX(a) - cX(b));
+      if (primary.length < 2) continue; // need ≥2 primaries to derive the channel pitch
+      const pCentres = primary.map(cX);
+      const pitch = (pCentres[pCentres.length - 1] - pCentres[0]) / (pCentres.length - 1);
+      // Every card box in the band (obstacles for the clearance test — incl. sibling overflow).
+      const bandRects = visible.map((c) => anchors[c.id]).filter((r): r is RectLike => !!r);
+      // The clear vertical LANES a routed leg may drop through: the between-primary channel
+      // centres (the 80px gaps — clear by construction) then the band's always-clear outer
+      // edges (half a pitch beyond the outermost card).
+      const betweenLanes = pCentres.slice(0, -1).map((c, j) => (c + pCentres[j + 1]) / 2);
+      const outerLanes = [
+        Math.min(...primary.map((r) => r.left)) - pitch / 2,
+        Math.max(...primary.map(rightOf)) + pitch / 2,
+      ];
+      const bandCentre = (pCentres[0] + pCentres[pCentres.length - 1]) / 2;
+
+      // Pass 1: classify each overflow leg straight-vs-blocked (deferring the route build so
+      // lane claiming sees every blocked tap-x at once).
+      type Blocked = { id: string; startX: number; nearY: number; dir: number; self: RectLike };
+      const blocked: Blocked[] = [];
+      overflowCells.forEach((c, i) => {
+        const self = anchors[c.id];
+        if (!self) return; // no anchor ⇒ leave to _legs' measured straight fallback
+        // The channel centre this overflow card sits on = primary[0] + half a pitch + i pitches
+        // (the CSS `padding-left:(track+80)/2` + `i·(track+gap)`), derived from PRIMARY centres.
+        const startX = pCentres[0] + pitch / 2 + i * pitch;
+        const dir = cross > cY(self) ? 1 : -1; // +1 trunk below (source) / -1 above (load)
+        const nearY = dir > 0 ? bottomOf(self) : self.top;
+        const clear = !bandRects.some((r) => r !== self && piercesVert(startX, nearY, cross, r));
+        if (clear) plans.set(c.id, { kind: 'straight', x: startX });
+        else blocked.push({ id: c.id, startX, nearY, dir, self });
+      });
+      if (!blocked.length) continue;
+
+      // Pass 2: deterministic lane claim — ascending tap-x; nearest unclaimed lane that yields a
+      // FULLY-clear routed path (initial drop + horizontal hop + trunk-approach drop all clear,
+      // AC2); ties toward the band outer edge (the lane furthest from the band centre).
+      blocked.sort((a, b) => a.startX - b.startX);
+      const lanes = [...betweenLanes, ...outerLanes];
+      const claimed = new Set<number>();
+      for (const b of blocked) {
+        // The hop runs in the clear band between this card's near edge and the nearest obstacle
+        // TOWARD the trunk: the primary sub-row for a SOURCE band (primary sits between the
+        // overflow card and the trunk), but the TRUNK itself for a LOAD band — `.subrow.overflow`
+        // is `order:-1`, so on a load band the overflow row is on the TRUNK side and no primary
+        // is between it and the trunk. The old `max(primary.bottom)` put `gapY` mid-band and
+        // doubled a routed load leg back through the cards; `cross` keeps it monotonic.
+        const facing = b.dir > 0 ? Math.min(...primary.map((r) => r.top)) : cross;
+        const gapY = (b.nearY + facing) / 2;
+        // The initial drop (near edge → gap) is at the card's own channel, lane-independent; if a
+        // card already straddles it, no lane can clear (fall through to the last-resort straight).
+        const initialClear = !bandRects.some(
+          (r) => r !== b.self && piercesVert(b.startX, b.nearY, gapY, r)
+        );
+        // A candidate lane is usable iff (a) it is ≥2R from the tap-x (room for a clean elbow),
+        // (b) its horizontal HOP at gapY clears every card, and (c) its trunk-approach DROP clears
+        // every card — the hop check is NEW (it was previously unverified), so a non-uniform or
+        // pathological layout can no longer route THROUGH a card (AC2).
+        const laneClears = (lane: number): boolean =>
+          initialClear &&
+          Math.abs(lane - b.startX) >= 2 * R &&
+          !bandRects.some((r) => piercesHoriz(gapY, b.startX, lane, r)) &&
+          !bandRects.some((r) => piercesVert(lane, gapY, cross, r));
+        const laneKey = (lane: number): number =>
+          Math.abs(lane - b.startX) * 1000 - Math.abs(lane - bandCentre);
+        // Prefer the nearest UNCLAIMED clearing lane (lane discipline, AC4).
+        let best: number | undefined;
+        let bestKey = Infinity;
+        for (const lane of lanes) {
+          if (claimed.has(lane) || !laneClears(lane)) continue;
+          const key = laneKey(lane);
+          if (key < bestKey) {
+            bestKey = key;
+            best = lane;
+          }
+        }
+        // Overrun (every clearing lane already claimed) ⇒ fall back to the nearest clearing lane
+        // even if CLAIMED. A shared bus channel is strictly less broken than a leg drawn through a
+        // card body — the story's load-bearing "never through a card" invariant wins over
+        // lane-uniqueness in the degenerate overrun (reachable only via Story 9.8 "Show all").
+        if (best === undefined) {
+          for (const lane of lanes) {
+            if (!laneClears(lane)) continue;
+            const key = laneKey(lane);
+            if (key < bestKey) {
+              bestKey = key;
+              best = lane;
+            }
+          }
+        }
+        // Only a truly unroutable geometry (NO lane clears at all — e.g. a card straddling the
+        // initial drop) falls back to a straight drop: the honest last resort when the orthogonal
+        // model cannot avoid every card. This no longer fires for the merely-degenerate near-self
+        // hop (those lanes are filtered by the ≥2R gate above, not drawn straight through a blocker).
+        if (best === undefined) {
+          plans.set(b.id, { kind: 'straight', x: b.startX });
+          continue;
+        }
+        claimed.add(best);
+        const targetX = best;
+        const dirH = targetX >= b.startX ? 1 : -1;
+        const d =
+          `M ${b.startX} ${b.nearY} ` +
+          `L ${b.startX} ${gapY - b.dir * R} ` +
+          `Q ${b.startX} ${gapY} ${b.startX + dirH * R} ${gapY} ` +
+          `L ${targetX - dirH * R} ${gapY} ` +
+          `Q ${targetX} ${gapY} ${targetX} ${gapY + b.dir * R} ` +
+          `L ${targetX} ${cross}`;
+        plans.set(b.id, {
+          kind: 'route',
+          d,
+          start: { x: b.startX, y: b.nearY },
+          end: { x: targetX, y: cross },
+          gapY,
+          dir: b.dir,
+        });
+      }
+    }
+    return plans;
+  }
+
+  /**
+   * Story 13.1 — render one ROUTED overflow leg (its straight drop would cross a card). A
+   * `<path>` polyline with 8px elbows, decorated per DSD-4/5: the identity token re-anchors
+   * to the TAP (trunk end) so all identities line up left→right regardless of the bend; a
+   * NEW routed-only arrowhead sits on the final (trunk-approach) segment (reusing the trunk's
+   * `_arrow`); the kW pill seats on the longest segment (de-colliding with the arrowhead);
+   * and the animated `sb-flow` dash follows the FULL polyline (`fill:none` INLINE on both
+   * paths, never on the shared `.gw-leg-base` rule, so the straight `<line>` stays AC1-safe).
+   */
+  private _routedLeg(
+    n: FlowModel['nodes'][number],
+    plan: Extract<LegPlan, { kind: 'route' }>,
+    edge: FlowEdge | undefined,
+    active: boolean,
+    color: string,
+    lit?: Set<string>
+  ): SVGTemplateResult {
+    const { d, start, end, gapY, dir } = plan;
+    const flow = active
+      ? svg`<path
+          class="sb-flow" fill="none"
+          style="stroke:${color};animation-duration:${edgeVisual(edge!.kW).durSec}s"
+          stroke-width=${Math.min(BUS_WIDTH_MAX, edgeVisual(edge!.kW).width)}
+          d=${d}
+        ></path>`
+      : nothing;
+    // Straight-run lengths (the 8px arcs are negligible): initial drop · horizontal hop ·
+    // trunk-approach drop. `.long` is length-aware on the DOMINANT vertical (never global).
+    const segDrop = Math.abs(gapY - start.y);
+    const segHop = Math.abs(end.x - start.x);
+    const segTrunk = Math.abs(end.y - gapY);
+    const long = Math.max(segDrop, segTrunk) > this._longLegPx;
+    // Reduced-motion arrowhead (NEW, routed-only — a straight leg draws none, AC1): on the final
+    // (trunk-approach) segment, pointing at the tap. Reuse the trunk's `_arrow`. Gated on `active`
+    // so an IDLE/edgeless routed leg draws no direction (a straight leg shows none either) — the
+    // arrowhead is the static read of a REAL flow, not the leg's identity.
+    const arrowAt = { x: end.x, y: end.y - dir * 14 };
+    // kW pill (DSD-5): on the LONGEST segment ≥ the 64px pill; when the trunk-approach vertical
+    // is itself the longest it collides with the arrowhead, so prefer the longest NON-trunk
+    // segment ≥64, sharing the trunk-approach (offset at its mid, clear of the tap-end arrow)
+    // only when nothing else fits.
+    const PILL_W = 64;
+    const segMid = {
+      drop: { x: start.x, y: (start.y + gapY) / 2 },
+      hop: { x: (start.x + end.x) / 2, y: gapY },
+      trunk: { x: end.x, y: (gapY + end.y) / 2 },
+    } as const;
+    const ranked = (
+      [
+        ['hop', segHop],
+        ['drop', segDrop],
+        ['trunk', segTrunk],
+      ] as const
+    )
+      .filter(([, len]) => len >= PILL_W)
+      .sort((a, b) => b[1] - a[1]);
+    const pillKey = ranked.find(([k]) => k !== 'trunk')?.[0] ?? ranked[0]?.[0] ?? 'trunk';
+    // De-collision (AC5): when the pill is FORCED onto the trunk-approach segment (hop AND drop
+    // both too short to seat a 64px pill), bias it 30% toward the gapY end so it never overlaps
+    // the tap-end arrowhead (which sits 14px from the trunk tap at the other end of this segment).
+    const pillAt =
+      pillKey === 'trunk' ? { x: end.x, y: gapY + (end.y - gapY) * 0.3 } : segMid[pillKey];
+    // Story 9.7 identity token, DSD-4: re-anchored to the TAP (end) for a routed leg so the
+    // bend never drags it out over the hop. Single-instance legs carry none (zero-diff).
+    const dup = n.id !== n.role;
+    const idToken = dup
+      ? svg`<text class="gw-leg-id" style="fill:${color}" x=${end.x + 13} y=${end.y}>${n.id.slice(n.id.indexOf(':') + 1)}</text>`
+      : nothing;
+    return svg`
+      <g class="gw-leg ${lit?.has(n.id) ? 'on' : ''}" data-role=${n.id}>
+        <path class="gw-leg-base ${long ? 'long' : ''}" fill="none" style="stroke:${color}" d=${d}></path>
+        ${flow}
+        ${this._terminal(start, color)}
+        ${this._tap(end, color)}
+        ${active ? this._arrow(arrowAt, end, color) : nothing}
+        ${idToken}
+        ${edge
+          ? this._pill(pillAt, color, `${formatNumber(Math.abs(edge.kW), 1)} ${STRINGS.scene.ribbon.unit}`)
+          : nothing}
+      </g>
+    `;
+  }
+
+  /**
    * Each present node's leg: from the card edge FACING the trunk to the trunk line,
    * in the node's accent colour (motion when its edge is active). Source cards sit
    * one side of the trunk and load cards the other, so the near edge (and thus the
    * leg's down/up sense) falls straight out of the anchor's position vs the trunk.
+   *
+   * Story 13.1 (D-RL-1): an OVERFLOW card's leg is planned by {@link _overflowLegPlans} —
+   * a `straight` plan re-pins the along-axis x to the analytically-derived channel centre
+   * (killing the stale-anchor defect, AC3); a `route` plan replaces the `<line>` with an
+   * orthogonal `<path>` around the blocking card ({@link _routedLeg}, AC2). Every OTHER leg
+   * (primary sub-row, non-wrapped band, phone axis) is byte-identical (measured centre, AC1).
    */
   private _legs(anchors: Readonly<Record<string, RectLike>>, lit?: Set<string>): SVGTemplateResult {
     const horiz = this._axis === 'x';
@@ -1557,6 +1849,11 @@ export class TcMyHome extends LitElement implements LovelaceCard {
     // anchor-derivation rework (9.7) ever drops the bus independently of node anchors.
     if (!bus) return svg``;
     const cross = horiz ? bus.top + bus.height / 2 : bus.left + bus.width / 2;
+    // Story 13.1: plan the WRAPPED bands' overflow legs (horizontal bus only). An empty map
+    // (non-wrapped, or phone axis) ⇒ every leg takes the byte-identical straight path below.
+    const cfg = this._resolvedConfig ?? this._config;
+    const overflowPlans =
+      horiz && cfg ? this._overflowLegPlans(cfg, anchors, cross) : undefined;
     // Story 9.7: key edges + anchors by NODE ID (`e.from` IS the instance id now), so
     // a duplicated role draws ONE leg per instance to ITS own tap. The accent COLOUR
     // stays per-role. Single-instance ⇒ id === role (zero-diff).
@@ -1567,9 +1864,21 @@ export class TcMyHome extends LitElement implements LovelaceCard {
       .filter((n) => n.present && anchors[n.id])
       .map((n) => {
         const rect = anchors[n.id];
+        const edge = edgeById.get(n.id);
+        const active = !!edge && edge.direction !== 'none';
+        const color = NODE_COLOR[n.role];
+        const plan = overflowPlans?.get(n.id);
+        // Story 13.1: a ROUTED overflow leg (its straight drop would cross a card) — a bent
+        // `<path>` around the blocker (AC2), rendered by the dedicated helper.
+        if (plan?.kind === 'route') return this._routedLeg(n, plan, edge, active, color, lit);
+
         const cx = rect.left + rect.width / 2;
         const cy = rect.top + rect.height / 2;
-        const pos = horiz ? cx : cy; // along-axis position of this tap
+        // Story 13.1 (AC3): an overflow card with a CLEAR channel keeps the straight `<line>`
+        // but pins its along-axis x to the analytically-derived channel centre (`plan.x`) so
+        // leg and card agree by construction. Every other leg uses the measured centre
+        // (byte-identical, AC1).
+        const pos = plan?.kind === 'straight' ? plan.x : horiz ? cx : cy;
         // Near edge of the card (the one facing the trunk) along the cross axis.
         const near = horiz
           ? cy < cross
@@ -1581,9 +1890,6 @@ export class TcMyHome extends LitElement implements LovelaceCard {
         const start = horiz ? { x: pos, y: near } : { x: near, y: pos };
         const end = horiz ? { x: pos, y: cross } : { x: cross, y: pos };
 
-        const edge = edgeById.get(n.id);
-        const active = !!edge && edge.direction !== 'none';
-        const color = NODE_COLOR[n.role];
         const flow = active
           ? svg`<line
               class="sb-flow"
