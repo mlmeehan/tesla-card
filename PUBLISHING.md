@@ -1,23 +1,11 @@
 # Publishing to HACS
 
-HACS expects a **dedicated repository** with `hacs.json` at its root. This
-repository already is that — no extraction step is required.
-
 ## 1. Repository layout
 
-This is a standalone, HACS-ready repo: `origin` points at
-`github.com/mlmeehan/tesla-card` and everything HACS needs already lives at the
-repo root — `hacs.json`, `README.md`, `src/`, the build config, and the
-`.github/workflows/`. There is no parent config repo to split out of.
-
-If you ever need to rebuild the remote from scratch, the tree is self-contained,
-so a plain init-and-push of the working tree is enough:
-
-```bash
-# from the repo root, only if origin does not already exist
-git remote add origin git@github.com:mlmeehan/tesla-card.git
-git push -u origin main
-```
+HACS expects a **dedicated repository** with `hacs.json` at its root, and this
+repo is already one: `origin` points at `github.com/mlmeehan/tesla-card` and
+everything HACS needs lives at the repo root — `hacs.json`, `README.md`,
+`src/`, the build config, and `.github/workflows/`.
 
 > The repo root must contain `hacs.json`. The `name` in `hacs.json` is the
 > display name; `filename: tesla-card.js` must match the release asset; and
@@ -39,38 +27,13 @@ On publish, the workflow runs `npm ci && npm run build` and uploads
 `dist/tesla-card.js` to the release. Confirm the asset appears on the release
 page before continuing.
 
-## 3. Install via HACS (custom repository)
+### Release checklist
 
-Until the card is accepted into the HACS default store, install it as a custom
-repo:
-
-1. HACS → **⋮** → *Custom repositories*
-2. URL `https://github.com/mlmeehan/tesla-card`, category **Dashboard**
-3. Install **Tesla Card**, then hard-reload the browser (Cmd/Ctrl+Shift+R)
-
-HACS registers the resource automatically. For YAML-mode dashboards add it
-manually under `resources:` (see `README.md`).
-
-## 4. (Optional) Submit to the HACS default store
-
-For one-click discoverability without the custom-repo step:
-
-1. Ensure CI is green — `.github/workflows/validate.yml` runs the official
-   `hacs/action@main` plugin check plus a type-check + build.
-2. Add the brand to <https://github.com/home-assistant/brands> (a `tesla-card`
-   logo/icon PR) — HACS requires this for default-store inclusion.
-3. Open a PR against <https://github.com/hacs/default> adding
-   `mlmeehan/tesla-card` under `plugin`.
-
-## Release checklist
-
-> **Now CI-enforced:** the first and fifth items below are no longer a
-> manual tick — the `version-sync` lint gate (`scripts/lint/version-sync.mjs`, one
-> of the structural gates in `npm run lint`) fails CI on any `package.json` `version` ↔
-> `src/const.ts` `CARD_VERSION` drift and pins `hacs.json` `filename` ↔ the Rollup
-> output basename = `tesla-card.js`. The **git tag** leg (`tag === v${version}`) is
-> asserted at release time in `release.yml`. Keep the boxes for the human's awareness,
-> but a drift can no longer slip past CI.
+> Items marked *CI-enforced* can no longer drift silently: the `version-sync`
+> lint gate (`scripts/lint/version-sync.mjs`, part of `npm run lint`) fails CI
+> on `package.json` `version` ↔ `src/const.ts` `CARD_VERSION` drift and pins
+> `hacs.json` `filename` to the Rollup output basename; `release.yml`
+> asserts `tag === v${version}` at release time.
 
 - [ ] `package.json` `version` and `src/const.ts` `CARD_VERSION` match the tag *(CI-enforced: `version-sync` gate + `release.yml` tag check)*
 - [ ] `npm run typecheck` clean
@@ -79,3 +42,21 @@ For one-click discoverability without the custom-repo step:
 - [ ] `hacs.json` `filename` matches the release asset name *(CI-enforced: `version-sync` gate)*
 - [ ] CI green on the default branch
 - [ ] GitHub Release created → `tesla-card.js` attached as an asset
+
+## 3. Install via HACS (custom repository)
+
+Until the card is in the HACS default store, users add it as a custom
+repository — steps are in the [README install section](README.md#hacs-recommended).
+HACS registers the resource automatically; YAML-mode dashboards need a manual
+`resources:` entry (also covered there).
+
+## 4. (Optional) Submit to the HACS default store
+
+For one-click discoverability without the custom-repo step:
+
+1. Ensure CI is green — `.github/workflows/validate.yml` runs the official
+   `hacs/action@main` plugin check plus a type-check and build.
+2. Add the brand to <https://github.com/home-assistant/brands> (a `tesla-card`
+   logo/icon PR) — HACS requires this for default-store inclusion.
+3. Open a PR against <https://github.com/hacs/default> adding
+   `mlmeehan/tesla-card` under `plugin`.

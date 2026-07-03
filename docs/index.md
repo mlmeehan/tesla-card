@@ -62,7 +62,7 @@ energy sign-convention** that drives both the Hero overlay and the Scene bus.
 ## Existing Project Docs
 
 - [`../README.md`](../README.md) — user-facing: features, install, options table, entity resolution
-- [`../PUBLISHING.md`](../PUBLISHING.md) — HACS extraction + release / version-sync checklist
+- [`../PUBLISHING.md`](../PUBLISHING.md) — HACS release / version-sync checklist
 
 ## Getting Started
 
