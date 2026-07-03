@@ -136,11 +136,20 @@ describe('Responsive contract — single-sourced breakpoints (AC2)', () => {
     expect(BREAKPOINTS.full).toBe(760);
   });
 
-  test('the shared @media literals equal the BREAKPOINTS constants', () => {
-    // CSS @media cannot read the TS constant, so the literal must match it.
+  test('the shared breakpoint literals equal the BREAKPOINTS constants', () => {
+    // CSS can't read the TS constant, so each literal must match it. The child
+    // grids still collapse on a viewport @media (max-width: compact); the card's
+    // tab-label reveal keys on the element via @container (min-width: full) since
+    // D-CQ-1 (the 2026-07-03 narrow-column tab-overlap fix), not the viewport.
     expect(sharedCss).toContain(`@media (max-width: ${BREAKPOINTS.compact}px)`);
     const card = readFileSync(join(SRC_DIR, 'tesla-card.ts'), 'utf8');
-    expect(card).toContain(`@media (min-width: ${BREAKPOINTS.full}px)`);
+    expect(card).toContain(`@container (min-width: ${BREAKPOINTS.full}px)`);
+  });
+
+  test('the tab reveal is element-relative: .root is a query container (D-CQ-1)', () => {
+    const root = ruleBody(readFileSync(join(SRC_DIR, 'tesla-card.ts'), 'utf8'), '.root');
+    expect(root, '.root rule not found').not.toBeNull();
+    expect(root!).toMatch(/container-type:\s*inline-size/);
   });
 
   test('max-width:1080px preserved on .root', () => {
@@ -150,14 +159,15 @@ describe('Responsive contract — single-sourced breakpoints (AC2)', () => {
   });
 
   test('the ≤540 grid-collapse + ≥760 tab-label reveals are intact', () => {
-    // g4/g3 collapse to 2-col under compact.
+    // g4/g3 collapse to 2-col under compact (viewport @media — child grids).
     const idx = sharedCss.indexOf('@media (max-width: 540px)');
     const compact = sharedCss.slice(idx, idx + 220);
     expect(compact).toMatch(/\.g4\s*\{\s*grid-template-columns:\s*repeat\(2,/);
     expect(compact).toMatch(/\.g3\s*\{\s*grid-template-columns:\s*repeat\(2,/);
-    // ≥760 reveals every tab label (tab span → display:inline).
+    // ≥760 (of the card's OWN width, via @container — D-CQ-1) reveals every tab
+    // label (tab span → display:inline).
     const card = readFileSync(join(SRC_DIR, 'tesla-card.ts'), 'utf8');
-    const full = card.slice(card.indexOf('@media (min-width: 760px)'));
+    const full = card.slice(card.indexOf('@container (min-width: 760px)'));
     expect(full).toMatch(/\.tab span\s*\{\s*display:\s*inline/);
   });
 });

@@ -55,12 +55,13 @@ export class TcCommands extends TcBase {
     this._clearCooldownTimer();
   }
 
-  // Reflect the compact-variant presentation onto the host so the command grid can
-  // collapse to 3 columns for the ~376px My-Home embed (Story 11.4 / D-11.4-4).
-  // This is an ELEMENT-state scope, NOT a viewport one: the embed is a narrow
-  // element in a WIDE viewport, so the `@media (max-width:540px)` collapse below
-  // never fires for it. A standalone card has no `variant` ⇒ no attribute ⇒ the
-  // 6-col grid is byte-identical to today (AC4).
+  // Reflect the compact-variant presentation onto the host (Story 11.4 /
+  // D-11.4-4). Since the D-CQ-1 follow-on the command-grid collapse is driven by
+  // the `@container (max-width:540px)` rule below (the host is its own query
+  // container), which already fires for the ~376px embed — so this reflected
+  // attribute is now only a redundant `:host([compact]) .row` backup, kept to
+  // preserve the 11.4 contract. A standalone card has no `variant` ⇒ no attribute
+  // ⇒ the 6-col grid is byte-identical to today (AC4).
   protected override updated(changed: PropertyValues): void {
     super.updated(changed);
     this.toggleAttribute('compact', this.config?.variant === 'compact');
@@ -251,6 +252,18 @@ export class TcCommands extends TcBase {
       .wake-meta {
         font-size: var(--tc-fs-stat-key, 11.5px);
       }
+      /* Query container for the element-relative command-grid collapse below (the
+         D-CQ-1 child-grid convergence). The host is a stretched flex item of the
+         card's .root column, so its inline size == the card's content width; the
+         @container rule keys the 6→3 col collapse on THAT, not the viewport — so a
+         narrow Lovelace column at a wide viewport (and the ~376px My-Home embed)
+         both collapse correctly. Same fix class as the tab-overlap bug. inline-size
+         implies layout+style containment (host becomes a stacking context and the
+         containing block for abs/fixed descendants); verified safe here — this
+         shadow has zero positioned/overflow descendants. Block axis uncontained. */
+      :host {
+        container-type: inline-size;
+      }
       .row {
         display: grid;
         grid-template-columns: repeat(6, 1fr);
@@ -292,16 +305,18 @@ export class TcCommands extends TcBase {
         opacity: 0.4;
         pointer-events: none;
       }
-      /* 540 = BREAKPOINTS.compact (styles.ts) — canonical source of truth. */
-      @media (max-width: 540px) {
+      /* 540 = BREAKPOINTS.compact (styles.ts) — canonical source of truth, now
+         measured against the component's OWN width via @container (D-CQ-1). */
+      @container (max-width: 540px) {
         .row {
           grid-template-columns: repeat(3, 1fr);
         }
       }
-      /* Compact embed (Story 11.4): the My-Home embed is always a ~376px ELEMENT
-         in a wide viewport, so the viewport @media above never fires for it.
-         Collapse to 3 cols on the reflected host attribute instead, so the six
-         command buttons fit the narrow track without horizontal overflow. */
+      /* Compact embed (Story 11.4): redundant-but-harmless backup since D-CQ-1 —
+         the @container collapse above already fires for the ~376px embed (376 <
+         540). Kept to preserve the 11.4 reflected-attribute contract, mirroring the
+         parent .root's :host([compact]) tab backup. A standalone card has no
+         compact attribute, so this is inert there (AC4 byte-identical). */
       :host([compact]) .row {
         grid-template-columns: repeat(3, 1fr);
       }

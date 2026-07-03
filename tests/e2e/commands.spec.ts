@@ -132,20 +132,46 @@ test.describe('AC1 — ≥44×44 tap-target floor (UX-DR21), both grid states', 
   }
 });
 
-// ── AC1c: responsive 6→3 grid collapse at BREAKPOINTS.compact (540) — real CSS ──
-test.describe('AC1 — responsive grid: 6 columns wide, 3 columns compact', () => {
+// ── AC1c / D-CQ-1: 6→3 grid collapse keyed on the COMPONENT's own width (540) ──
+// Since the D-CQ-1 follow-on tc-commands is its own query container, so the collapse
+// keys on the component's OWN inline size via `@container (max-width:540px)`, NOT the
+// viewport. The demo boxes the card in a ≤520px #stage, so these tests drive the
+// card's width (via #stage) while holding the viewport WIDE — isolating the width
+// axis to the card and proving the narrow-column-at-wide-viewport case is fixed.
+test.describe('AC1 — responsive grid: 6 cols wide card, 3 cols narrow card (element-relative)', () => {
   const trackCount = (demo: { commands: import('@playwright/test').Locator }) =>
     demo.commands
       .locator('.row')
       .evaluate((el) => getComputedStyle(el).gridTemplateColumns.split(/\s+/).filter(Boolean).length);
+  const setStageWidth = (page: import('@playwright/test').Page, px: number) =>
+    page.evaluate((w) => {
+      const s = document.getElementById('stage');
+      if (s) s.style.maxWidth = `${w}px`;
+    }, px);
 
-  test('the command row is a 6-track grid on a wide viewport', async ({ demo, page }) => {
+  test('a WIDE card (>540) is a 6-track grid — even though its container is a wide viewport', async ({
+    demo,
+    page,
+  }) => {
     await page.setViewportSize({ width: 1000, height: 900 });
     await demo.open({ scenario: 'awake' });
-    expect(await trackCount(demo)).toBe(6);
+    await setStageWidth(page, 900); // lift the demo's ≤520px cap so the card is genuinely wide
+    await expect.poll(() => trackCount(demo)).toBe(6);
   });
 
-  test('the command row collapses to a 3-track grid ≤540px', async ({ demo, page }) => {
+  test('a NARROW card (<540) collapses to a 3-track grid AT A WIDE VIEWPORT (the D-CQ-1 fix)', async ({
+    demo,
+    page,
+  }) => {
+    // Viewport stays wide (1000) but the card is boxed at the demo's 520px #stage.
+    // Pre-D-CQ-1 a viewport @media wrongly kept this at 6 cramped cols; now it collapses.
+    await page.setViewportSize({ width: 1000, height: 900 });
+    await demo.open({ scenario: 'awake' });
+    await setStageWidth(page, 500);
+    await expect.poll(() => trackCount(demo)).toBe(3);
+  });
+
+  test('the command row collapses to a 3-track grid on a ≤540px viewport too', async ({ demo, page }) => {
     await page.setViewportSize({ width: 400, height: 900 });
     await demo.open({ scenario: 'awake' });
     expect(await trackCount(demo)).toBe(3);

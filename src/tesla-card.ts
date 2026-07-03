@@ -131,13 +131,16 @@ export class TeslaCard extends LitElement implements LovelaceCard {
     const t = this._resolvedTheme();
     if (t) this.setAttribute('theme', t);
     else this.removeAttribute('theme');
-    // Reflect the compact-variant presentation onto the card's OWN host so the
-    // tab bar can collapse to icon-only for the ~376px My-Home embed (holistic
-    // review 2026-06-24, completing Story 11.4 / AC9). Its icon-only collapse is
-    // otherwise gated on a `@media (min-width:760px)` VIEWPORT query that wrongly
-    // fires for a narrow ELEMENT in a wide viewport — the same element-vs-viewport
-    // trap fixed for tc-quick-actions/tc-commands. Standalone (no `variant`) ⇒ no
-    // attribute ⇒ byte-identical to today (AC4).
+    // Reflect the compact-variant presentation onto the card's OWN host. Since
+    // D-CQ-1 the tab bar's icon-only collapse is element-relative via `@container`
+    // on `.root`, so it already fires for the ~376px My-Home embed AND any narrow
+    // standalone column — the `:host([compact])` tab rules below are now a
+    // redundant-but-harmless backup. Since the D-CQ-1 follow-on the
+    // tc-quick-actions/tc-commands child grids ALSO collapse element-relative via
+    // their own `@container` (each is its own query container), so the child
+    // `:host([compact]) .row` rules are likewise redundant backups now — this
+    // attribute no longer strictly drives any layout. Standalone (no `variant`) ⇒
+    // no attribute ⇒ byte-identical to today (AC4).
     this.toggleAttribute('compact', this._config?.variant === 'compact');
   }
 
@@ -298,6 +301,18 @@ export class TeslaCard extends LitElement implements LovelaceCard {
         max-width: 1080px;
         margin: 0 auto;
         padding: 2px;
+        /* Query container for element-relative responsive collapse (D-CQ-1):
+           the tab-label reveal below keys on .root's OWN inline size via
+           @container, not the viewport — so a narrow Lovelace column at a wide
+           viewport collapses correctly. inline-size also implies layout + style
+           containment, so .root becomes a stacking context AND the containing
+           block for any position:fixed/absolute descendant. Verified safe: the
+           card has zero position:fixed, and every component overlay (hero
+           apertures, map, slider, bus) is anchored to a position:relative wrapper
+           inside its OWN shadow, so nothing re-anchors onto .root. The block axis
+           is uncontained: the 1080px cap + margin:0 auto centring + height are
+           unaffected. */
+        container-type: inline-size;
       }
 
       .tabs {
@@ -350,10 +365,13 @@ export class TeslaCard extends LitElement implements LovelaceCard {
       .tab .tc-ico {
         opacity: 0.95;
       }
-      /* Compact bars (below BREAKPOINTS.full): only the active tab shows its
-         label; the rest are icon-only. Above 760px every label is shown. The 760
-         literal MUST equal BREAKPOINTS.full (styles.ts) — CSS @media can't read
-         the TS constant, so a gate pins them together.
+      /* Narrow bars (.root inline size below BREAKPOINTS.full): only the active
+         tab shows its label; the rest are icon-only. At/above 760px every label
+         is shown. The reveal keys on the CARD's own width via @container (D-CQ-1),
+         not the viewport — so a narrow Lovelace column at a wide viewport
+         collapses correctly (the 2026-07-03 tab-overlap fix). The 760 literal
+         MUST equal BREAKPOINTS.full (styles.ts) — CSS can't read the TS constant,
+         so a11y.test.ts pins them together.
          a11y: display:none strips the span from the accessibility tree, and the
          icon is aria-hidden — so the button carries an aria-label (its STRINGS
          tab name) to stay a NAMED control in the icon-only state (UX-DR21). */
@@ -363,7 +381,7 @@ export class TeslaCard extends LitElement implements LovelaceCard {
       .tab.active span {
         display: inline;
       }
-      @media (min-width: 760px) {
+      @container (min-width: 760px) {
         .tab {
           flex: 1 1 auto;
         }
@@ -371,15 +389,17 @@ export class TeslaCard extends LitElement implements LovelaceCard {
           display: inline;
         }
       }
-      /* Compact embed (Story 11.4 / AC9 follow-up, holistic review 2026-06-24):
-         the My-Home vehicle cell is a ~376px ELEMENT in a wide viewport, so the
-         min-width:760px label-reveal above wrongly fires for it and the tabs
-         expand into a scrolling full-label strip. Restate the icon-only compact
-         look (only the active tab labelled) ELEMENT-scoped via the reflected
-         'compact' host attribute — the same element-scope fix tc-quick-actions
-         and tc-commands use for their grids. The added (0,2,0)/(0,3,0)
-         specificity beats the media query's (0,1,0) regardless of viewport; a
-         standalone card (no attribute) is byte-identical to today (AC4). */
+      /* Compact embed backup (Story 11.4 / AC9; now redundant post-D-CQ-1):
+         the @container reveal above already collapses the ~376px My-Home embed
+         to icon-only (376 < 760), so these rules are a belt-and-braces restating
+         the icon-only look (only the active tab labelled) via the reflected
+         'compact' host attribute. NOTE these are a hard OVERRIDE, not inert: the
+         (0,2,0)/(0,3,0) selectors outrank the @container reveal (container queries
+         add zero specificity), so a compact card is forced icon-only at ANY width.
+         Harmless only because the embed is always ~376px (well under 760) — do not
+         assume it agrees with @container if compact is ever widened. Kept to avoid
+         disturbing the 11.4 reflection contract; a standalone card (no attribute)
+         is unaffected. */
       :host([compact]) .tab {
         flex: 0 1 auto;
       }

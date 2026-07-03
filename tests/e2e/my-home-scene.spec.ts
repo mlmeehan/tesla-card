@@ -940,18 +940,18 @@ test.describe('tc-my-home Scene — Story 11.4 embedded vehicle honors configure
     await expect(card.locator('tc-panel-charging')).toHaveCount(0);
   });
 
-  test('AC9 — the compact embed collapses quick-actions/commands to 3 cols while the standalone (wide) card keeps 6', async ({
+  test('AC9 / D-CQ-1 — quick-actions/commands collapse on the CARD\'s own width, not the viewport', async ({
     page,
   }) => {
     await mountScene(page);
     await waitForTrunk(page);
 
     // Read the grid track count of each component's `.row` from its computed
-    // `grid-template-columns` (one px value per track). The embed reflects
-    // `:host([compact])` (a ~376px ELEMENT in a wide viewport, so the viewport
-    // @media never fires) → 3 cols; the live standalone `tesla-card` (demo.open,
-    // no `variant`, full-width) has no attribute → 6 cols, proving the
-    // `:host([compact])` scope leaves the standalone byte-identical (AC4).
+    // `grid-template-columns` (one px value per track). Since the D-CQ-1 follow-on
+    // each child is its OWN query container, so the 6→3 collapse keys on the card's
+    // OWN inline width via `@container (max-width:540px)`, NOT the viewport — the
+    // whole viewport stays a wide 1280px throughout this test, isolating the width
+    // axis to the card itself.
     const trackCounts = (card: import('@playwright/test').Locator) =>
       card.evaluate((host: HTMLElement) => {
         const cols = (sel: string): number => {
@@ -962,25 +962,47 @@ test.describe('tc-my-home Scene — Story 11.4 embedded vehicle honors configure
         return { qa: cols('tc-quick-actions'), cmd: cols('tc-commands') };
       });
 
+    // (a) The ~376px compact embed collapses to 3 cols (376 < 540).
     const embed = await trackCounts(vehCell(page).locator('tesla-card'));
-    expect(embed.qa).toBe(3); // compact embed quick-actions → 3 cols
-    expect(embed.cmd).toBe(3); // compact embed commands → 3 cols
+    expect(embed.qa).toBe(3);
+    expect(embed.cmd).toBe(3);
 
-    const standalone = await trackCounts(page.locator('tesla-card').first());
-    expect(standalone.qa).toBe(6); // standalone quick-actions stays 6 cols (AC4)
-    expect(standalone.cmd).toBe(6); // standalone commands stays 6 cols (AC4)
+    // (b) The live standalone `tesla-card` is boxed at #stage's 520px (< 540) — so
+    // at the SAME wide 1280 viewport it ALSO collapses to 3 cols. This is the
+    // D-CQ-1 fix: pre-convergence a viewport @media wrongly kept this narrow card
+    // at 6 cramped cols on desktop; now a narrow card collapses regardless of
+    // viewport (the narrow-column-at-wide-viewport case).
+    const narrow = await trackCounts(page.locator('tesla-card').first());
+    expect(narrow.qa).toBe(3);
+    expect(narrow.cmd).toBe(3);
+
+    // (c) Widen the SAME card past 540 (viewport untouched) and it re-expands to 6
+    // cols — proving the collapse is genuinely element-relative, not a permanent
+    // narrowing. #stage caps the demo card at 520px; lift it to 900px.
+    await page.evaluate(() => {
+      const stage = document.getElementById('stage');
+      if (stage) stage.style.maxWidth = '900px';
+    });
+    // Force the container-query recompute to settle before re-reading.
+    await expect
+      .poll(async () => (await trackCounts(page.locator('tesla-card').first())).qa)
+      .toBe(6);
+    const wide = await trackCounts(page.locator('tesla-card').first());
+    expect(wide.qa).toBe(6); // wide standalone quick-actions → 6 cols
+    expect(wide.cmd).toBe(6); // wide standalone commands → 6 cols
   });
 
   test('AC9 (tabs) — the compact embed tab bar is icon-only (only the active label shown) while the standalone (wide) card shows all labels', async ({
     page,
   }) => {
-    // Holistic re-review follow-up (2026-06-24): the grids above got the element-
-    // scope fix, but the tab LABELS still revealed at a `@media (min-width:760px)`
-    // VIEWPORT query — so the ~376px embed in a wide viewport rendered a scrolling
-    // full-label strip, not the icon-only bar AC9 intended. `tesla-card` now
-    // reflects `compact` and a `:host([compact])` rule keeps the embed icon-only
-    // (active tab labelled); the standalone (no variant) is byte-identical. This
-    // is the picture only a real browser can prove — jsdom resolves no @media.
+    // Story 11.4 / AC9: the ~376px embed must render an icon-only tab bar, not a
+    // scrolling full-label strip. Since D-CQ-1 the reveal keys on the CARD's own
+    // width via `@container` on `.root` (not a viewport `@media`), which already
+    // collapses the embed; the `:host([compact])` rule is a redundant backup. The
+    // standalone card reveals labels only when given real WIDTH — the demo mounts
+    // it in a ≤520px #stage (itself a narrow card), so widen it to prove AC4.
+    // This is the picture only a real browser can prove — jsdom resolves no @container.
+    await page.setViewportSize({ width: 1280, height: 900 });
     await mountScene(page);
     await waitForTrunk(page);
 
@@ -995,8 +1017,10 @@ test.describe('tc-my-home Scene — Story 11.4 embedded vehicle honors configure
     // Compact embed: exactly ONE visible label (the active tab) — icon-only.
     // (Pre-fix this was every tab's label, the scrolling-strip regression.)
     expect(await visibleLabels(vehCell(page).locator('tesla-card'))).toBe(1);
-    // Standalone (wide, no variant): every label shown (the ≥760px reveal), proving
-    // the `:host([compact])` scope leaves the standalone tab bar byte-identical (AC4).
+    // Standalone given room (.root ≥760px): every label shown, proving the compact
+    // scoping leaves a roomy standalone tab bar labelled (AC4). The #stage card is a
+    // ≤520px column by default (a narrow card), so give it real width first.
+    await page.evaluate(() => (document.getElementById('stage')!.style.maxWidth = '900px'));
     expect(await visibleLabels(page.locator('tesla-card').first())).toBeGreaterThan(1);
   });
 
