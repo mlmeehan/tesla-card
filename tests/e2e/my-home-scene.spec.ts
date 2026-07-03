@@ -2220,20 +2220,28 @@ test.describe('tc-my-home Scene — Story 9.14: generator (copper source) at liv
     // The generator leg is a real tap ON the trunk: one of its base endpoints sits on the
     // trunk line (≤2px) — the same metric the 9.8 vehicle test uses, here proving the
     // POSITIVE (a source DOES tap), the contrast to the vehicle's non-tapping overlay.
+    // Story 13.1 (AC1 audit): read the endpoint y's element-type-agnostically — a straight leg
+    // exposes y1/y2 on a <line>, a ROUTED leg is a <path> whose y's live in its `d` (`y1/y2`
+    // would return null→NaN). This overflow generator leg stays STRAIGHT (its channel is clear),
+    // but the read is migrated so it survives a leg that ever routes.
+    const baseYs = (el: Element): number[] => {
+      const y1 = el.getAttribute('y1');
+      if (y1 !== null) return [Number(y1), Number(el.getAttribute('y2'))];
+      const d = el.getAttribute('d') ?? '';
+      return (d.match(/-?\d+(?:\.\d+)?/g) ?? []).map(Number).filter((_, i) => i % 2 === 1); // y's
+    };
+    const nearestTrunk = (ys: number[]): number => Math.min(...ys.map((y) => Math.abs(y - trunkY)));
     await expect(genLeg(page)).toHaveCount(1);
-    const gb = await genLeg(page)
-      .locator('.gw-leg-base')
-      .evaluate((l) => ({ y1: Number(l.getAttribute('y1')), y2: Number(l.getAttribute('y2')) }));
-    const nearest = Math.min(Math.abs(gb.y1 - trunkY), Math.abs(gb.y2 - trunkY));
-    expect(nearest, 'the generator (a source) must tap the trunk').toBeLessThanOrEqual(2);
+    const gy = await genLeg(page).locator('.gw-leg-base').evaluate(baseYs);
+    expect(nearestTrunk(gy), 'the generator (a source) must tap the trunk').toBeLessThanOrEqual(2);
 
     // Calibration: a known source (solar) taps the trunk the same way — so the metric is
     // meaningful, not vacuously satisfied by any geometry.
-    const sb = await scene(page)
+    const sy = await scene(page)
       .locator('.gw-leg[data-role="solar"] .gw-leg-base')
       .first()
-      .evaluate((l) => ({ y1: Number(l.getAttribute('y1')), y2: Number(l.getAttribute('y2')) }));
-    expect(Math.min(Math.abs(sb.y1 - trunkY), Math.abs(sb.y2 - trunkY))).toBeLessThanOrEqual(2);
+      .evaluate(baseYs);
+    expect(nearestTrunk(sy)).toBeLessThanOrEqual(2);
   });
 
   test('AC4/AC3 — focusing the generator (a SOURCE) lights the loads + itself and DIMS the other sources (real opacity)', async ({
@@ -2676,5 +2684,151 @@ test.describe('tc-my-home Scene — Story 11.2 standalone full card has no chip 
     // WOULD appear — its absence proves the chip is strictly compact-gated (AC7).
     await demo.open(AWAKE.open);
     await expect(page.locator('tesla-card .security-chip')).toHaveCount(0);
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Story 13.1 (D-RL-1) — routed overflow bus legs. The coverage gap that let the
+// leg-through-Solar defect ship (investigation Finding 4 / Deduction 2): the comb tests
+// asserted only the CELL centre at a FIXED width, never the rendered `gw-leg-base`
+// geometry, and never under a post-mount width change. These read the RENDERED leg and
+// assert it (a) tracks its card within 1px after a widen (AC3), (b) crosses NO band card
+// (AC8), and (c) routes as a `<path>` when a straight drop is genuinely blocked (AC2).
+// ═══════════════════════════════════════════════════════════════════════════
+test.describe('tc-my-home Scene — Story 13.1: routed overflow leg geometry', () => {
+  test.beforeEach(async ({ demo }) => {
+    await demo.open(AWAKE.open);
+  });
+
+  test('AC8/AC3/AC1 — after a POST-MOUNT widen the generator overflow leg tracks its card (|Δ|≤1px) and crosses NO primary card', async ({
+    page,
+  }) => {
+    // Mirror the investigation recipe: mount narrow, then WIDEN the Scene host after mount
+    // (the offset-changing resize that stranded the old leg −76px into Solar). #scene-host is
+    // the real Scene mount host (NOT the demo's #stage), resized via host.style.width per :420.
+    await page.setViewportSize({ width: 1700, height: 1000 });
+    await mountScene(page, { width: 1120, inject: GEN_INJECT });
+    await waitForTrunk(page);
+    await expect(scene(page).locator('.source-row')).toHaveClass(/wrapped/);
+    const before = await trunkLine(page);
+
+    await page.evaluate(() => {
+      document.getElementById('scene-host')!.style.width = '1560px';
+    });
+    // Wait for the reflow to land (the trunk repositions at the new width).
+    await expect
+      .poll(async () => {
+        const t = await trunkLine(page);
+        return `${Math.round(t.x1)},${Math.round(t.x2)}`;
+      })
+      .not.toBe(`${Math.round(before.x1)},${Math.round(before.x2)}`);
+
+    // Read the generator overflow leg's along-axis x + the primary source cells' extents, all in
+    // CONTAINER space (the overlay is inset:0 over `.scene`, so leg attrs are already container-px;
+    // cell rects are relativized to `.scene`'s box).
+    const g = await scene(page).evaluate((host) => {
+      const sh = (host as HTMLElement).shadowRoot!;
+      const sc = sh.querySelector('.scene')!.getBoundingClientRect();
+      const base = sh.querySelector('.gw-leg[data-role="generator"] .gw-leg-base')!;
+      const tag = base.tagName.toLowerCase();
+      const x1 = Number(base.getAttribute('x1'));
+      const x2 = Number(base.getAttribute('x2'));
+      const genRect = sh
+        .querySelector('.scene-cell[data-node="generator"]')!
+        .getBoundingClientRect();
+      const genCx = genRect.left + genRect.width / 2 - sc.left;
+      const primary = [
+        ...sh.querySelectorAll('.subrow.primary .scene-cell[data-node]'),
+      ].map((c) => {
+        const r = c.getBoundingClientRect();
+        return { id: (c as HTMLElement).dataset.node, left: r.left - sc.left, right: r.right - sc.left };
+      });
+      return { tag, x1, x2, genCx, primary };
+    });
+
+    // AC1 — the clear channel keeps a straight vertical <line>.
+    expect(g.tag).toBe('line');
+    expect(Math.abs(g.x1 - g.x2)).toBeLessThanOrEqual(1);
+    // AC3 — the leg's along-axis x tracks the overflow card's channel centre within 1px. The
+    // pre-fix code stranded it Δ−76px into Solar; this is a hard numeric gate, not "≈0".
+    expect(Math.abs(g.x1 - g.genCx)).toBeLessThanOrEqual(1);
+    // AC8 — the leg enters NO primary source card's horizontal extent (the Solar-crossing defect).
+    for (const c of g.primary) {
+      expect(
+        g.x1 < c.left - 0.5 || g.x1 > c.right + 0.5,
+        `leg x ${g.x1} must clear ${c.id} [${c.left},${c.right}]`,
+      ).toBe(true);
+    }
+  });
+
+  test('AC8/AC2 — a genuinely BLOCKED straight drop routes as a `<path>` that clears every band card', async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width: 1500, height: 1000 });
+    await mountScene(page, { width: 1200, inject: GEN_INJECT });
+    await waitForTrunk(page);
+    await expect(scene(page).locator('.source-row')).toHaveClass(/wrapped/);
+
+    // The uniform grid never blocks on its own (the fix keeps straight the common case), so
+    // FORCE a conflict: widen the leftmost primary (solar) anchor — keeping its CENTRE fixed —
+    // so it straddles the generator's channel centre, then redraw. The straight drop is now
+    // blocked ⇒ the leg must route to a clear lane and clear every card box (AC2).
+    const result = await scene(page).evaluate((host) => {
+      const el = host as unknown as {
+        _anchors: Record<string, { left: number; top: number; width: number; height: number }>;
+        requestUpdate(): void;
+        updateComplete: Promise<unknown>;
+        _resizeObs?: { disconnect(): void };
+        _intersectionObs?: { disconnect(): void };
+      };
+      // Stop observers so a late recompute cannot restore the real anchors before we read.
+      el._resizeObs?.disconnect();
+      el._intersectionObs?.disconnect();
+      const a = el._anchors;
+      const gen = a['generator'];
+      const genCx = gen.left + gen.width / 2;
+      const solar = a['solar'];
+      const solarCx = solar.left + solar.width / 2;
+      const halfW = Math.abs(genCx - solarCx) + 60; // straddle genCx, centre unchanged
+      a['solar'] = { top: solar.top, height: solar.height, left: solarCx - halfW, width: 2 * halfW };
+      el.requestUpdate();
+      return el.updateComplete.then(() => {
+        const sh = (host as HTMLElement).shadowRoot!;
+        const legGroup = sh.querySelector('.gw-leg[data-role="generator"]')!;
+        const base = legGroup.querySelector('.gw-leg-base')!;
+        const cells = Object.entries(el._anchors)
+          .filter(([id]) => id !== 'bus' && id !== 'generator') // the leg ORIGINATES on its own card
+          .map(([id, r]) => ({ id, left: r.left, right: r.left + r.width, top: r.top, bottom: r.top + r.height }));
+        return {
+          tag: base.tagName.toLowerCase(),
+          d: base.getAttribute('d') ?? '',
+          hasArrow: !!legGroup.querySelector('.gw-head'),
+          cells,
+        };
+      });
+    });
+
+    expect(result.tag).toBe('path'); // blocked ⇒ routed
+    expect(result.hasArrow).toBe(true); // the NEW routed-only arrowhead (AC5)
+    // Parse the path's on-path anchor points (M/L endpoints + each Q endpoint) and assert no
+    // axis-aligned segment enters any card interior (AC2 — primary AND sibling overflow cards).
+    const pts: { x: number; y: number }[] = [];
+    for (const t of result.d.match(/[MLQ][^MLQ]*/g) ?? []) {
+      const n = (t.slice(1).match(/-?\d+(?:\.\d+)?/g) ?? []).map(Number);
+      pts.push(t[0] === 'Q' ? { x: n[2], y: n[3] } : { x: n[0], y: n[1] });
+    }
+    expect(pts.length).toBeGreaterThan(2);
+    for (const c of result.cells) {
+      for (let i = 0; i < pts.length - 1; i++) {
+        const a = pts[i];
+        const b = pts[i + 1];
+        const overlap =
+          Math.max(a.x, b.x) > c.left &&
+          Math.min(a.x, b.x) < c.right &&
+          Math.max(a.y, b.y) > c.top &&
+          Math.min(a.y, b.y) < c.bottom;
+        expect(overlap, `routed segment ${i} must not enter ${c.id}`).toBe(false);
+      }
+    }
   });
 });

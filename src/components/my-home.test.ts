@@ -2823,3 +2823,159 @@ describe('Code review regressions — Epic 9 Group B (Scene/flow)', () => {
     expect(customElements.get('tc-generator')).toBeDefined();
   });
 });
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Story 13.1 (D-RL-1) — routed overflow bus legs: straight-preferred, route-on-conflict.
+// jsdom has no layout, so — like the Story 8.12 `.long` tests — we inject a KNOWN wrapped
+// model + synthetic `_anchors` + force `_axis='x'`, then read the rendered overflow leg.
+// A CLEAR channel keeps a straight `<line>` pinned to the ANALYTICAL channel centre
+// (AC1/AC3); a blocked channel emits a routed `<path>` that clears every card box (AC2).
+// ═══════════════════════════════════════════════════════════════════════════
+describe('Story 13.1 — routed overflow legs (analytical straight-vs-route)', () => {
+  type Rect = { left: number; top: number; width: number; height: number };
+  // A 4-source band (solar·powerwall·grid·generator) WRAPS: primary = the first three,
+  // generator is the lone overflow card whose leg we drive.
+  const wrapModel = (): FlowModel =>
+    buildFlowModel([
+      { role: 'solar', kW: 3, provenance: 'measured' },
+      { role: 'powerwall', kW: 1, provenance: 'measured' },
+      { role: 'grid', kW: 2, provenance: 'measured' },
+      { role: 'generator', kW: 2.4, provenance: 'measured' },
+      { role: 'home', kW: 5, provenance: 'measured' },
+    ]);
+
+  const inject = async (el: Scene, anchors: Record<string, Rect>): Promise<void> => {
+    await flushGeometry();
+    const inst = el as unknown as {
+      _model: FlowModel;
+      _anchors: Record<string, unknown>;
+      _axis: string;
+      requestUpdate(): void;
+    };
+    inst._model = wrapModel();
+    inst._anchors = anchors;
+    inst._axis = 'x';
+    inst.requestUpdate();
+    await el.updateComplete;
+  };
+  const genBase = (el: Scene): Element | null =>
+    legOf(el, 'generator')?.querySelector('.gw-leg-base') ?? null;
+
+  // Parse a routed `d` into its on-path anchor points (M/L endpoints + each Q endpoint).
+  const pathPoints = (d: string): { x: number; y: number }[] => {
+    const pts: { x: number; y: number }[] = [];
+    for (const t of d.match(/[MLQ][^MLQ]*/g) ?? []) {
+      const n = (t.slice(1).match(/-?\d+(?:\.\d+)?/g) ?? []).map(Number);
+      if (t[0] === 'Q') pts.push({ x: n[2], y: n[3] });
+      else pts.push({ x: n[0], y: n[1] });
+    }
+    return pts;
+  };
+  // No polyline segment enters a rect's INTERIOR (strict — a touch on the edge is allowed).
+  const pathClearsRect = (d: string, r: Rect): boolean => {
+    const pts = pathPoints(d);
+    for (let i = 0; i < pts.length - 1; i++) {
+      const a = pts[i];
+      const b = pts[i + 1];
+      const overlap =
+        Math.max(a.x, b.x) > r.left &&
+        Math.min(a.x, b.x) < r.left + r.width &&
+        Math.max(a.y, b.y) > r.top &&
+        Math.min(a.y, b.y) < r.top + r.height;
+      if (overlap) return false;
+    }
+    return true;
+  };
+
+  // Uniform primary track: solar@100 · powerwall@300 · grid@500 (pitch 200, 100px gaps).
+  const clearAnchors: Record<string, Rect> = {
+    solar: { left: 50, top: 0, width: 100, height: 50 },
+    powerwall: { left: 250, top: 0, width: 100, height: 50 },
+    grid: { left: 450, top: 0, width: 100, height: 50 },
+    generator: { left: 130, top: -200, width: 140, height: 50 }, // measured centre 200
+    home: { left: 250, top: 500, width: 100, height: 50 }, // load, below the trunk
+    bus: { left: 0, top: 300, width: 0, height: 0 }, // trunk cross y = 300
+  };
+
+  test('AC1/AC3 — a CLEAR channel keeps a straight `<line>`, pinned to the analytical channel centre 200 (leg == card)', async () => {
+    const el = await mount(makeHass(states(awakeFx)));
+    await inject(el, clearAnchors);
+    const base = genBase(el);
+    expect(base?.tagName.toLowerCase()).toBe('line'); // clear ⇒ straight
+    // The along-axis x = solar centre (100) + pitch/2 (100) = 200: the ANALYTICAL channel
+    // centre, derived from the PRIMARY anchors, not a measured value.
+    expect(Number(base!.getAttribute('x1'))).toBeCloseTo(200, 5);
+    expect(Number(base!.getAttribute('x2'))).toBeCloseTo(200, 5);
+    // A straight leg carries NO arrowhead (AC1 — the arrowhead is routed-only).
+    expect(legOf(el, 'generator')!.querySelector('.gw-head')).toBeNull();
+  });
+
+  test('AC3 — the straight overflow x comes from the PRIMARY anchors, so a STALE generator anchor (post-widen) does NOT drag the leg into a card', async () => {
+    const el = await mount(makeHass(states(awakeFx)));
+    // The generator anchor is STALE — measured at an OLD offset (centre 124, inside solar
+    // 50..150), the exact README defect signature. The leg must still land at 200.
+    await inject(el, { ...clearAnchors, generator: { left: 54, top: -200, width: 140, height: 50 } });
+    const base = genBase(el)!;
+    expect(base.tagName.toLowerCase()).toBe('line');
+    expect(Number(base.getAttribute('x1'))).toBeCloseTo(200, 5); // analytical, not the stale 124
+    expect(Number(base.getAttribute('x1'))).toBeGreaterThan(150); // clear of solar (50..150)
+  });
+
+  test('AC2/AC4 — a BLOCKED straight drop routes as a `<path>` with elbows that clears every card box', async () => {
+    const el = await mount(makeHass(states(awakeFx)));
+    // Make solar abnormally WIDE so it spans the generator's channel centre 200 (∈ [-100,300]).
+    // The straight drop is blocked ⇒ route to the nearest CLEAR lane (powerwall↔grid at 400).
+    const blocked: Record<string, Rect> = {
+      ...clearAnchors,
+      solar: { left: -100, top: 0, width: 400, height: 50 }, // centre 100, spans -100..300
+    };
+    await inject(el, blocked);
+    const base = genBase(el)!;
+    expect(base.tagName.toLowerCase()).toBe('path'); // blocked ⇒ routed
+    const d = base.getAttribute('d') ?? '';
+    expect(d).toMatch(/^M /);
+    // AC2 — no path segment enters ANY card box (primary AND sibling overflow cards).
+    for (const [id, r] of Object.entries(blocked)) {
+      if (id === 'bus') continue;
+      expect(pathClearsRect(d, r), `routed path must not enter ${id}`).toBe(true);
+    }
+    // AC5 — the routed leg carries a NEW arrowhead + its kW pill + a flowing `<path>` dash.
+    const leg = legOf(el, 'generator')!;
+    expect(leg.querySelector('.gw-head')).not.toBeNull();
+    expect(leg.querySelector('.gw-pill-txt')?.textContent).toContain('2.4');
+    expect(leg.querySelector('path.sb-flow')).not.toBeNull(); // dash follows the polyline
+  });
+
+  test('AC6 — a routed leg is a tap conduit, not a trunk edge: still exactly ONE trunk rail (no second trunk)', async () => {
+    const el = await mount(makeHass(states(awakeFx)));
+    await inject(el, { ...clearAnchors, solar: { left: -100, top: 0, width: 400, height: 50 } });
+    expect(genBase(el)!.tagName.toLowerCase()).toBe('path'); // routed
+    expect(sr(el).querySelectorAll('.gw-trunk-base')).toHaveLength(1); // ONE trunk (AR-7)
+  });
+
+  // ── Code-review patches (bmad-code-review 2026-07-03) ──────────────────────────
+  test('AC5 (review P4) — an IDLE routed leg draws NO arrowhead (direction is the static read of a REAL flow, and a straight idle leg draws none either)', async () => {
+    const el = await mount(makeHass(states(awakeFx)));
+    // A quiescent (sub-deadband) generator: still PRESENT and blocked ⇒ it routes on geometry,
+    // but its edge is idle (direction 'none'), so it must not assert a flow direction.
+    const idleModel = buildFlowModel([
+      { role: 'solar', kW: 3, provenance: 'measured' },
+      { role: 'powerwall', kW: 1, provenance: 'measured' },
+      { role: 'grid', kW: 2, provenance: 'measured' },
+      { role: 'generator', kW: 0.02, provenance: 'quiescent' },
+      { role: 'home', kW: 5, provenance: 'measured' },
+    ]);
+    await flushGeometry();
+    const inst = el as unknown as { _model: FlowModel; _anchors: Record<string, Rect>; _axis: string; requestUpdate(): void };
+    inst._model = idleModel;
+    inst._anchors = { ...clearAnchors, solar: { left: -100, top: 0, width: 400, height: 50 } };
+    inst._axis = 'x';
+    inst.requestUpdate();
+    await el.updateComplete;
+    const base = genBase(el)!;
+    expect(base.tagName.toLowerCase()).toBe('path'); // routed on geometry, independent of activity
+    const leg = legOf(el, 'generator')!;
+    expect(leg.querySelector('.gw-head'), 'an idle routed leg must not draw a direction arrowhead').toBeNull();
+    expect(leg.querySelector('path.sb-flow'), 'an idle leg carries no animated flow dash').toBeNull();
+  });
+});
