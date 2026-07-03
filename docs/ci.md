@@ -38,9 +38,16 @@ Three **independent** jobs (no `needs` — they fan out in parallel):
 
 ### `test.yml` stages
 
-```
-lint (Type-check) ──> unit (Vitest) ───┐
-                  └──> test (E2E) ──> burn-in (PR/cron/dispatch) ──> report (always)
+```mermaid
+flowchart LR
+    lintJob["lint<br/>(Type-check)"] --> unit["unit<br/>(Vitest)"]
+    lintJob --> testJob["test<br/>(E2E)"]
+    testJob --> burnin["burn-in<br/>(PR / cron / dispatch only)"]
+    unit --> report["report<br/>(always)"]
+    testJob --> report
+    burnin --> report
+    classDef gated stroke-dasharray: 5 4
+    class burnin gated
 ```
 
 `unit` and `test` both `needs: lint`; `burn-in` `needs: test`; `report` `needs: [unit, test, burn-in]`.

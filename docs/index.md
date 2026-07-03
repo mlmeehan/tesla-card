@@ -78,7 +78,7 @@ npm run dev         # Vite dev server, or open demo/index.html in a browser (no 
 ## For AI-Assisted Development
 
 When extending the card, **read [`architecture.md`](./architecture.md) first**, then keep these
-invariants (full list in architecture §12):
+invariants (full list in architecture §13):
 
 - **No hard-coded Tesla entity IDs** — resolve by stable function-name via `config.entities[key]`.
 - **`useDefineForClassFields: false`** is load-bearing for Lit — never "fix" it.

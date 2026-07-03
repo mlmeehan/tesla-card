@@ -17,13 +17,29 @@ vehicle render, the four layers the card composites.
 
 The card draws the `color` image as-is, then **inside the `mask`** it stacks:
 
+```mermaid
+%%{init: {"flowchart": {"wrappingWidth": 340}}}%%
+flowchart TB
+    color["<b>color</b> — base pixels: glass, wheels, lights, ground shadow<br/>(drawn as-is, the full image)"]
+    subgraph maskG["mask (white = body) — everything inside is confined to the paint region"]
+        direction TB
+        paint["<b>paint</b> — your chosen colour (a flat fill)"]
+        shade["<b>shade</b> — grayscale form:<br/>keeps the body's light/shadow on any colour"]
+        highlight["<b>highlight</b> — clearcoat glints:<br/>stay near-white on any colour (optional)"]
+        paint -->|"× multiply"| shade
+        shade -->|"× screen"| highlight
+    end
+    color -->|"then, stacked inside the mask"| maskG
+    classDef paintC fill:#3987e5,color:#0b0b0b,stroke:#1c5cab
+    classDef shadeC fill:#898781,color:#0b0b0b,stroke:#52514e
+    classDef hlC fill:#f0efec,color:#0b0b0b,stroke:#898781
+    class paint paintC
+    class shade shadeC
+    class highlight hlC
 ```
-color  ───────────────  base pixels: glass, wheels, lights, ground shadow
-└ mask (white = body)   everything below is confined to the paint region:
-    paint               your chosen colour (a flat fill)
-    shade  × multiply    grayscale form — keeps the body's light/shadow on any colour
-    highlight × screen   clearcoat glints — stay near-white on any colour (optional)
-```
+
+*Node fills depict each layer's own look — the paint chip is your chosen colour, shade is
+grayscale, highlight is near-white.*
 
 Two blend facts drive how you author the layers:
 
