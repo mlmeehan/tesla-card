@@ -1,11 +1,11 @@
 # tesla-card — Component & Primitive Inventory
 
-**Repo:** `tesla-card/` (public, standalone git repo) · **Date:** 2026-06-24 · **Version:** `0.2.0` · **Min HA:** 2024.4.0 · **Node:** 20
+**Repo:** `tesla-card/` (public, standalone git repo) · **Date:** 2026-07-03 · **Version:** `0.3.0` · **Min HA:** 2024.4.0 · **Node:** 20
 
 Catalog of every custom element, render helper, `data/`/`flow/` module, UI primitive, helper, and
 design-token group in the card. For how they fit together see [`architecture.md`](./architecture.md).
 
-> Current as of Epics 9–11; see footer for counts.
+> Current as of Epic 12 + D-CQ-1 (Epics 9–11 baseline); see footer for counts.
 
 ---
 
@@ -21,7 +21,7 @@ element (render helpers / abstract base).
 ### Parent + editor
 | Tag | File | Base | Responsibility |
 |---|---|---|---|
-| `tesla-card` | `src/tesla-card.ts` (~418 LOC) | `LitElement` (implements `LovelaceCard`) | Orchestration parent; tab shell shows **one panel at a time**, splices the Energy tab in at **index 2** when a site is detected, routes `@open-panel`; `getCardSize()→16`; `getStubConfig()→{type}`; `getConfigElement()` lazy-imports the editor; `updated()` reflects the `theme` + `compact` **host attributes**; pushes the `tesla-card` `window.customCards` entry |
+| `tesla-card` | `src/tesla-card.ts` (~418 LOC) | `LitElement` (implements `LovelaceCard`) | Orchestration parent; tab shell shows **one panel at a time**, splices the Energy tab in at **index 2** when a site is detected, routes `@open-panel`; `getCardSize()→16`; `getStubConfig()→{type}`; `getConfigElement()` lazy-imports the editor; `updated()` reflects the `theme` + `compact` **host attributes**; the `.root` is a `container-type: inline-size` query container so the tab-label reveal keys on `@container (min-width: 760px)` — the card's OWN width, not the viewport (D-CQ-1); pushes the `tesla-card` `window.customCards` entry |
 | `tesla-card-editor` | `src/editor.ts` (~2,657 LOC) | `LitElement` (implements `LovelaceCardEditor`) | **Full no-YAML GUI editor (Epic 9):** `WIZARD_STEPS` = `detect → confirm → appearance → tune → finish` + a normal form + a Scene-aware compose mode for `_isMyHome`; `_emit` (REPLACE) vs `_patch` (merge) discipline; reset = **DELETE** the key + prune (`OVERRIDE_TARGET`); `PAINT_SWATCHES` write curated HEX; theme is card-only via `:host([theme='light'])`; hex entered as `{text:{}}` verbatim; `_convertPressure` does psi/bar/kPa; D7 `_liveness` 4-state. **No in-editor My-Home preview** — `_renderPreview` returns nothing when `_isMyHome`. Reads its **own** `hass.states` under the D7 exception (presence + liveness only) |
 
 ### Base classes
@@ -34,8 +34,8 @@ element (render helpers / abstract base).
 | Tag | File | Responsibility |
 |---|---|---|
 | `tc-hero` | `components/hero.ts` (~677 LOC) | Living hero: recolorable car (`carView`) + battery gauge + status/lock line; derived `_chargeVisual` **3 states** (parked/plugged/charging), `_apertures` **4 booleans**, `_security` (11.2); compact-variant **asleep → cached last-known SoC/range** |
-| `tc-quick-actions` | `components/quick-actions.ts` (~252 LOC) | The canonical **optimistic-then-reconcile** toggles (lock/climate/charge-port/sentry/…); exports **`RECONCILE_TIMEOUT_MS = 10_000`**; `:host([compact])` → 3-column |
-| `tc-commands` | `components/commands.ts` (~317 LOC) | Fire-and-forget command buttons (`button.press`: wake/honk/flash/HomeLink/…); `isMissing`-only degrade; wake-gated |
+| `tc-quick-actions` | `components/quick-actions.ts` (~252 LOC) | The canonical **optimistic-then-reconcile** toggles (lock/climate/charge-port/sentry/…); exports **`RECONCILE_TIMEOUT_MS = 10_000`**; host is a `container-type: inline-size` query container — the 6→3-column grid collapse keys on `@container (max-width: 540px)` (element-relative, D-CQ-1), with a `:host([compact])` backup |
+| `tc-commands` | `components/commands.ts` (~317 LOC) | Fire-and-forget command buttons (`button.press`: wake/honk/flash/HomeLink/…); `isMissing`-only degrade; wake-gated; host is a `container-type: inline-size` query container — the 6→3-column grid collapse keys on `@container (max-width: 540px)` (element-relative, D-CQ-1), with a `:host([compact])` backup |
 | `tc-slider` | `components/slider.ts` (~234 LOC) | Reusable bar slider; commits `value-changed` **on release only** (never mid-drag); reused by charging/media panels **and the Powerwall backup-reserve control** |
 | `tc-panel-charging` | `components/panel-charging.ts` | Battery summary, start/stop, charge-limit & current sliders (`tc-slider`), live stat tiles |
 | `tc-panel-climate` | `components/panel-climate.ts` | Temp set, seat/wheel heaters, defrost, cabin-overheat (generalized optimistic contract) |
@@ -121,7 +121,7 @@ to its `static styles`). They register **no** custom element.
 
 | Module | Key exports | Purpose |
 |---|---|---|
-| `const.ts` | `CARD_VERSION` (**`'0.2.0'`**), `HERO_VIEWBOX` (`{width:1024, height:687}`), `DEFAULT_ENTITIES` (~84 keys `satisfies Record<VehicleKey,string>`), `EntityKey` | Constants + the live entity catalog. **No `DEFAULT_IMAGE`** (removed) |
+| `const.ts` | `CARD_VERSION` (**`'0.3.0'`**), `HERO_VIEWBOX` (`{width:1024, height:687}`), `DEFAULT_ENTITIES` (~84 keys `satisfies Record<VehicleKey,string>`), `EntityKey` | Constants + the live entity catalog. **No `DEFAULT_IMAGE`** (removed) |
 | `types.ts` | `TeslaCardConfig` + sub-shapes (`BodyLayers`, `EnergyConfig`, `NodeCustomization`, `InstanceSpec`, `SceneRow`, `TiresConfig`, `AppearanceConfig`) + HA-platform interfaces (`HassEntity`, `HomeAssistant` incl. optional `callWS?<T>`, `LovelaceCard`, `LovelaceCardEditor`, `PanelId`) | Shared TS types — **public config + sub-shapes + HA-platform interfaces only** (Hero-internal types live with their owners in `car.ts`) |
 | `helpers.ts` | `UNAVAILABLE_STATES`, `entityId`, `stateObj`, `rawState`, `isUnavailable` / `isMissing`, `num`/`attr`/`unit`/`isOn`/`isAsleep`, `formatNumber`/`prettyText`/`formatAge`/`display`, `toggleEntity`/`pressButton`/`setNumber`/`selectOption`, `fireEvent`/`moreInfo`/`domainOf`, `srState`, `clamp` | Pure entity-read / format / service helpers. `isMissing` is **deliberately narrow** (`undefined`/`'unavailable'` only — so a never-pressed button stays wakeable); `isUnavailable` is the wider sensor/toggle guard |
 | `ui.ts` | shared render primitives + honest-age helpers (detailed in §6) | Shared render primitives (`TemplateResult` builders) + the honest-age helpers (here, not `helpers.ts`, to avoid a `helpers ↔ data/freshness` cycle) |
@@ -197,7 +197,7 @@ never decorative, byte-identical across light/dark grounds):
 - `INTERACTION_PRIMITIVES` — `tap` (universal act), `drag` (commit-on-release, impl `tc-slider`), `toggle` (optimistic-then-reconcile, impl `quick-actions`), `crossfade` (layer swaps, base `--tc-ease`).
 - `INTERACTION_BANS` — `no-background-polling` (gated), `no-auto-wake`, `no-mid-drag-commits` (gated), `no-decorative-motion`, `no-gamification`.
 - `FRESHNESS_STATES` — the **6** presentation states: `asleep`, `wake-pending`, `unavailable`, `loading`, `optimistic`, `empty` (each with treatment/recipe/copy/control/staleness/gated).
-- `BREAKPOINTS` — the compact/full breakpoints (values in §5); the `@media` literals in `sharedStyles`/`tesla-card.ts` must equal these — a gate pins them.
+- `BREAKPOINTS` — the compact/full breakpoints (values in §5); `sharedStyles` keeps a viewport `@media (max-width: compact)` (child grids), while `tesla-card` `.root`'s tab-label reveal is element-relative `@container (min-width: full)` and the `tc-commands`/`tc-quick-actions` grids collapse on their own `@container (max-width: compact)` (D-CQ-1) — a gate (`a11y.test.ts`) pins both literals to these constants.
 - `LIGHT_TOKENS` — the card-only light palette (see the Light-theme row above); 8 colour tokens flip, accents intentionally NOT re-listed.
 
 **Sanctioned literal-colour exceptions** (everything else must be a token): the `panel-location.ts`
@@ -252,7 +252,7 @@ unknown/garbage values degrade gracefully (R9 / FR-24), never throw.
 
 | Constant | Value | Home |
 |---|---|---|
-| `CARD_VERSION` | `'0.2.0'` | `const.ts` |
+| `CARD_VERSION` | `'0.3.0'` | `const.ts` |
 | `HERO_VIEWBOX` | `{ width: 1024, height: 687 }` | `const.ts` |
 | `RECONCILE_TIMEOUT_MS` | `10_000` | `components/quick-actions.ts` (exported; `powerwall.ts` imports it, never redefines) |
 | `WAKE_COOLDOWN_DEFAULT_MS` | `60_000` | `data/wake.ts` |
@@ -274,7 +274,7 @@ unknown/garbage values degrade gracefully (R9 / FR-24), never throw.
 
 ---
 
-_Generated by the BMAD `document-project` workflow (exhaustive rescan, 2026-06-24 — Epics 9–11). Counts:
-**20** custom elements · **8** `window.customCards` picker cards · **7** roles (1 vehicle + 6 energy) ·
-**6** `ENERGY_ROLES` · **8** `ACCENT_SEMANTICS` accents · **65** unit test files (~1,578 cases) / **24**
-e2e specs (~293 cases) · **8** lint gates._
+_Generated by the BMAD `document-project` workflow (exhaustive rescan, 2026-06-24; refreshed 2026-07-03
+for Epic 12 + D-CQ-1). Counts: **20** custom elements · **8** `window.customCards` picker cards · **7**
+roles (1 vehicle + 6 energy) · **6** `ENERGY_ROLES` · **8** `ACCENT_SEMANTICS` accents · **68** unit test
+files (**1,655** cases) / **24** e2e specs (**298** cases) · **8** lint gates._

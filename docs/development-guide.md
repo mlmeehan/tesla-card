@@ -124,7 +124,7 @@ full `strict` plus `noUnusedLocals` / `noUnusedParameters` / `noImplicitOverride
 
 Two tiers, both driving the *real* code:
 
-**Unit — Vitest (co-located).** `src/**/*.test.ts`, **65 files / ~1,578 cases**, configured inside
+**Unit — Vitest (co-located).** `src/**/*.test.ts`, **68 files / 1,655 cases**, configured inside
 `vite.config.ts` (`environment: 'node'`, `include: ['src/**/*.test.ts']`) — there is intentionally
 **no** separate `vitest.config.ts`. Pure `data/`/`flow/` hubs are node-testable; a DOM-touching test
 opts into jsdom **per file** with `// @vitest-environment jsdom` (jsdom is installed for exactly
@@ -135,9 +135,10 @@ seven committed `flow-*.json` fixtures asserted against its `FlowModel`). Each *
 a meta-test that shells out to its `scripts/lint/*.mjs` CLI (exit-0 clean, non-zero on a planted
 violation) and unit-tests the pure matcher; the structural gates parse the real TS AST.
 
-**E2E — Playwright (demo-driven, hermetic).** `tests/e2e/*.spec.ts`, **24 specs / ~293 cases**, drive
+**E2E — Playwright (demo-driven, hermetic).** `tests/e2e/*.spec.ts`, **298 cases / 24 specs (23
+active by default; `visual.spec.ts` under `VISUAL=1`)**, drive
 the **built bundle** in the demo harness so they cover computed styles / layout / `@media` /
-PointerEvents that jsdom can't. Config in `playwright.config.ts`: `testDir ./tests/e2e`,
+`@container` / PointerEvents that jsdom can't. Config in `playwright.config.ts`: `testDir ./tests/e2e`,
 `fullyParallel`, `webServer` runs `npm run build && npm run serve:demo`; under CI `retries: 2`,
 `workers: 2`, `forbidOnly`, with traces/screenshots/video retained on failure.
 
@@ -243,7 +244,7 @@ Mirror the whole gate locally with `npm run ci:local`; repeat-stress it with `np
 **Checklist (see `tesla-card/PUBLISHING.md`):**
 
 1. Bump **all three** to the same version: `package.json` `version`, `src/const.ts` `CARD_VERSION`,
-   and the git tag (`vX.Y.Z`). The `version-sync` gate enforces the first two (current: **0.2.0**).
+   and the git tag (`vX.Y.Z`). The `version-sync` gate enforces the first two (current: **0.3.0**).
 2. `npm run typecheck`, `npm run test`, `npm run lint`, and `npm run build` all green.
 3. Tag → create a GitHub Release → `release.yml` builds and attaches `tesla-card.js`.
 4. `hacs.json` `filename` must equal the released asset name (`tesla-card.js`).

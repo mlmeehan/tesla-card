@@ -19,8 +19,8 @@ and attaches it as a release asset, which is what HACS downloads.
 
 ```bash
 # bump version in package.json + src/const.ts (CARD_VERSION) to match the tag, then commit it
-git tag v0.2.0 && git push origin v0.2.0
-# then create a GitHub Release pointing at that tag (gh release create v0.2.0 --generate-notes)
+git tag v0.3.0 && git push origin v0.3.0
+# then create a GitHub Release pointing at that tag (gh release create v0.3.0 --generate-notes)
 ```
 
 On publish, the workflow runs `npm ci && npm run build` and uploads
