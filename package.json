@@ -1,6 +1,6 @@
 {
   "name": "tesla-card",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "A Tesla-app-inspired Lovelace card for Home Assistant (Tesla Fleet / Teslemetry).",
   "type": "module",
   "main": "dist/tesla-card.js",
