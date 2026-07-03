@@ -135,10 +135,12 @@ export class TeslaCard extends LitElement implements LovelaceCard {
     // D-CQ-1 the tab bar's icon-only collapse is element-relative via `@container`
     // on `.root`, so it already fires for the ~376px My-Home embed AND any narrow
     // standalone column — the `:host([compact])` tab rules below are now a
-    // redundant-but-harmless backup. The attribute is still load-bearing for the
-    // tc-quick-actions/tc-commands child grids (they remain on a viewport
-    // `@media` pending the D-CQ-1 follow-on). Standalone (no `variant`) ⇒ no
-    // attribute ⇒ byte-identical to today (AC4).
+    // redundant-but-harmless backup. Since the D-CQ-1 follow-on the
+    // tc-quick-actions/tc-commands child grids ALSO collapse element-relative via
+    // their own `@container` (each is its own query container), so the child
+    // `:host([compact]) .row` rules are likewise redundant backups now — this
+    // attribute no longer strictly drives any layout. Standalone (no `variant`) ⇒
+    // no attribute ⇒ byte-identical to today (AC4).
     this.toggleAttribute('compact', this._config?.variant === 'compact');
   }
 

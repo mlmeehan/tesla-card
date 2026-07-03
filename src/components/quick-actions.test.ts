@@ -332,15 +332,17 @@ describe('AC3 — unavailable control is disabled and never enters the optimisti
 // ───────────────────────────────────────────────────────────────────────────
 
 // ───────────────────────────────────────────────────────────────────────────
-// Story 11.4 / AC9 — compact-scoped grid collapse (the ~376px My-Home embed).
-// The 6-col pill grid collapses to 3 cols only at a VIEWPORT @media that never
-// fires for a narrow ELEMENT in a wide viewport, so the embed reflects a `compact`
-// host attribute (from config.variant) that a `:host([compact]) .row` rule keys
-// off. jsdom does no layout, so the COLUMN COUNT is proven in e2e
-// (my-home-scene.spec.ts:714 + the AC9 computed-grid test); here we pin the two
-// halves of the mechanism: the host-attribute reflection and the gated CSS rule.
+// D-CQ-1 — element-relative pill-grid collapse (converged onto @container).
+// The 6-col pill grid collapses to 3 cols on the component's OWN inline size via
+// @container (the host is a stretched flex item, so that == the card's content
+// width). This fixes the pre-D-CQ-1 bug where a VIEWPORT @media never fired for a
+// narrow ELEMENT in a wide viewport (a narrow Lovelace column, or the ~376px
+// My-Home embed). Story 11.4's `:host([compact]) .row` survives as a redundant
+// backup that keeps its reflected-attribute contract. jsdom does no layout, so the
+// COLUMN COUNT is proven in e2e (my-home-scene.spec.ts:714 + the AC9 computed-grid
+// test); here we pin the CSS mechanism text.
 // ───────────────────────────────────────────────────────────────────────────
-describe('Story 11.4 / AC9 — compact host-attribute reflection + gated 3-col rule', () => {
+describe('D-CQ-1 / Story 11.4 — @container grid collapse + compact backup', () => {
   test('config.variant:"compact" reflects a `compact` host attribute; absent ⇒ no attribute (AC4)', async () => {
     const compact = await mount(makeHass(makeStates()), { variant: 'compact' });
     expect(compact.hasAttribute('compact')).toBe(true);
@@ -349,7 +351,20 @@ describe('Story 11.4 / AC9 — compact host-attribute reflection + gated 3-col r
     expect(standalone.hasAttribute('compact')).toBe(false); // no variant ⇒ byte-identical
   });
 
-  test('the gated rule is `:host([compact]) .row` → 3 cols (element-scoped, not a viewport @media)', () => {
+  test('the primary collapse is an @container query on the host, not a viewport @media (D-CQ-1)', () => {
+    const styles = TcQuickActions.styles as Array<{ cssText: string }>;
+    // The component-OWN sheet is the last entry ([sharedStyles, css`…`]); scope the
+    // mechanism check to it so sharedStyles' unrelated .g3/.g4 @media never leaks in.
+    const css = styles[styles.length - 1].cssText;
+    // host is its own query container …
+    expect(css).toMatch(/:host\s*\{[^}]*container-type:\s*inline-size/);
+    // … and the 6→3 collapse keys on it (540 = BREAKPOINTS.compact).
+    expect(css).toMatch(/@container\s*\(max-width:\s*540px\)\s*\{[^}]*repeat\(3,\s*1fr\)/);
+    // the buggy viewport @media it replaced must be gone (regression guard).
+    expect(css).not.toMatch(/@media\s*\(max-width/);
+  });
+
+  test('`:host([compact]) .row` → 3 cols survives as the redundant 11.4 backup', () => {
     const styles = TcQuickActions.styles as Array<{ cssText: string }>;
     const css = styles.map((s) => s.cssText).join('\n');
     expect(css).toMatch(/:host\(\[compact\]\)\s+\.row\s*\{[^}]*repeat\(3,\s*1fr\)/);
