@@ -276,6 +276,12 @@ test.describe('tc-my-home Scene — Gateway bus, ribbon, focus & reflow (6.6)', 
   test('AC3 — HOVER lights the focused card + its couplings and DIMS the rest (real opacity)', async ({
     page,
   }) => {
+    // Freeze the 180ms dim transition: the reduced-motion @media block in my-home.ts sets
+    // `transition: none`, so a dimmed cell resolves straight to its static 0.4 (lit stays 1)
+    // with no interpolation window. Without this, the synchronous getComputedStyle read below
+    // can catch the first transition frame at 1.0 and flake. Asserts the settled dim/lit split,
+    // not the animation — same idiom as powerwall-controls / editor-wizard specs.
+    await page.emulateMedia({ reducedMotion: 'reduce' });
     await mountScene(page);
     await waitForTrunk(page);
 
@@ -303,7 +309,9 @@ test.describe('tc-my-home Scene — Gateway bus, ribbon, focus & reflow (6.6)', 
     expect(groups.lit.length).toBeGreaterThan(0);
     expect(groups.dim.length).toBeGreaterThan(0); // home (load) leaves wall_connector dimmed
     expect(groups.lit.every((o) => o === 1)).toBe(true);
-    expect(groups.dim.every((o) => o < 1)).toBe(true);
+    // Reduced-motion freezes the transition, so dim cells resolve to the exact static 0.4 —
+    // assert the value, not just "< 1", to catch a dim-opacity regression.
+    expect(groups.dim.every((o) => o === 0.4)).toBe(true);
   });
 
   test('AC3 — KEYBOARD focus triggers the same highlight and the cell is focusable', async ({
@@ -813,6 +821,9 @@ test.describe('tc-my-home Scene — Story 8.5 vehicle node (live layout)', () =>
   test('AC3 — focusing the VEHICLE lights {vehicle, wall_connector} and DIMS the rest (real opacity)', async ({
     page,
   }) => {
+    // Same end-state-vs-transition race as the hover-dim test above: freeze the dim
+    // transition so the dimOpacities read is deterministic (0.4), not a first-frame 1.0.
+    await page.emulateMedia({ reducedMotion: 'reduce' });
     await mountScene(page);
     await waitForTrunk(page);
 
@@ -838,7 +849,7 @@ test.describe('tc-my-home Scene — Story 8.5 vehicle node (live layout)', () =>
     expect(new Set(lit.litNodes)).toEqual(new Set(['vehicle', 'wall_connector']));
     expect(lit.litOpacities.every((o) => o === 1)).toBe(true);
     expect(lit.dimOpacities.length).toBeGreaterThan(0);
-    expect(lit.dimOpacities.every((o) => o < 1)).toBe(true);
+    expect(lit.dimOpacities.every((o) => o === 0.4)).toBe(true);
   });
 
   test('AC3 — focusing the WALL CONNECTOR also lights the vehicle (the WC edge feeds it)', async ({
@@ -2239,6 +2250,9 @@ test.describe('tc-my-home Scene — Story 9.14: generator (copper source) at liv
   test('AC4/AC3 — focusing the generator (a SOURCE) lights the loads + itself and DIMS the other sources (real opacity)', async ({
     page,
   }) => {
+    // Freeze the dim transition so the synchronous opacity read is deterministic (dim → 0.4),
+    // same first-frame-1.0 race as the other two AC3 dim tests above.
+    await page.emulateMedia({ reducedMotion: 'reduce' });
     await page.setViewportSize({ width: 1280, height: 800 });
     await mountScene(page, { width: 1100, inject: GEN_INJECT });
     await waitForTrunk(page);
@@ -2271,7 +2285,7 @@ test.describe('tc-my-home Scene — Story 9.14: generator (copper source) at liv
     // light its source siblings (they share the bus only through the loads).
     expect(groups.dimNodes).toContain('solar');
     expect(groups.dimOps.length).toBeGreaterThan(0);
-    expect(groups.dimOps.every((o) => o < 1)).toBe(true);
+    expect(groups.dimOps.every((o) => o === 0.4)).toBe(true);
   });
 
   test('AC7 — multi-instance composes FOR FREE: two instances render generator:1/generator:2 cells, each its OWN distinct bus tap', async ({
