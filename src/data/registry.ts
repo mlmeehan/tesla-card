@@ -17,7 +17,7 @@ export type EnergyRole = Exclude<Role, 'vehicle'>;
 /**
  * The canonical function-keys, grouped by role. The vehicle subset mirrors
  * `const.ts` DEFAULT_ENTITIES (84 keys) and the energy subset mirrors `energy.ts`
- * EnergyEntities (21 keys); both value tables are typecheck-bound back to these names
+ * EnergyEntities (22 keys); both value tables are typecheck-bound back to these names
  * (`satisfies` / drift guard), so the three tables cannot diverge silently (D2).
  *
  * Story 8.1 grew the energy vocabulary 12 → 21 with telemetry-only keys for the
@@ -26,7 +26,9 @@ export type EnergyRole = Exclude<Role, 'vehicle'>;
  * vocabulary by a real substring rule (see `energy.ts` RULES + `energy.test.ts`);
  * none are speculative. The keys are NON-POWER telemetry — `flow/binding.ts`
  * `POWER_KEY` (role → single `*_power` sensor) is untouched, so the FlowModel is
- * unperturbed (FR-33).
+ * unperturbed (FR-33). Story 9.14 then added `generator_power` (21 → 22) — unlike
+ * the 8.1 batch it IS a power key (`POWER_KEY.generator`), the generator role's
+ * single flow input.
  */
 export const FUNCTION_KEYS = {
   vehicle: [
