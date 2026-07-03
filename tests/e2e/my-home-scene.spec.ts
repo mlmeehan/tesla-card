@@ -974,13 +974,14 @@ test.describe('tc-my-home Scene — Story 11.4 embedded vehicle honors configure
   test('AC9 (tabs) — the compact embed tab bar is icon-only (only the active label shown) while the standalone (wide) card shows all labels', async ({
     page,
   }) => {
-    // Holistic re-review follow-up (2026-06-24): the grids above got the element-
-    // scope fix, but the tab LABELS still revealed at a `@media (min-width:760px)`
-    // VIEWPORT query — so the ~376px embed in a wide viewport rendered a scrolling
-    // full-label strip, not the icon-only bar AC9 intended. `tesla-card` now
-    // reflects `compact` and a `:host([compact])` rule keeps the embed icon-only
-    // (active tab labelled); the standalone (no variant) is byte-identical. This
-    // is the picture only a real browser can prove — jsdom resolves no @media.
+    // Story 11.4 / AC9: the ~376px embed must render an icon-only tab bar, not a
+    // scrolling full-label strip. Since D-CQ-1 the reveal keys on the CARD's own
+    // width via `@container` on `.root` (not a viewport `@media`), which already
+    // collapses the embed; the `:host([compact])` rule is a redundant backup. The
+    // standalone card reveals labels only when given real WIDTH — the demo mounts
+    // it in a ≤520px #stage (itself a narrow card), so widen it to prove AC4.
+    // This is the picture only a real browser can prove — jsdom resolves no @container.
+    await page.setViewportSize({ width: 1280, height: 900 });
     await mountScene(page);
     await waitForTrunk(page);
 
@@ -995,8 +996,10 @@ test.describe('tc-my-home Scene — Story 11.4 embedded vehicle honors configure
     // Compact embed: exactly ONE visible label (the active tab) — icon-only.
     // (Pre-fix this was every tab's label, the scrolling-strip regression.)
     expect(await visibleLabels(vehCell(page).locator('tesla-card'))).toBe(1);
-    // Standalone (wide, no variant): every label shown (the ≥760px reveal), proving
-    // the `:host([compact])` scope leaves the standalone tab bar byte-identical (AC4).
+    // Standalone given room (.root ≥760px): every label shown, proving the compact
+    // scoping leaves a roomy standalone tab bar labelled (AC4). The #stage card is a
+    // ≤520px column by default (a narrow card), so give it real width first.
+    await page.evaluate(() => (document.getElementById('stage')!.style.maxWidth = '900px'));
     expect(await visibleLabels(page.locator('tesla-card').first())).toBeGreaterThan(1);
   });
 

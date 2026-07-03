@@ -182,24 +182,40 @@ test.describe('responsive contract — 1080 cap / 540 collapse / 760 labels (AC2
     expect(await trackCount(), 'g3 collapses to 2 columns ≤540px').toBe(2);
   });
 
-  test('inactive tab labels hide <760px and reveal ≥760px (icon-first → labelled)', async ({ demo, page }) => {
-    // Select by CSS (.tab:not(.active) span), NOT getByRole({name}): at compact
+  test('inactive tab labels react to the CARD width, not the viewport (@container — D-CQ-1)', async ({ demo, page }) => {
+    // Select by CSS (.tab:not(.active) span), NOT getByRole({name}): at narrow
     // width the label is display:none so the tab has no accessible name to match.
     // The label is a flex item, so `display:inline` blockifies to computed 'block'
     // when revealed — the contract is "hidden vs shown", i.e. none vs not-none.
+    // Since D-CQ-1 the reveal keys on `.root`'s OWN inline size via @container, so
+    // we drive the CARD width (the #stage column) and hold the viewport WIDE — the
+    // 2026-07-03 tab-overlap fix: pre-fix a viewport @media revealed labels a
+    // narrow card could not fit, overlapping each icon into its neighbour's label.
     const labelDisplay = () =>
       demo.card
         .locator('.tab:not(.active) span')
         .first()
         .evaluate((el) => getComputedStyle(el).display);
+    const setCardWidth = (px: number) =>
+      page.evaluate((w) => (document.getElementById('stage')!.style.maxWidth = `${w}px`), px);
 
-    await page.setViewportSize({ width: 900, height: 900 });
     await demo.open({ scenario: 'awake' });
-    expect(await labelDisplay(), 'inactive tab labels are revealed ≥760px').not.toBe('none');
 
-    await page.setViewportSize({ width: 400, height: 900 });
-    await demo.open({ scenario: 'awake' });
-    expect(await labelDisplay(), 'inactive tab labels hide <760px (icon-first)').toBe('none');
+    // Card ≥760px wide → labels revealed, and it stays revealed across viewports
+    // (proving the reveal is card-relative, not viewport-relative).
+    await setCardWidth(900);
+    for (const width of [1400, 1000]) {
+      await page.setViewportSize({ width, height: 900 });
+      expect(await labelDisplay(), `labels reveal when the CARD is ≥760px (viewport ${width})`).not.toBe('none');
+    }
+
+    // Card <760px wide → icon-only EVEN in a wide viewport (the exact bug geometry:
+    // narrow card, wide viewport). Element-relative, so the viewport is irrelevant.
+    await setCardWidth(510);
+    for (const width of [1400, 400]) {
+      await page.setViewportSize({ width, height: 900 });
+      expect(await labelDisplay(), `labels hide when the CARD is <760px (viewport ${width})`).toBe('none');
+    }
   });
 });
 
