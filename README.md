@@ -12,7 +12,7 @@ built-in visual editor, and compose your whole home-energy picture with the
 matching **My Home** scene.
 
 > An **unofficial** community project — not affiliated with, endorsed, or
-> supported by Tesla, Inc. Currently pre-1.0; release notes live on the
+> supported by Tesla, Inc. Release notes live on the
 > [Releases](https://github.com/mlmeehan/tesla-card/releases) page.
 
 ![Tesla Card — charging](docs/screenshot-charging.png)
@@ -63,7 +63,7 @@ matching **My Home** scene.
   never opens a network connection of its own; commands ride Home Assistant's
   existing authenticated connection, a guarantee enforced by a merge-blocking
   CI gate — see [Privacy](docs/privacy.md) for the precise claim and its one
-  edge case.
+  edge case (the Location panel's map tiles).
 
 ## Screenshots
 
@@ -78,12 +78,15 @@ matching **My Home** scene.
 - **Home Assistant 2024.4.0** or newer — the card's own floor (declared in
   `hacs.json`): every HA UI component the card and its editor use exists from
   2024.4.
-- A **Tesla integration providing the entities**: the built-in `tesla_fleet`
+- A **Tesla integration providing the entities**: the built-in
+  [`tesla_fleet`](https://www.home-assistant.io/integrations/tesla_fleet/)
   (first shipped with HA **2024.8**, which makes 2024.8 the practical baseline)
-  or **Teslemetry** (available on earlier versions).
+  or [**Teslemetry**](https://www.home-assistant.io/integrations/teslemetry/)
+  (available on earlier versions).
 - For the **energy** features (Energy panel, My Home scene, Powerwall
   controls): a Powerwall / Wall Connector exposed by `tesla_fleet` and/or the
-  core `powerwall` integration.
+  core [`powerwall`](https://www.home-assistant.io/integrations/powerwall/)
+  integration.
 - Other Tesla integrations (`tesla_custom`, TeslaMate, …) are **not
   supported** — entity resolution targets the Fleet / Teslemetry naming.
   Manual [entity overrides](#entity-overrides-escape-hatch) may get partial
@@ -463,9 +466,17 @@ default, fully auto-detected scene.
 - **Every entity shows "— not found"** — confirm the `tesla_fleet` /
   Teslemetry integration is set up and has entities, then re-run the wizard's
   **Detect** step; with more than one Tesla, set `device:`.
-- **A few entities show ⚠ or "—"** — those are named unusually in your install;
-  fix just those keys with the editor's expand-in-place **remap** (or
-  `entities:` in YAML).
+- **On `tesla_custom` or TeslaMate?** Those integrations aren't supported —
+  entity resolution targets the Fleet / Teslemetry naming (see
+  [Requirements](#requirements)).
+- **A few entities show ⚠ or "—"** — those are named unusually in your install
+  (hand-renamed, or an HA server language that localises entity ids); fix just
+  those keys with the editor's expand-in-place **remap** (or `entities:` in
+  YAML).
+- **Card looks dimmed with stale numbers** — that's the graceful asleep
+  state, not a fault: the vehicle is offline and the card is showing its
+  last-known data. It never wakes the car on its own; tap **Wake** when you
+  want fresh values.
 - **No Energy tab** — it only appears when an energy site is detected; check
   the `powerwall` / `tesla_fleet` integrations, or wire `energy.entities`
   yourself.
