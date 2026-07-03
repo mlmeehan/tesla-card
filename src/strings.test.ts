@@ -252,7 +252,7 @@ describe('centralized strings — voice contract (Story 2.5)', () => {
     const a = STRINGS.editor.appearance;
     expect(a.heading).toBe('Appearance');
     // Theme options are TEXT-labelled (never colour-coded); the card-only sub-label present.
-    expect([a.themeAuto, a.themeLight, a.themeDark]).toEqual(['Auto', 'Light', 'Dark']);
+    expect([a.themeAuto, a.themeLight, a.themeDark]).toEqual(['Default', 'Light', 'Dark']);
     expect(a.themeAutoSub).toContain("only this card's surfaces");
     // Paint preset labels are GENERIC colour names — no vendor marketing names ship.
     expect([a.paintWhite, a.paintSilver, a.paintBlue, a.paintBlack, a.paintRed, a.paintGreen]).toEqual([

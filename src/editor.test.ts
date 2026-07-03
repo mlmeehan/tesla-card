@@ -2242,7 +2242,7 @@ describe('Story 9.12 D-9.12-4 — full-card live preview reflects all picks', ()
 });
 
 describe('Story 9.12 — announced, coalesced re-skin (polite live region)', () => {
-  test('a pick announces the RESOLVED appearance, naming what Auto inherits', async () => {
+  test('a pick announces the RESOLVED appearance, naming what Default inherits', async () => {
     const el = makeEditor();
     el.setConfig(APP_BASE);
     await el.updateComplete;
@@ -2252,7 +2252,7 @@ describe('Story 9.12 — announced, coalesced re-skin (polite live region)', () 
     expect(live.getAttribute('aria-live')).toBe('polite'); // never assertive
     expect(live.textContent).toContain(STRINGS.editor.appearance.announcePrefix);
     expect(live.textContent).toContain(STRINGS.editor.appearance.paintBlue);
-    expect(live.textContent).toContain(STRINGS.editor.appearance.themeAuto); // Auto (Dark)
+    expect(live.textContent).toContain(STRINGS.editor.appearance.themeAuto); // Default (Dark)
     el.remove();
   });
 });

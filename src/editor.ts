@@ -1460,8 +1460,8 @@ export class TeslaCardEditor extends LitElement implements LovelaceCardEditor {
     `;
   }
 
-  // Theme: an own-rolled Auto/Light/Dark segmented radiogroup (text-labelled, never
-  // colour-coded). Auto ⇒ delete the key (no override); Light/Dark ⇒ write it.
+  // Theme: an own-rolled Default/Light/Dark segmented radiogroup (text-labelled, never
+  // colour-coded). Default (value 'auto') ⇒ delete the key (no override); Light/Dark ⇒ write it.
   private _renderThemePicker(): TemplateResult {
     const theme = this._resolvedAppTheme();
     const opts: { val: 'auto' | 'light' | 'dark'; label: string }[] = [

@@ -529,7 +529,7 @@ export const STRINGS = {
     notifyHiddenDetected: 'Notify me about detected-but-hidden products',
     // ── Appearance & theming pickers (Story 9.12, D-9.12) ─────────────────────
     // The "Make it yours" surface: paint swatches + a free hex, a card-only
-    // Auto/Light/Dark theme override, and a present-gated default-panel chooser,
+    // Default/Light/Dark theme override, and a present-gated default-panel chooser,
     // over one full-card live preview. British English, calm/plain/honest voice
     // (no hype, no exclamation). Paint labels are GENERIC (no vendor names ship).
     // `announcePrefix` composes the polite live-region update naming the resolved
@@ -554,7 +554,10 @@ export const STRINGS = {
       panelNoteMyHome: 'The embedded vehicle card opens on this tab.',
       hexLabel: 'Custom hex',
       hexNote: 'Any colour is accepted exactly as typed — never blocked or changed.',
-      themeAuto: 'Auto',
+      // Labelled "Default", not "Auto": picking it deletes the key — the card keeps
+      // its own dark look and never follows the dashboard theme, so "Auto" would
+      // falsely promise adaptivity. (The config VALUE stays 'auto'.)
+      themeAuto: 'Default',
       themeLight: 'Light',
       themeDark: 'Dark',
       themeAutoSub: "Light or Dark recolours only this card's surfaces — the dashboard is untouched.",
