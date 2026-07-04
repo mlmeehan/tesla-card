@@ -19,6 +19,9 @@ npm run typecheck:e2e
 echo "==> lint (structural gates: no-bare-hass.states + no-cycle + trade-dress + import-allowlist + no-network-egress)"
 npm run lint
 
+echo "==> test:census (test-count / e2e-spec-file inventory vs tests/test-census.json)"
+npm run test:census
+
 echo "==> build + bundle-exists check"
 npm run build
 test -s dist/tesla-card.js

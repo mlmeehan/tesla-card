@@ -59,6 +59,10 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm run test
+      # Test-inventory gate: fails if tests/test-census.json (unit/e2e counts +
+      # e2e spec-file list) drifts from the live tree. `playwright test --list`
+      # needs no browser binaries, so this runs here without the E2E job's install.
+      - run: npm run test:census
 
   # E2E — Playwright drives the mock-hass demo harness (fully offline). On CI the
   # config auto-enables retries:2 / workers:2 / forbidOnly. webServer builds the

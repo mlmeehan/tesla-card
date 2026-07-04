@@ -1,0 +1,31 @@
+{
+  "_README": "AUTHORITATIVE test census. Regenerate with `npm run test:census -- --write` whenever you add/remove tests or e2e specs, and transcribe these counts into the story File List / Dev Record. Enforced by scripts/lint/test-census.mjs.",
+  "unitTests": 1687,
+  "e2eTests": 300,
+  "e2eSpecFiles": [
+    "tests/e2e/a11y-interaction.spec.ts",
+    "tests/e2e/audit-r6-suite.spec.ts",
+    "tests/e2e/audit-r6.spec.ts",
+    "tests/e2e/charging-panel.spec.ts",
+    "tests/e2e/commands.spec.ts",
+    "tests/e2e/degradation.spec.ts",
+    "tests/e2e/ecosystem-detail.spec.ts",
+    "tests/e2e/ecosystem-shell.spec.ts",
+    "tests/e2e/editor-wizard.spec.ts",
+    "tests/e2e/entity-resolution.spec.ts",
+    "tests/e2e/hero.spec.ts",
+    "tests/e2e/inline-charts.spec.ts",
+    "tests/e2e/location-panel.spec.ts",
+    "tests/e2e/media-panel.spec.ts",
+    "tests/e2e/my-home-scene.spec.ts",
+    "tests/e2e/node-hero.spec.ts",
+    "tests/e2e/panels.spec.ts",
+    "tests/e2e/powerwall-controls.spec.ts",
+    "tests/e2e/scene-aware-editor.spec.ts",
+    "tests/e2e/smoke.spec.ts",
+    "tests/e2e/tires-panel.spec.ts",
+    "tests/e2e/tokens.spec.ts",
+    "tests/e2e/typography.spec.ts",
+    "tests/e2e/visual.spec.ts"
+  ]
+}
