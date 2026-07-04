@@ -544,10 +544,20 @@ function byPrecedence(candidates: Iterable<Integration>): Integration[] {
  *   - None detected + no override → `source: 'default'`, `tesla_fleet` (the
  *     bundled default dialect) so a foreign/registry-less install degrades to a
  *     designed default rather than crashing (NFR-4).
+ *
+ * `scope` (Story 14.2): an optional set of the resolved vehicle device's entity
+ * ids. When supplied, the probe counts ONLY entities in that set, so a split-
+ * platform household (a `tesla_custom` car + a `tesla_fleet` Powerwall) is
+ * probed per-device — the car's device speaks one dialect, no false ambiguity.
+ * When omitted, the probe counts registry-wide exactly as before, so the
+ * fire-and-forget editor caller (`tesla-card.ts`) and `adapterFor` keep their
+ * "which dialects exist anywhere" semantics. The scope is passed DOWN as a
+ * parameter — `dialect.ts` never imports `resolve.ts` (the `no-cycle` gate holds).
  */
 export function detectDialect(
   hass: HomeAssistant | undefined,
-  config: TeslaCardConfig
+  config: TeslaCardConfig,
+  scope?: ReadonlySet<string>
 ): DialectReport {
   // 1) Override wins.
   if (isIntegration(config.integration)) {
@@ -559,18 +569,20 @@ export function detectDialect(
     };
   }
 
-  // 2) Probe entity platforms. We count *every* Tesla-platform entity per
-  //    platform (not only those owned by the detected vehicle device) — a
-  //    deliberate simplification: the goal here is "which integration dialects
-  //    are present", and the platform string, not the device, names the dialect
-  //    (a Tesla-manufacturer device with no `platform` cannot name an
-  //    Integration, so detectVehicle's manufacturer fallback is intentionally
-  //    NOT mirrored here). Vehicle-device-scoped weighting is a later refinement
-  //    if a real multi-integration install ever needs it.
+  // 2) Probe entity platforms per Tesla platform. The platform string, not the
+  //    device, names the dialect (a Tesla-manufacturer device with no `platform`
+  //    cannot name an Integration, so detectVehicle's manufacturer fallback is
+  //    intentionally NOT mirrored here). Story 14.2 realised the once-deferred
+  //    "vehicle-device-scoped weighting": when `scope` is provided the loop counts
+  //    ONLY entities whose `entity_id` is in it (the resolved vehicle device's
+  //    entities), so a split-platform household is disambiguated to the car's own
+  //    dialect. Omitting `scope` keeps the registry-wide "which dialects exist
+  //    anywhere" count for the unscoped editor/`adapterFor` callers.
   const counts = new Map<Integration, number>();
   const entities = hass?.entities as Record<string, any> | undefined;
   if (entities) {
     for (const ent of Object.values(entities)) {
+      if (scope && !scope.has(ent?.entity_id)) continue;
       const p = ent?.platform;
       if (isIntegration(p)) counts.set(p, (counts.get(p) ?? 0) + 1);
     }

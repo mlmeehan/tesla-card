@@ -373,3 +373,71 @@ describe('normalizePower — raw battery sign → canonical (Story 4.1)', () => 
     }
   });
 });
+
+// ── Story 14.2 — device-scoped dialect probe (the optional `scope` param) ────────
+//
+// The probe gains an optional `scope` (the resolved vehicle device's entity ids):
+// when supplied it counts ONLY entities in that set, so a split-platform household
+// probes per-device (no false ambiguity); when omitted it counts registry-wide,
+// exactly as before (unscoped editor/adapterFor callers unchanged).
+describe('Story 14.2 — detectDialect device scope', () => {
+  /** A split household registry: a tesla_custom car device + a tesla_fleet Powerwall. */
+  function splitHousehold(): { entities: Record<string, any>; car: string[]; pw: string[] } {
+    const car = ['sensor.car_battery', 'sensor.car_range', 'binary_sensor.car_charging'];
+    const pw = ['sensor.pw_battery_power', 'sensor.pw_solar_power', 'sensor.pw_load_power', 'sensor.pw_grid_power'];
+    const entities: Record<string, any> = {};
+    for (const id of car) entities[id] = { entity_id: id, platform: 'tesla_custom', device_id: 'car1' };
+    for (const id of pw) entities[id] = { entity_id: id, platform: 'tesla_fleet', device_id: 'pw1' };
+    return { entities, car, pw };
+  }
+
+  test('scoped to the car device → its single dialect, not ambiguous', () => {
+    const { entities, car } = splitHousehold();
+    const r = detectDialect(makeHass({ entities }), cfg(), new Set(car));
+    expect(r.integration).toBe('tesla_custom');
+    expect(r.ambiguous).toBe(false);
+    expect(r.candidates).toEqual(['tesla_custom']);
+    expect(r.source).toBe('probe');
+  });
+
+  test('scoped to the Powerwall device → tesla_fleet, not ambiguous', () => {
+    const { entities, pw } = splitHousehold();
+    const r = detectDialect(makeHass({ entities }), cfg(), new Set(pw));
+    expect(r.integration).toBe('tesla_fleet');
+    expect(r.ambiguous).toBe(false);
+  });
+
+  test('UNSCOPED over the same registry → ambiguous (registry-wide sees both platforms)', () => {
+    const { entities } = splitHousehold();
+    const r = detectDialect(makeHass({ entities }), cfg());
+    expect(r.ambiguous).toBe(true);
+    expect(new Set(r.candidates)).toEqual(new Set(['tesla_custom', 'tesla_fleet']));
+  });
+
+  test('scoped to a same-device two-platform set → STILL ambiguous (the retained guard case)', () => {
+    const entities: Record<string, any> = {
+      'sensor.d_battery': { entity_id: 'sensor.d_battery', platform: 'tesla_custom', device_id: 'd1' },
+      'sensor.d_odometer': { entity_id: 'sensor.d_odometer', platform: 'tesla_fleet', device_id: 'd1' },
+    };
+    const r = detectDialect(makeHass({ entities }), cfg(), new Set(Object.keys(entities)));
+    expect(r.ambiguous).toBe(true);
+  });
+
+  test('an EMPTY scope is NOT the same as omitting it — empty ⇒ zero-count default, omit ⇒ registry-wide', () => {
+    // Guards AC5: resolve.ts must OMIT (not pass an empty Set) for registry-less installs.
+    const { entities } = splitHousehold();
+    const scopedEmpty = detectDialect(makeHass({ entities }), cfg(), new Set<string>());
+    expect(scopedEmpty.source).toBe('default');
+    expect(scopedEmpty.integration).toBe('tesla_fleet');
+    const omitted = detectDialect(makeHass({ entities }), cfg());
+    expect(omitted.source).toBe('probe'); // registry-wide, sees the platforms
+  });
+
+  test('back-compat: the override short-circuit still wins even when a scope is passed', () => {
+    const { entities, pw } = splitHousehold();
+    // A scope alongside config.integration is (correctly) ignored — override runs first.
+    const r = detectDialect(makeHass({ entities }), cfg({ integration: 'tesla_custom' }), new Set(pw));
+    expect(r.integration).toBe('tesla_custom');
+    expect(r.source).toBe('override');
+  });
+});
