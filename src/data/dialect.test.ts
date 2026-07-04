@@ -4,14 +4,19 @@
 // no DOM); hermetic — reuses the committed tesla_fleet fixture and synthesizes
 // minimal hass.entities for the other-platform / ambiguity cases. ZERO network.
 //
-// HONESTY NOTE: we have only a tesla_fleet Model Y corpus. For tesla_custom
-// (uncaptured) we assert the alias-map/override MECHANISM is applied, with the
-// assumed strings pinned in dialect.ts — never that those literals are ground truth.
+// HONESTY NOTE (updated Story 14.1): the per-dialect entity-name spellings are now
+// CONFIRMED-by-source-read (research 2026-07-03 §4/§5 — the alandtse/tesla type-string
+// naming + Fleet-family divergences), NOT corpus-captured (we still hold no live
+// tessie/teslemetry/tesla_custom install). The forward-direction resolver tables
+// (DIALECT_ENTITY_ALIASES / DIALECT_ABSENT) are the mechanism resolveEntities reads;
+// the legacy reverse `aliasMap`/`.alias()` field is now unpopulated + unconsumed.
 import { describe, expect, test } from 'vitest';
 import fixture from '../fixtures/model-y-awake.json';
-import { TESLA_PLATFORMS } from './resolve';
+import { TESLA_PLATFORMS } from './platforms';
 import {
   DIALECTS,
+  DIALECT_ENTITY_ALIASES,
+  DIALECT_ABSENT,
   adapterFor,
   detectDialect,
   makeAdapter,
@@ -56,11 +61,22 @@ const REAL_INTEGRATIONS: Integration[] = [
 ];
 
 describe('dialect-adapter layer (Story 1.4)', () => {
-  // ── Single source of truth: the table + precedence track resolve.ts's set ──────────
-  test('DIALECTS keys exactly match resolve.ts TESLA_PLATFORMS (no drift)', () => {
+  // ── Single source of truth: the table + precedence track platforms.ts's set ──────────
+  test('DIALECTS keys exactly match platforms.ts TESLA_PLATFORMS (no drift)', () => {
     expect(new Set(Object.keys(DIALECTS))).toEqual(new Set(TESLA_PLATFORMS));
     // And every real integration has an adapter (degrade-or-first-class, none missing).
     for (const i of REAL_INTEGRATIONS) expect(DIALECTS[i]?.integration).toBe(i);
+  });
+
+  // ── Story 14.1 — the forward resolver tables never carry a tesla_fleet key ──────────
+  test('DIALECT_ENTITY_ALIASES / DIALECT_ABSENT have NO tesla_fleet entry (byte-identical guarantee)', () => {
+    // No fleet key in either table ⇒ resolveEntities takes the unchanged fleet path
+    // for a fleet install (the data-level half of the AC6 byte-identical guarantee).
+    expect(DIALECT_ENTITY_ALIASES.tesla_fleet).toBeUndefined();
+    expect(DIALECT_ABSENT.tesla_fleet).toBeUndefined();
+    // The known divergent dialects DO carry entries (sanity: the tables aren't empty).
+    expect(Object.keys(DIALECT_ENTITY_ALIASES.tesla_custom ?? {}).length).toBeGreaterThan(0);
+    expect((DIALECT_ABSENT.tessie?.size ?? 0)).toBeGreaterThan(0);
   });
 
   // ── AC1 — detection + override + ambiguity ─────────────────────────────────────────
@@ -183,27 +199,35 @@ describe('dialect-adapter layer (Story 1.4)', () => {
     });
   });
 
-  // ── AC2 — tesla_custom alias map + per-dialect status override (MECHANISM) ───────────
-  describe('AC2 — tesla_custom carries its own alias map (mechanism, not fabricated literals)', () => {
-    test('tesla_custom.alias() applies its alias map; tesla_fleet.alias() is identity', () => {
-      // ASSUMED strings (pinned in dialect.ts): assert the map is APPLIED, not that
-      // these are corpus-verified ground truth.
-      expect(DIALECTS.tesla_custom.alias('charging')).toBe('charging_status');
-      expect(DIALECTS.tesla_custom.alias('battery')).toBe('battery_level');
-      // Unmapped names pass through unchanged.
-      expect(DIALECTS.tesla_custom.alias('odometer')).toBe('odometer');
-      // The default dialect aliases nothing (pure passthrough).
-      expect(DIALECTS.tesla_fleet.alias('charging')).toBe('charging');
-      expect(DIALECTS.tesla_fleet.aliasMap).toEqual({});
+  // ── AC5 — tesla_custom charging = a CAPABILITY difference (boolean-derived) ───────────
+  //
+  // Story 14.1 RETIRED the two REFUTED tesla_custom assumptions this block used to pin:
+  //   • the reverse `TESLA_CUSTOM_ALIASES` placeholder (`.alias`/`.aliasMap` are dead —
+  //     zero consumers; the resolver reads the forward DIALECT_ENTITY_ALIASES table);
+  //   • the dead `TESLA_CUSTOM_CHARGING = {charge_complete → complete}` override (the
+  //     token exists nowhere in the integration — it could never fire).
+  // What remains, CONFIRMED by §5: tesla_custom exposes charging ONLY as a boolean
+  // binary_sensor.charging (on/off), so its adapter derives charging from that boolean.
+  describe('AC5 — tesla_custom charging derives from the boolean (capability difference)', () => {
+    test('the tesla_custom adapter maps the boolean vocabulary (on→charging, off→stopped)', () => {
+      expect(DIALECTS.tesla_custom.normalizeChargingState('on')).toBe('charging');
+      expect(DIALECTS.tesla_custom.normalizeChargingState('off')).toBe('stopped');
+      // It still inherits the default mappings it didn't override.
+      expect(DIALECTS.tesla_custom.normalizeChargingState('Charging')).toBe('charging');
     });
 
-    test('tesla_custom status override is consulted ahead of the default map', () => {
-      // ASSUMED override `charge_complete → complete` (pinned in dialect.ts) — the default
-      // map has no such key, so this proves the per-dialect override mechanism works.
-      expect(DIALECTS.tesla_custom.normalizeChargingState('charge_complete')).toBe('complete');
-      expect(normalizeChargingState('charge_complete')).toBe('unknown'); // default doesn't know it
-      // tesla_custom still inherits the default mappings it didn't override.
-      expect(DIALECTS.tesla_custom.normalizeChargingState('Charging')).toBe('charging');
+    test('the dead charge_complete override is GONE — both the adapter and default return unknown', () => {
+      expect(DIALECTS.tesla_custom.normalizeChargingState('charge_complete')).toBe('unknown');
+      expect(normalizeChargingState('charge_complete')).toBe('unknown');
+    });
+
+    test('the legacy reverse aliasMap is unpopulated for every dialect (forward table is the mechanism)', () => {
+      // The type field + `.alias()` method survive (out-of-scope to remove) but carry
+      // no data now — no dialect populates them; resolution reads DIALECT_ENTITY_ALIASES.
+      for (const a of Object.values(DIALECTS)) {
+        expect(a.aliasMap).toEqual({});
+        expect(a.alias('anything')).toBe('anything'); // pure passthrough
+      }
     });
   });
 

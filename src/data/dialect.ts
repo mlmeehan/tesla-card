@@ -1,6 +1,7 @@
 import type { HomeAssistant, TeslaCardConfig } from '../types';
+import type { EntityKey } from '../const';
 import type { EnergyRole } from './registry';
-import { TESLA_PLATFORMS } from './resolve';
+import { TESLA_PLATFORMS } from './platforms';
 
 /**
  * D2 — Dialect-adapter layer (the integration-specific quarantine).
@@ -10,26 +11,37 @@ import { TESLA_PLATFORMS } from './resolve';
  * vs Tessie). Rather than scatter `=== 'Charging'` and per-integration aliases
  * across components, EVERYTHING dialect-specific lives here, behind pure
  * functions in a table — never an OO class hierarchy (≈5 derivations need no
- * framework). A new integration's *adapter behaviour* is therefore "+1 pure
- * adapter" (one `DIALECTS` table entry, no detection/normalizer/consumer edits);
- * the co-located seam test proves that. NOTE one caveat the seam test pins: for
- * `detectDialect` to *probe* a brand-new integration it must also join the shared
- * `TESLA_PLATFORMS` set in `resolve.ts` (the single source of truth) — that set,
- * not this table, is what the probe scans. So "nothing downstream" is scoped to
- * adapter behaviour; registering a never-seen platform is the one shared-constant
- * edit, by design (single source of truth, asserted by the no-drift test).
+ * framework). AR-4 (restated honestly, Story 14.1): a FULLY-COVERED new dialect
+ * now touches up to four coordinated, non-type-linked data structures — its
+ * `DIALECTS` adapter entry, plus (as needed) `DIALECT_ENTITY_ALIASES`,
+ * `DIALECT_ABSENT`, and a status override — but NO call-site or component churn:
+ * the resolver's one-time `detectDialect` consult is the single binding, and
+ * adding a dialect never edits `resolve.ts`'s loop, the components, or `flow/`.
+ * (The older "+1 adapter, nothing downstream" phrasing is retired — the resolver
+ * now consults these tables, so a divergent dialect is more than an adapter row.)
+ * The co-located seam test proves the no-call-site-churn guarantee. NOTE one caveat
+ * the seam test pins: for `detectDialect` to *probe* a brand-new integration it must
+ * also join the shared `TESLA_PLATFORMS` set in `platforms.ts` (the single source of
+ * truth) — that set, not this table, is what the probe scans; registering a
+ * never-seen platform is the one shared-constant edit, by design (asserted by the
+ * no-drift test).
  *
  * This module belongs in `data/` because `detectDialect` reads `hass.entities`
  * (the registry) — a read that is legitimate ONLY inside `data/` (AR-1). It
  * imports no `lit`/DOM and nothing upward (`flow/`, `components/`); it may import
- * sibling `data/` (`resolve.ts` for the shared Tesla-platform set) and root
- * `types`. The `Integration` ↔ `types.ts` cross-reference is type-only (erased),
- * so there is no runtime cycle.
+ * sibling `data/` (`platforms.ts` for the shared Tesla-platform set, `resolve.ts`'s
+ * helpers/tables) and root `types`. The `Integration` ↔ `types.ts` cross-reference is type-only (erased),
+ * so there is no runtime cycle. (Story 14.1: the shared Tesla-platform set moved
+ * to the leaf `platforms.ts` so `resolve.ts` can now value-import this module — for
+ * its per-dialect alias tables — without forming a `resolve ↔ dialect` cycle.)
  *
- * NOTE: no consumer is wired to this module yet. The resolver pipeline, FlowModel
- * (Epic 4) and the component status checks (Stories 3.4 / 5.7) bind to this API
- * later; building the tested pure hub first mirrors 1.2 (`registry.ts`) and 1.3
- * (`resolve.ts`). Do NOT call these normalizers from any component in this story.
+ * CONSUMERS (Story 14.1): `resolveEntities` (`resolve.ts`) now consults this
+ * module's per-dialect alias/ABSENT tables (`DIALECT_ENTITY_ALIASES` /
+ * `DIALECT_ABSENT`) via `detectDialect`, so the alias mechanism is live in the
+ * resolution path — it is no longer a tested-but-unwired hub. The status
+ * normalizers (`normalizeChargingState` etc.) remain reachable via `adapterFor`;
+ * routing the running components' charging read through the dialect-aware
+ * normalizer is a ratified follow-on (research §6.4 #3), NOT this story.
  */
 
 // ───────────────────────────────────────────────────────────────────────────
@@ -48,7 +60,7 @@ export type Integration =
  * Deterministic tie-break order when more than one integration is present.
  * `tesla_fleet` (the bundled corpus / default dialect) wins ties; the rest
  * follow a fixed precedence so the chosen `integration` is reproducible.
- * Membership is validated against `resolve.ts`'s `TESLA_PLATFORMS` (single
+ * Membership is validated against `platforms.ts`'s `TESLA_PLATFORMS` (single
  * source of truth) by the co-located seam test — do not let the two drift.
  */
 const PRECEDENCE: readonly Integration[] = [
@@ -59,7 +71,7 @@ const PRECEDENCE: readonly Integration[] = [
   'tesla',
 ];
 
-/** Is `x` a known Tesla integration platform? (reuses resolve.ts's set). */
+/** Is `x` a known Tesla integration platform? (reuses platforms.ts's set). */
 function isIntegration(x: unknown): x is Integration {
   return typeof x === 'string' && TESLA_PLATFORMS.has(x);
 }
@@ -300,30 +312,29 @@ export function makeAdapter(spec: AdapterSpec): DialectAdapter {
   };
 }
 
-// ── tesla_custom — the costly distinct dialect (AC2) ─────────────────────────
+// ── tesla_custom charging = a CAPABILITY difference (AC5) ─────────────────────
 //
-// ASSUMPTION (uncaptured corpus): we have only a tesla_fleet Model Y fixture, so
-// the exact tesla_custom object-id/attribute/state spellings are NOT corpus-
-// verified. We therefore encode the alias-map MECHANISM (data consumed by the
-// generic adapter) with a few documented, likely renames; real values fill in
-// DATA-ONLY when a tesla_custom corpus is captured. The co-located test asserts
-// the alias map is APPLIED — never that these specific strings are ground truth.
+// CONFIRMED (research 2026-07-03, §5): `tesla_custom` (alandtse/tesla, backed by
+// teslajsonpy) exposes charging ONLY as a boolean `binary_sensor.charging`
+// (`is_on = charging_state == "Charging"`) — there is NO charging-status *string*
+// entity. So this dialect's charging state must be DERIVED from the boolean, not
+// normalized from a status string. This override maps the boolean vocabulary
+// (`on → charging`, `off → stopped`) so `adapterFor(hass,config).normalizeChargingState`
+// reads the boolean correctly. Capability limitation: a boolean source cannot
+// express `'complete'` (the default map reaches it only from the string vocab),
+// so a fully-charged tesla_custom car derives `stopped`, not `complete` — inherent
+// to the integration's shape, documented, not a defect.
 //
-// Rationale for the entries below: the HACS `tesla_custom` integration has
-// historically exposed charging under a bare `charging` sensor and the battery
-// under `battery`, where tesla_fleet uses `charging_status` / `battery_level`
-// (see const.ts DEFAULT_ENTITIES). Adjust these once a corpus lands.
-const TESLA_CUSTOM_ALIASES: Readonly<Record<string, string>> = {
-  charging: 'charging_status',
-  battery: 'battery_level',
-};
-
-// ASSUMPTION (uncaptured corpus): tesla_custom is believed to emit a combined
-// `charge_complete` charging string the default map doesn't carry. Encoded to
-// demonstrate the per-dialect status-override MECHANISM; the test asserts the
-// override is consulted, not that this literal is real.
+// Story 14.1 cleared two dead tesla_custom constructs: (1) the old reverse-direction
+// `TESLA_CUSTOM_ALIASES` placeholder was DELETED outright (`.alias`/`.aliasMap` have
+// zero consumers; the resolver reads the forward `DIALECT_ENTITY_ALIASES` table below
+// instead); (2) `TESLA_CUSTOM_CHARGING` was REPURPOSED IN PLACE — the dead
+// `{charge_complete → complete}` entry was removed (the token `charge_complete` exists
+// nowhere in the integration, §5 verdict) and the const now holds the boolean
+// capability map below.
 const TESLA_CUSTOM_CHARGING: Readonly<Record<string, ChargingState>> = {
-  charge_complete: 'complete',
+  on: 'charging',
+  off: 'stopped',
 };
 
 /**
@@ -332,8 +343,9 @@ const TESLA_CUSTOM_CHARGING: Readonly<Record<string, ChargingState>> = {
  * combine/split + default normalizers). `teslemetry` / `tessie` / bare `tesla`
  * are present table entries that DEGRADE to the default-dialect behaviour
  * (non-crashing, fillable incrementally — AC4), so the verticals are never
- * blocked on missing dialect coverage. `tesla_custom` carries its own alias map
- * + status override (AC2).
+ * blocked on missing dialect coverage. `tesla_custom` carries its boolean-charging
+ * override (AC5); per-dialect entity-name divergences live in the separate
+ * forward-direction `DIALECT_ENTITY_ALIASES` table (below), which the resolver reads.
  */
 export const DIALECTS: Readonly<Record<Integration, DialectAdapter>> = {
   tesla_fleet: makeAdapter({ integration: 'tesla_fleet' }),
@@ -341,10 +353,154 @@ export const DIALECTS: Readonly<Record<Integration, DialectAdapter>> = {
   tessie: makeAdapter({ integration: 'tessie' }),
   tesla_custom: makeAdapter({
     integration: 'tesla_custom',
-    aliasMap: TESLA_CUSTOM_ALIASES,
     charging: TESLA_CUSTOM_CHARGING,
   }),
   tesla: makeAdapter({ integration: 'tesla' }),
+};
+
+// ───────────────────────────────────────────────────────────────────────────
+// Per-dialect entity-name resolution tables (Story 14.1 — consumed by resolveEntities)
+// ───────────────────────────────────────────────────────────────────────────
+//
+// SOURCE OF TRUTH: `research/technical-tesla-integration-dialect-ground-truth-research-2026-07-03.md`
+// §4 (Fleet-family divergences) + §5 (tesla_custom `type`-string naming), cross-
+// checked against each integration's `strings.json` / entity source. Transcribed
+// VERBATIM from that doc — do not invent aliases beyond §4/§5.
+//
+// VERSION-DRIFT CAVEAT (research §6.3): HA-core integrations evolve; the Fleet-
+// family divergences especially shift release-to-release. Treat these as MAINTAINED
+// DATA — re-verify against the integration's `strings.json` when a mismatch is
+// reported. The project holds no real tessie/teslemetry/tesla_custom corpus, so
+// §5 is CONFIRMED-by-source-read, not corpus-captured (the ASSUMED cells are the
+// couple of teslemetry seat strings inferred = fleet).
+//
+// `tesla_fleet` (and bare `tesla`, un-researched — treated like fleet) intentionally
+// have NO entry in either table ⇒ every key uses the fleet canonical path unchanged
+// (this is the AC6 byte-identical guarantee, at the data level).
+
+/**
+ * Canonical `EntityKey` → that dialect's full `"domain.suffix"` (a slug-free
+ * entity id whose domain AND suffix may both differ from fleet). The resolver
+ * ({@link resolveEntities}) matches an aliased key by THIS `domain.suffix` instead
+ * of the fleet canonical. Any canonical key NOT covered by research is left
+ * un-aliased (it degrades via ~95% Fleet-family convergence). [AC1]
+ */
+export const DIALECT_ENTITY_ALIASES: Partial<
+  Record<Integration, Partial<Record<EntityKey, string>>>
+> = {
+  // §4 — teslemetry is otherwise 1:1 with fleet.
+  teslemetry: {
+    cop_actively_cooling: 'binary_sensor.cabin_overheat_protection_active',
+  },
+  // §4 — tessie divergences (note: seat_fl/fr differ from tesla_custom's suffixes).
+  tessie: {
+    windows: 'cover.vent_windows',
+    defrost: 'switch.defrost_mode',
+    seat_fl: 'select.seat_heater_left',
+    seat_fr: 'select.seat_heater_right',
+  },
+  // §5 — tesla_custom `slug(type)` naming (domains change; charging_status points
+  // at the boolean binary_sensor.charging = the capability difference, AC5).
+  tesla_custom: {
+    battery_level: 'sensor.battery',
+    battery_range: 'sensor.range',
+    inside_temp: 'sensor.temperature_inside',
+    outside_temp: 'sensor.temperature_outside',
+    charge_current: 'number.charging_amps',
+    charge_rate: 'sensor.charging_rate',
+    charge_energy_added: 'sensor.energy_added',
+    charge_switch: 'switch.charger',
+    charging_status: 'binary_sensor.charging',
+    charge_port: 'cover.charger_door',
+    charge_cable: 'binary_sensor.charger',
+    charge_cable_lock: 'lock.charge_port_latch',
+    status: 'binary_sensor.online',
+    update: 'update.software_update',
+    lock: 'lock.doors',
+    climate: 'climate.hvac_climate_system',
+    cabin_overheat_protection: 'select.cabin_overheat_protection',
+    seat_fl: 'select.heated_seat_left',
+    seat_fr: 'select.heated_seat_right',
+    seat_rl: 'select.heated_seat_rear_left',
+    seat_rc: 'select.heated_seat_rear_center',
+    seat_rr: 'select.heated_seat_rear_right',
+    steering_wheel_heater: 'select.heated_steering_wheel',
+    sentry: 'switch.sentry_mode',
+    tire_fl: 'sensor.tpms_front_left',
+    tire_fr: 'sensor.tpms_front_right',
+    tire_rl: 'sensor.tpms_rear_left',
+    tire_rr: 'sensor.tpms_rear_right',
+    location: 'device_tracker.location_tracker',
+    route: 'device_tracker.destination_location_tracker',
+    distance_to_arrival: 'sensor.distance_to_arrival',
+    time_to_arrival: 'sensor.arrival_time',
+    time_to_full_charge: 'sensor.time_charge_complete',
+    wake: 'button.wake_up',
+    honk: 'button.horn',
+    flash: 'button.flash_lights',
+    homelink: 'button.homelink',
+    boombox: 'button.emissions_test',
+  },
+};
+
+/**
+ * Keys a dialect does NOT expose at all. The resolver returns the empty-string
+ * sentinel `''` for an ABSENT key (never a fleet-default id), which propagates
+ * through `config.entities` and degrades to `unavailable` (empty string is not
+ * nullish, so `'' ?? DEFAULT → ''`; `hass.states['']` is `undefined`; `isUnavailable`
+ * short-circuits on `state === undefined`). An explicit `config.entities[key]`
+ * override still wins over an ABSENT marker (resolver step-1 precedence). [AC4]
+ */
+export const DIALECT_ABSENT: Partial<Record<Integration, ReadonlySet<EntityKey>>> = {
+  // §4 — tessie: entity not exposed by the integration.
+  tessie: new Set<EntityKey>([
+    'preconditioning',
+    'auto_seat_left',
+    'auto_seat_right',
+    'auto_steering_wheel',
+    'charger_has_multiple_phases',
+    'battery_heater',
+  ]),
+  // §5 — tesla_custom ABSENT list (only names that ARE EntityKeys; `usable_battery_level`
+  // is ABSENT while `battery_level` aliases to sensor.battery — usable folds in there).
+  tesla_custom: new Set<EntityKey>([
+    'usable_battery_level',
+    'ideal_battery_range',
+    'estimate_battery_range',
+    'door_fl',
+    'door_fr',
+    'door_rl',
+    'door_rr',
+    'window_fl',
+    'window_fr',
+    'window_rl',
+    'window_rr',
+    'driver_temp_setting',
+    'passenger_temp_setting',
+    'preconditioning',
+    'preconditioning_enabled',
+    'defrost',
+    'cop_actively_cooling',
+    'auto_seat_left',
+    'auto_seat_right',
+    'auto_steering_wheel',
+    'charger_voltage',
+    'charger_current',
+    'trip_charging',
+    'charger_has_multiple_phases',
+    'battery_heater',
+    'charge_at_arrival',
+    'dashcam',
+    'tire_warn_fl',
+    'tire_warn_fr',
+    'tire_warn_rl',
+    'tire_warn_rr',
+    'speed',
+    'power',
+    'traffic_delay',
+    'keyless',
+    'media_player',
+  ]),
 };
 
 // ───────────────────────────────────────────────────────────────────────────

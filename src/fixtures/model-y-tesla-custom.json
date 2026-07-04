@@ -5,57 +5,12 @@
     "model": "Model Y",
     "scenario": "awake",
     "ha_version": "2026.6",
-    "capture_method": "SYNTHETIC \u2014 NOT a captured corpus. Derived from model-y-awake.json (tesla_fleet) by (a) attaching a tesla_custom entity/device registry so detectDialect probes platform:tesla_custom, and (b) rewriting the charging-status read to the tesla_custom ASSUMPTION spelling.",
-    "entity_count": 96,
-    "assumption_notice": "The tesla_custom object-id/state spellings here are the data/dialect.ts ASSUMPTION set (dialect.ts L303-315), NOT corpus ground truth. We hold no captured tesla_custom install. charging_status uses the assumed `charge_complete` override (TESLA_CUSTOM_CHARGING \u2192 complete) and the `charging`\u2192`charging_status` alias mechanism. Tests assert the MECHANISM is applied (platform-driven detection + alias/override consulted), never that these literals are real. Fill in DATA-ONLY when a real corpus is captured.",
-    "notes": "Exercises AC4 of Story 5.11: the whole card rendered against the costly distinct dialect (tesla_custom) to confirm no fleet-shaped assumptions leak into the UI. Cover/lock/aperture reads route through the dialect normalizers (Story 5.11 remediation); charge state goes through normalizeChargingState. Synthetic data only \u2014 no Tesla art/trade-dress."
+    "capture_method": "SYNTHETIC — NOT a live capture. Derived from model-y-awake.json (tesla_fleet): the vehicle device carries a tesla_custom entity/device registry (platform:tesla_custom) and every divergent key was rewritten to its REAL tesla_custom domain.suffix per research §5 (charging_status → binary_sensor.<slug>_charging on/off; battery_level → sensor.<slug>_battery; lock → lock.<slug>_doors; etc.), with the §5-ABSENT keys removed entirely so the dialect-aware resolver (Story 14.1) resolves + degrades exactly as it would on a real install.",
+    "entity_count": 60,
+    "assumption_notice": "The tesla_custom domain.suffix spellings here are CONFIRMED by source-read (research 2026-07-03 §5, alandtse/tesla type-string naming), NOT corpus-captured — we hold no live tesla_custom install. Values/units are inherited from the fleet corpus. charging_status is a boolean binary_sensor.charging (on/off), not a status string. Energy-site entities are matched by function-slug substring (energy.ts), independent of dialect, so they keep their fleet-shaped ids.",
+    "notes": "Exercises AC4 of Story 5.11: the whole card rendered against the costly distinct dialect (tesla_custom) to confirm no fleet-shaped assumptions leak into the UI. Cover/lock/aperture reads route through the dialect normalizers (Story 5.11 remediation); charge state goes through normalizeChargingState. Synthetic data only — no Tesla art/trade-dress."
   },
   "states": {
-    "sensor.garage_model_y_battery_level": {
-      "entity_id": "sensor.garage_model_y_battery_level",
-      "state": "72",
-      "attributes": {
-        "unit_of_measurement": "%"
-      },
-      "last_changed": "2026-06-15T14:41:00Z",
-      "last_updated": "2026-06-15T14:41:00Z"
-    },
-    "sensor.garage_model_y_battery_range": {
-      "entity_id": "sensor.garage_model_y_battery_range",
-      "state": "235",
-      "attributes": {
-        "unit_of_measurement": "mi"
-      },
-      "last_changed": "2026-06-15T14:41:00Z",
-      "last_updated": "2026-06-15T14:41:00Z"
-    },
-    "sensor.usable_battery_level": {
-      "entity_id": "sensor.usable_battery_level",
-      "state": "71",
-      "attributes": {
-        "unit_of_measurement": "%"
-      },
-      "last_changed": "2026-06-15T14:41:00Z",
-      "last_updated": "2026-06-15T14:41:00Z"
-    },
-    "sensor.ideal_battery_range": {
-      "entity_id": "sensor.ideal_battery_range",
-      "state": "250",
-      "attributes": {
-        "unit_of_measurement": "mi"
-      },
-      "last_changed": "2026-06-15T14:41:00Z",
-      "last_updated": "2026-06-15T14:41:00Z"
-    },
-    "sensor.estimate_battery_range": {
-      "entity_id": "sensor.estimate_battery_range",
-      "state": "230",
-      "attributes": {
-        "unit_of_measurement": "mi"
-      },
-      "last_changed": "2026-06-15T14:41:00Z",
-      "last_updated": "2026-06-15T14:41:00Z"
-    },
     "sensor.odometer": {
       "entity_id": "sensor.odometer",
       "state": "12345",
@@ -72,30 +27,9 @@
       "last_changed": "2026-06-15T14:41:00Z",
       "last_updated": "2026-06-15T14:41:00Z"
     },
-    "update.garage_model_y_update": {
-      "entity_id": "update.garage_model_y_update",
-      "state": "off",
-      "attributes": {},
-      "last_changed": "2026-06-15T14:41:00Z",
-      "last_updated": "2026-06-15T14:41:00Z"
-    },
-    "binary_sensor.garage_model_y_status": {
-      "entity_id": "binary_sensor.garage_model_y_status",
-      "state": "on",
-      "attributes": {},
-      "last_changed": "2026-06-15T14:41:00Z",
-      "last_updated": "2026-06-15T14:41:00Z"
-    },
     "binary_sensor.garage_model_y_user_present": {
       "entity_id": "binary_sensor.garage_model_y_user_present",
       "state": "off",
-      "attributes": {},
-      "last_changed": "2026-06-15T14:41:00Z",
-      "last_updated": "2026-06-15T14:41:00Z"
-    },
-    "lock.garage_model_y_lock": {
-      "entity_id": "lock.garage_model_y_lock",
-      "state": "locked",
       "attributes": {},
       "last_changed": "2026-06-15T14:41:00Z",
       "last_updated": "2026-06-15T14:41:00Z"
@@ -128,256 +62,6 @@
       "last_changed": "2026-06-15T14:41:00Z",
       "last_updated": "2026-06-15T14:41:00Z"
     },
-    "binary_sensor.garage_model_y_front_driver_door": {
-      "entity_id": "binary_sensor.garage_model_y_front_driver_door",
-      "state": "on",
-      "attributes": {},
-      "last_changed": "2026-06-15T14:41:00Z",
-      "last_updated": "2026-06-15T14:41:00Z"
-    },
-    "binary_sensor.garage_model_y_front_passenger_door": {
-      "entity_id": "binary_sensor.garage_model_y_front_passenger_door",
-      "state": "off",
-      "attributes": {},
-      "last_changed": "2026-06-15T14:41:00Z",
-      "last_updated": "2026-06-15T14:41:00Z"
-    },
-    "binary_sensor.garage_model_y_rear_driver_door": {
-      "entity_id": "binary_sensor.garage_model_y_rear_driver_door",
-      "state": "off",
-      "attributes": {},
-      "last_changed": "2026-06-15T14:41:00Z",
-      "last_updated": "2026-06-15T14:41:00Z"
-    },
-    "binary_sensor.garage_model_y_rear_passenger_door": {
-      "entity_id": "binary_sensor.garage_model_y_rear_passenger_door",
-      "state": "off",
-      "attributes": {},
-      "last_changed": "2026-06-15T14:41:00Z",
-      "last_updated": "2026-06-15T14:41:00Z"
-    },
-    "binary_sensor.garage_model_y_front_driver_window": {
-      "entity_id": "binary_sensor.garage_model_y_front_driver_window",
-      "state": "off",
-      "attributes": {},
-      "last_changed": "2026-06-15T14:41:00Z",
-      "last_updated": "2026-06-15T14:41:00Z"
-    },
-    "binary_sensor.garage_model_y_front_passenger_window": {
-      "entity_id": "binary_sensor.garage_model_y_front_passenger_window",
-      "state": "off",
-      "attributes": {},
-      "last_changed": "2026-06-15T14:41:00Z",
-      "last_updated": "2026-06-15T14:41:00Z"
-    },
-    "binary_sensor.garage_model_y_rear_driver_window": {
-      "entity_id": "binary_sensor.garage_model_y_rear_driver_window",
-      "state": "off",
-      "attributes": {},
-      "last_changed": "2026-06-15T14:41:00Z",
-      "last_updated": "2026-06-15T14:41:00Z"
-    },
-    "binary_sensor.garage_model_y_rear_passenger_window": {
-      "entity_id": "binary_sensor.garage_model_y_rear_passenger_window",
-      "state": "off",
-      "attributes": {},
-      "last_changed": "2026-06-15T14:41:00Z",
-      "last_updated": "2026-06-15T14:41:00Z"
-    },
-    "climate.garage_model_y_climate": {
-      "entity_id": "climate.garage_model_y_climate",
-      "state": "heat_cool",
-      "attributes": {
-        "temperature": 21,
-        "current_temperature": 19,
-        "min_temp": 15,
-        "max_temp": 28,
-        "target_temp_step": 0.5
-      },
-      "last_changed": "2026-06-15T14:41:00Z",
-      "last_updated": "2026-06-15T14:41:00Z"
-    },
-    "sensor.garage_model_y_inside_temperature": {
-      "entity_id": "sensor.garage_model_y_inside_temperature",
-      "state": "19",
-      "attributes": {
-        "unit_of_measurement": "\u00b0C"
-      },
-      "last_changed": "2026-06-15T14:41:00Z",
-      "last_updated": "2026-06-15T14:41:00Z"
-    },
-    "sensor.garage_model_y_outside_temperature": {
-      "entity_id": "sensor.garage_model_y_outside_temperature",
-      "state": "12",
-      "attributes": {
-        "unit_of_measurement": "\u00b0C"
-      },
-      "last_changed": "2026-06-15T14:41:00Z",
-      "last_updated": "2026-06-15T14:41:00Z"
-    },
-    "sensor.driver_temperature_setting": {
-      "entity_id": "sensor.driver_temperature_setting",
-      "state": "21",
-      "attributes": {},
-      "last_changed": "2026-06-15T14:41:00Z",
-      "last_updated": "2026-06-15T14:41:00Z"
-    },
-    "sensor.passenger_temperature_setting": {
-      "entity_id": "sensor.passenger_temperature_setting",
-      "state": "21",
-      "attributes": {},
-      "last_changed": "2026-06-15T14:41:00Z",
-      "last_updated": "2026-06-15T14:41:00Z"
-    },
-    "binary_sensor.preconditioning": {
-      "entity_id": "binary_sensor.preconditioning",
-      "state": "off",
-      "attributes": {},
-      "last_changed": "2026-06-15T14:41:00Z",
-      "last_updated": "2026-06-15T14:41:00Z"
-    },
-    "binary_sensor.preconditioning_enabled": {
-      "entity_id": "binary_sensor.preconditioning_enabled",
-      "state": "on",
-      "attributes": {},
-      "last_changed": "2026-06-15T14:41:00Z",
-      "last_updated": "2026-06-15T14:41:00Z"
-    },
-    "switch.garage_model_y_defrost": {
-      "entity_id": "switch.garage_model_y_defrost",
-      "state": "off",
-      "attributes": {},
-      "last_changed": "2026-06-15T14:41:00Z",
-      "last_updated": "2026-06-15T14:41:00Z"
-    },
-    "climate.cabin_overheat_protection": {
-      "entity_id": "climate.cabin_overheat_protection",
-      "state": "off",
-      "attributes": {
-        "min_temp": 30,
-        "max_temp": 40
-      },
-      "last_changed": "2026-06-15T14:41:00Z",
-      "last_updated": "2026-06-15T14:41:00Z"
-    },
-    "binary_sensor.cabin_overheat_protection_actively_cooling": {
-      "entity_id": "binary_sensor.cabin_overheat_protection_actively_cooling",
-      "state": "off",
-      "attributes": {},
-      "last_changed": "2026-06-15T14:41:00Z",
-      "last_updated": "2026-06-15T14:41:00Z"
-    },
-    "select.garage_model_y_seat_heater_front_left": {
-      "entity_id": "select.garage_model_y_seat_heater_front_left",
-      "state": "High",
-      "attributes": {
-        "options": [
-          "Off",
-          "Low",
-          "Medium",
-          "High"
-        ]
-      },
-      "last_changed": "2026-06-15T14:41:00Z",
-      "last_updated": "2026-06-15T14:41:00Z"
-    },
-    "select.garage_model_y_seat_heater_front_right": {
-      "entity_id": "select.garage_model_y_seat_heater_front_right",
-      "state": "Off",
-      "attributes": {
-        "options": [
-          "Off",
-          "Low",
-          "Medium",
-          "High"
-        ]
-      },
-      "last_changed": "2026-06-15T14:41:00Z",
-      "last_updated": "2026-06-15T14:41:00Z"
-    },
-    "select.seat_heater_rear_left": {
-      "entity_id": "select.seat_heater_rear_left",
-      "state": "Low",
-      "attributes": {
-        "options": [
-          "Off",
-          "Low",
-          "Medium",
-          "High"
-        ]
-      },
-      "last_changed": "2026-06-15T14:41:00Z",
-      "last_updated": "2026-06-15T14:41:00Z"
-    },
-    "select.seat_heater_rear_center": {
-      "entity_id": "select.seat_heater_rear_center",
-      "state": "Off",
-      "attributes": {
-        "options": [
-          "Off",
-          "Low",
-          "Medium",
-          "High"
-        ]
-      },
-      "last_changed": "2026-06-15T14:41:00Z",
-      "last_updated": "2026-06-15T14:41:00Z"
-    },
-    "select.seat_heater_rear_right": {
-      "entity_id": "select.seat_heater_rear_right",
-      "state": "Off",
-      "attributes": {
-        "options": [
-          "Off",
-          "Low",
-          "Medium",
-          "High"
-        ]
-      },
-      "last_changed": "2026-06-15T14:41:00Z",
-      "last_updated": "2026-06-15T14:41:00Z"
-    },
-    "select.garage_model_y_steering_wheel_heater": {
-      "entity_id": "select.garage_model_y_steering_wheel_heater",
-      "state": "Low",
-      "attributes": {
-        "options": [
-          "Off",
-          "Low",
-          "High"
-        ]
-      },
-      "last_changed": "2026-06-15T14:41:00Z",
-      "last_updated": "2026-06-15T14:41:00Z"
-    },
-    "switch.garage_model_y_auto_seat_climate_left": {
-      "entity_id": "switch.garage_model_y_auto_seat_climate_left",
-      "state": "on",
-      "attributes": {},
-      "last_changed": "2026-06-15T14:41:00Z",
-      "last_updated": "2026-06-15T14:41:00Z"
-    },
-    "switch.garage_model_y_auto_seat_climate_right": {
-      "entity_id": "switch.garage_model_y_auto_seat_climate_right",
-      "state": "off",
-      "attributes": {},
-      "last_changed": "2026-06-15T14:41:00Z",
-      "last_updated": "2026-06-15T14:41:00Z"
-    },
-    "switch.garage_model_y_auto_steering_wheel_heater": {
-      "entity_id": "switch.garage_model_y_auto_steering_wheel_heater",
-      "state": "on",
-      "attributes": {},
-      "last_changed": "2026-06-15T14:41:00Z",
-      "last_updated": "2026-06-15T14:41:00Z"
-    },
-    "switch.garage_model_y_charge": {
-      "entity_id": "switch.garage_model_y_charge",
-      "state": "on",
-      "attributes": {},
-      "last_changed": "2026-06-15T14:41:00Z",
-      "last_updated": "2026-06-15T14:41:00Z"
-    },
     "number.garage_model_y_charge_limit": {
       "entity_id": "number.garage_model_y_charge_limit",
       "state": "80",
@@ -386,36 +70,6 @@
         "max": 100,
         "step": 1,
         "unit_of_measurement": "%"
-      },
-      "last_changed": "2026-06-15T14:41:00Z",
-      "last_updated": "2026-06-15T14:41:00Z"
-    },
-    "number.garage_model_y_charge_current": {
-      "entity_id": "number.garage_model_y_charge_current",
-      "state": "16",
-      "attributes": {
-        "min": 0,
-        "max": 48,
-        "step": 1,
-        "unit_of_measurement": "A"
-      },
-      "last_changed": "2026-06-15T14:41:00Z",
-      "last_updated": "2026-06-15T14:41:00Z"
-    },
-    "sensor.garage_model_y_charger_voltage": {
-      "entity_id": "sensor.garage_model_y_charger_voltage",
-      "state": "240",
-      "attributes": {
-        "unit_of_measurement": "V"
-      },
-      "last_changed": "2026-06-15T14:41:00Z",
-      "last_updated": "2026-06-15T14:41:00Z"
-    },
-    "sensor.garage_model_y_charger_current": {
-      "entity_id": "sensor.garage_model_y_charger_current",
-      "state": "16",
-      "attributes": {
-        "unit_of_measurement": "A"
       },
       "last_changed": "2026-06-15T14:41:00Z",
       "last_updated": "2026-06-15T14:41:00Z"
@@ -429,280 +83,9 @@
       "last_changed": "2026-06-15T14:41:00Z",
       "last_updated": "2026-06-15T14:41:00Z"
     },
-    "sensor.garage_model_y_charge_rate": {
-      "entity_id": "sensor.garage_model_y_charge_rate",
-      "state": "32",
-      "attributes": {
-        "unit_of_measurement": "mph"
-      },
-      "last_changed": "2026-06-15T14:41:00Z",
-      "last_updated": "2026-06-15T14:41:00Z"
-    },
-    "sensor.garage_model_y_charge_energy_added": {
-      "entity_id": "sensor.garage_model_y_charge_energy_added",
-      "state": "24.6",
-      "attributes": {
-        "unit_of_measurement": "kWh"
-      },
-      "last_changed": "2026-06-15T14:41:00Z",
-      "last_updated": "2026-06-15T14:41:00Z"
-    },
-    "sensor.garage_model_y_time_to_full_charge": {
-      "entity_id": "sensor.garage_model_y_time_to_full_charge",
-      "state": "1.5",
-      "attributes": {
-        "unit_of_measurement": "h"
-      },
-      "last_changed": "2026-06-15T14:41:00Z",
-      "last_updated": "2026-06-15T14:41:00Z"
-    },
-    "sensor.garage_model_y_charging": {
-      "entity_id": "sensor.garage_model_y_charging",
-      "state": "charge_complete",
-      "attributes": {},
-      "last_changed": "2026-06-15T14:41:00Z",
-      "last_updated": "2026-06-15T14:41:00Z"
-    },
-    "cover.garage_model_y_charge_port_door": {
-      "entity_id": "cover.garage_model_y_charge_port_door",
-      "state": "open",
-      "attributes": {},
-      "last_changed": "2026-06-15T14:41:00Z",
-      "last_updated": "2026-06-15T14:41:00Z"
-    },
-    "binary_sensor.garage_model_y_charge_cable": {
-      "entity_id": "binary_sensor.garage_model_y_charge_cable",
-      "state": "on",
-      "attributes": {},
-      "last_changed": "2026-06-15T14:41:00Z",
-      "last_updated": "2026-06-15T14:41:00Z"
-    },
-    "lock.garage_model_y_charge_cable_lock": {
-      "entity_id": "lock.garage_model_y_charge_cable_lock",
-      "state": "locked",
-      "attributes": {},
-      "last_changed": "2026-06-15T14:41:00Z",
-      "last_updated": "2026-06-15T14:41:00Z"
-    },
     "binary_sensor.scheduled_charging_pending": {
       "entity_id": "binary_sensor.scheduled_charging_pending",
       "state": "off",
-      "attributes": {},
-      "last_changed": "2026-06-15T14:41:00Z",
-      "last_updated": "2026-06-15T14:41:00Z"
-    },
-    "binary_sensor.trip_charging": {
-      "entity_id": "binary_sensor.trip_charging",
-      "state": "off",
-      "attributes": {},
-      "last_changed": "2026-06-15T14:41:00Z",
-      "last_updated": "2026-06-15T14:41:00Z"
-    },
-    "binary_sensor.charger_has_multiple_phases": {
-      "entity_id": "binary_sensor.charger_has_multiple_phases",
-      "state": "off",
-      "attributes": {},
-      "last_changed": "2026-06-15T14:41:00Z",
-      "last_updated": "2026-06-15T14:41:00Z"
-    },
-    "binary_sensor.battery_heater": {
-      "entity_id": "binary_sensor.battery_heater",
-      "state": "off",
-      "attributes": {},
-      "last_changed": "2026-06-15T14:41:00Z",
-      "last_updated": "2026-06-15T14:41:00Z"
-    },
-    "sensor.state_of_charge_at_arrival": {
-      "entity_id": "sensor.state_of_charge_at_arrival",
-      "state": "unknown",
-      "attributes": {},
-      "last_changed": "2026-06-15T14:41:00Z",
-      "last_updated": "2026-06-15T14:41:00Z"
-    },
-    "switch.garage_model_y_sentry_mode": {
-      "entity_id": "switch.garage_model_y_sentry_mode",
-      "state": "off",
-      "attributes": {},
-      "last_changed": "2026-06-15T14:41:00Z",
-      "last_updated": "2026-06-15T14:41:00Z"
-    },
-    "binary_sensor.dashcam": {
-      "entity_id": "binary_sensor.dashcam",
-      "state": "on",
-      "attributes": {},
-      "last_changed": "2026-06-15T14:41:00Z",
-      "last_updated": "2026-06-15T14:41:00Z"
-    },
-    "sensor.tire_pressure_front_left": {
-      "entity_id": "sensor.tire_pressure_front_left",
-      "state": "2.9",
-      "attributes": {
-        "unit_of_measurement": "bar"
-      },
-      "last_changed": "2026-06-15T14:41:00Z",
-      "last_updated": "2026-06-15T14:41:00Z"
-    },
-    "sensor.tire_pressure_front_right": {
-      "entity_id": "sensor.tire_pressure_front_right",
-      "state": "2.6",
-      "attributes": {
-        "unit_of_measurement": "bar"
-      },
-      "last_changed": "2026-06-15T14:41:00Z",
-      "last_updated": "2026-06-15T14:41:00Z"
-    },
-    "sensor.tire_pressure_rear_left": {
-      "entity_id": "sensor.tire_pressure_rear_left",
-      "state": "2.9",
-      "attributes": {
-        "unit_of_measurement": "bar"
-      },
-      "last_changed": "2026-06-15T14:41:00Z",
-      "last_updated": "2026-06-15T14:41:00Z"
-    },
-    "sensor.tire_pressure_rear_right": {
-      "entity_id": "sensor.tire_pressure_rear_right",
-      "state": "2.9",
-      "attributes": {
-        "unit_of_measurement": "bar"
-      },
-      "last_changed": "2026-06-15T14:41:00Z",
-      "last_updated": "2026-06-15T14:41:00Z"
-    },
-    "binary_sensor.tire_pressure_warning_front_left": {
-      "entity_id": "binary_sensor.tire_pressure_warning_front_left",
-      "state": "off",
-      "attributes": {},
-      "last_changed": "2026-06-15T14:41:00Z",
-      "last_updated": "2026-06-15T14:41:00Z"
-    },
-    "binary_sensor.tire_pressure_warning_front_right": {
-      "entity_id": "binary_sensor.tire_pressure_warning_front_right",
-      "state": "on",
-      "attributes": {},
-      "last_changed": "2026-06-15T14:41:00Z",
-      "last_updated": "2026-06-15T14:41:00Z"
-    },
-    "binary_sensor.tire_pressure_warning_rear_left": {
-      "entity_id": "binary_sensor.tire_pressure_warning_rear_left",
-      "state": "off",
-      "attributes": {},
-      "last_changed": "2026-06-15T14:41:00Z",
-      "last_updated": "2026-06-15T14:41:00Z"
-    },
-    "binary_sensor.tire_pressure_warning_rear_right": {
-      "entity_id": "binary_sensor.tire_pressure_warning_rear_right",
-      "state": "off",
-      "attributes": {},
-      "last_changed": "2026-06-15T14:41:00Z",
-      "last_updated": "2026-06-15T14:41:00Z"
-    },
-    "device_tracker.garage_model_y_location": {
-      "entity_id": "device_tracker.garage_model_y_location",
-      "state": "home",
-      "attributes": {
-        "latitude": 37.7749,
-        "longitude": -122.4194
-      },
-      "last_changed": "2026-06-15T14:41:00Z",
-      "last_updated": "2026-06-15T14:41:00Z"
-    },
-    "device_tracker.garage_model_y_route": {
-      "entity_id": "device_tracker.garage_model_y_route",
-      "state": "unknown",
-      "attributes": {},
-      "last_changed": "2026-06-15T14:41:00Z",
-      "last_updated": "2026-06-15T14:41:00Z"
-    },
-    "sensor.speed": {
-      "entity_id": "sensor.speed",
-      "state": "0",
-      "attributes": {
-        "unit_of_measurement": "mph"
-      },
-      "last_changed": "2026-06-15T14:41:00Z",
-      "last_updated": "2026-06-15T14:41:00Z"
-    },
-    "sensor.power": {
-      "entity_id": "sensor.power",
-      "state": "0",
-      "attributes": {
-        "unit_of_measurement": "kW"
-      },
-      "last_changed": "2026-06-15T14:41:00Z",
-      "last_updated": "2026-06-15T14:41:00Z"
-    },
-    "sensor.traffic_delay": {
-      "entity_id": "sensor.traffic_delay",
-      "state": "unavailable",
-      "attributes": {},
-      "last_changed": "2026-06-15T14:41:00Z",
-      "last_updated": "2026-06-15T14:41:00Z"
-    },
-    "sensor.garage_model_y_distance_to_arrival": {
-      "entity_id": "sensor.garage_model_y_distance_to_arrival",
-      "state": "unavailable",
-      "attributes": {},
-      "last_changed": "2026-06-15T14:41:00Z",
-      "last_updated": "2026-06-15T14:41:00Z"
-    },
-    "sensor.garage_model_y_time_to_arrival": {
-      "entity_id": "sensor.garage_model_y_time_to_arrival",
-      "state": "unavailable",
-      "attributes": {},
-      "last_changed": "2026-06-15T14:41:00Z",
-      "last_updated": "2026-06-15T14:41:00Z"
-    },
-    "media_player.garage_model_y_media_player": {
-      "entity_id": "media_player.garage_model_y_media_player",
-      "state": "playing",
-      "attributes": {
-        "media_title": "Bohemian Rhapsody",
-        "media_artist": "Queen",
-        "volume_level": 0.4,
-        "is_volume_muted": false
-      },
-      "last_changed": "2026-06-15T14:41:00Z",
-      "last_updated": "2026-06-15T14:41:00Z"
-    },
-    "button.garage_model_y_wake": {
-      "entity_id": "button.garage_model_y_wake",
-      "state": "2026-06-14T10:00:00+00:00",
-      "attributes": {},
-      "last_changed": "2026-06-15T14:41:00Z",
-      "last_updated": "2026-06-15T14:41:00Z"
-    },
-    "button.garage_model_y_honk_horn": {
-      "entity_id": "button.garage_model_y_honk_horn",
-      "state": "2026-06-14T10:00:00+00:00",
-      "attributes": {},
-      "last_changed": "2026-06-15T14:41:00Z",
-      "last_updated": "2026-06-15T14:41:00Z"
-    },
-    "button.garage_model_y_flash_lights": {
-      "entity_id": "button.garage_model_y_flash_lights",
-      "state": "2026-06-14T10:00:00+00:00",
-      "attributes": {},
-      "last_changed": "2026-06-15T14:41:00Z",
-      "last_updated": "2026-06-15T14:41:00Z"
-    },
-    "button.garage_model_y_homelink": {
-      "entity_id": "button.garage_model_y_homelink",
-      "state": "2026-06-14T10:00:00+00:00",
-      "attributes": {},
-      "last_changed": "2026-06-15T14:41:00Z",
-      "last_updated": "2026-06-15T14:41:00Z"
-    },
-    "button.garage_model_y_keyless_driving": {
-      "entity_id": "button.garage_model_y_keyless_driving",
-      "state": "2026-06-14T10:00:00+00:00",
-      "attributes": {},
-      "last_changed": "2026-06-15T14:41:00Z",
-      "last_updated": "2026-06-15T14:41:00Z"
-    },
-    "button.garage_model_y_play_fart": {
-      "entity_id": "button.garage_model_y_play_fart",
-      "state": "2026-06-14T10:00:00+00:00",
       "attributes": {},
       "last_changed": "2026-06-15T14:41:00Z",
       "last_updated": "2026-06-15T14:41:00Z"
@@ -822,44 +205,355 @@
       "attributes": {},
       "last_changed": "2026-06-15T14:41:00Z",
       "last_updated": "2026-06-15T14:41:00Z"
+    },
+    "sensor.garage_model_y_battery": {
+      "entity_id": "sensor.garage_model_y_battery",
+      "state": "72",
+      "attributes": {
+        "unit_of_measurement": "%"
+      },
+      "last_changed": "2026-06-15T14:41:00Z",
+      "last_updated": "2026-06-15T14:41:00Z"
+    },
+    "sensor.garage_model_y_range": {
+      "entity_id": "sensor.garage_model_y_range",
+      "state": "235",
+      "attributes": {
+        "unit_of_measurement": "mi"
+      },
+      "last_changed": "2026-06-15T14:41:00Z",
+      "last_updated": "2026-06-15T14:41:00Z"
+    },
+    "update.garage_model_y_software_update": {
+      "entity_id": "update.garage_model_y_software_update",
+      "state": "off",
+      "attributes": {},
+      "last_changed": "2026-06-15T14:41:00Z",
+      "last_updated": "2026-06-15T14:41:00Z"
+    },
+    "binary_sensor.garage_model_y_online": {
+      "entity_id": "binary_sensor.garage_model_y_online",
+      "state": "on",
+      "attributes": {},
+      "last_changed": "2026-06-15T14:41:00Z",
+      "last_updated": "2026-06-15T14:41:00Z"
+    },
+    "lock.garage_model_y_doors": {
+      "entity_id": "lock.garage_model_y_doors",
+      "state": "locked",
+      "attributes": {},
+      "last_changed": "2026-06-15T14:41:00Z",
+      "last_updated": "2026-06-15T14:41:00Z"
+    },
+    "climate.garage_model_y_hvac_climate_system": {
+      "entity_id": "climate.garage_model_y_hvac_climate_system",
+      "state": "heat_cool",
+      "attributes": {
+        "temperature": 21,
+        "current_temperature": 19,
+        "min_temp": 15,
+        "max_temp": 28,
+        "target_temp_step": 0.5
+      },
+      "last_changed": "2026-06-15T14:41:00Z",
+      "last_updated": "2026-06-15T14:41:00Z"
+    },
+    "sensor.garage_model_y_temperature_inside": {
+      "entity_id": "sensor.garage_model_y_temperature_inside",
+      "state": "19",
+      "attributes": {
+        "unit_of_measurement": "°C"
+      },
+      "last_changed": "2026-06-15T14:41:00Z",
+      "last_updated": "2026-06-15T14:41:00Z"
+    },
+    "sensor.garage_model_y_temperature_outside": {
+      "entity_id": "sensor.garage_model_y_temperature_outside",
+      "state": "12",
+      "attributes": {
+        "unit_of_measurement": "°C"
+      },
+      "last_changed": "2026-06-15T14:41:00Z",
+      "last_updated": "2026-06-15T14:41:00Z"
+    },
+    "select.garage_model_y_cabin_overheat_protection": {
+      "entity_id": "select.garage_model_y_cabin_overheat_protection",
+      "state": "off",
+      "attributes": {
+        "min_temp": 30,
+        "max_temp": 40
+      },
+      "last_changed": "2026-06-15T14:41:00Z",
+      "last_updated": "2026-06-15T14:41:00Z"
+    },
+    "select.garage_model_y_heated_seat_left": {
+      "entity_id": "select.garage_model_y_heated_seat_left",
+      "state": "High",
+      "attributes": {
+        "options": [
+          "Off",
+          "Low",
+          "Medium",
+          "High"
+        ]
+      },
+      "last_changed": "2026-06-15T14:41:00Z",
+      "last_updated": "2026-06-15T14:41:00Z"
+    },
+    "select.garage_model_y_heated_seat_right": {
+      "entity_id": "select.garage_model_y_heated_seat_right",
+      "state": "Off",
+      "attributes": {
+        "options": [
+          "Off",
+          "Low",
+          "Medium",
+          "High"
+        ]
+      },
+      "last_changed": "2026-06-15T14:41:00Z",
+      "last_updated": "2026-06-15T14:41:00Z"
+    },
+    "select.garage_model_y_heated_seat_rear_left": {
+      "entity_id": "select.garage_model_y_heated_seat_rear_left",
+      "state": "Low",
+      "attributes": {
+        "options": [
+          "Off",
+          "Low",
+          "Medium",
+          "High"
+        ]
+      },
+      "last_changed": "2026-06-15T14:41:00Z",
+      "last_updated": "2026-06-15T14:41:00Z"
+    },
+    "select.garage_model_y_heated_seat_rear_center": {
+      "entity_id": "select.garage_model_y_heated_seat_rear_center",
+      "state": "Off",
+      "attributes": {
+        "options": [
+          "Off",
+          "Low",
+          "Medium",
+          "High"
+        ]
+      },
+      "last_changed": "2026-06-15T14:41:00Z",
+      "last_updated": "2026-06-15T14:41:00Z"
+    },
+    "select.garage_model_y_heated_seat_rear_right": {
+      "entity_id": "select.garage_model_y_heated_seat_rear_right",
+      "state": "Off",
+      "attributes": {
+        "options": [
+          "Off",
+          "Low",
+          "Medium",
+          "High"
+        ]
+      },
+      "last_changed": "2026-06-15T14:41:00Z",
+      "last_updated": "2026-06-15T14:41:00Z"
+    },
+    "select.garage_model_y_heated_steering_wheel": {
+      "entity_id": "select.garage_model_y_heated_steering_wheel",
+      "state": "Low",
+      "attributes": {
+        "options": [
+          "Off",
+          "Low",
+          "High"
+        ]
+      },
+      "last_changed": "2026-06-15T14:41:00Z",
+      "last_updated": "2026-06-15T14:41:00Z"
+    },
+    "switch.garage_model_y_charger": {
+      "entity_id": "switch.garage_model_y_charger",
+      "state": "on",
+      "attributes": {},
+      "last_changed": "2026-06-15T14:41:00Z",
+      "last_updated": "2026-06-15T14:41:00Z"
+    },
+    "number.garage_model_y_charging_amps": {
+      "entity_id": "number.garage_model_y_charging_amps",
+      "state": "16",
+      "attributes": {
+        "min": 0,
+        "max": 48,
+        "step": 1,
+        "unit_of_measurement": "A"
+      },
+      "last_changed": "2026-06-15T14:41:00Z",
+      "last_updated": "2026-06-15T14:41:00Z"
+    },
+    "sensor.garage_model_y_charging_rate": {
+      "entity_id": "sensor.garage_model_y_charging_rate",
+      "state": "32",
+      "attributes": {
+        "unit_of_measurement": "mph"
+      },
+      "last_changed": "2026-06-15T14:41:00Z",
+      "last_updated": "2026-06-15T14:41:00Z"
+    },
+    "sensor.garage_model_y_energy_added": {
+      "entity_id": "sensor.garage_model_y_energy_added",
+      "state": "24.6",
+      "attributes": {
+        "unit_of_measurement": "kWh"
+      },
+      "last_changed": "2026-06-15T14:41:00Z",
+      "last_updated": "2026-06-15T14:41:00Z"
+    },
+    "sensor.garage_model_y_time_charge_complete": {
+      "entity_id": "sensor.garage_model_y_time_charge_complete",
+      "state": "1.5",
+      "attributes": {
+        "unit_of_measurement": "h"
+      },
+      "last_changed": "2026-06-15T14:41:00Z",
+      "last_updated": "2026-06-15T14:41:00Z"
+    },
+    "binary_sensor.garage_model_y_charging": {
+      "entity_id": "binary_sensor.garage_model_y_charging",
+      "state": "on",
+      "attributes": {},
+      "last_changed": "2026-06-15T14:41:00Z",
+      "last_updated": "2026-06-15T14:41:00Z"
+    },
+    "cover.garage_model_y_charger_door": {
+      "entity_id": "cover.garage_model_y_charger_door",
+      "state": "open",
+      "attributes": {},
+      "last_changed": "2026-06-15T14:41:00Z",
+      "last_updated": "2026-06-15T14:41:00Z"
+    },
+    "binary_sensor.garage_model_y_charger": {
+      "entity_id": "binary_sensor.garage_model_y_charger",
+      "state": "on",
+      "attributes": {},
+      "last_changed": "2026-06-15T14:41:00Z",
+      "last_updated": "2026-06-15T14:41:00Z"
+    },
+    "lock.garage_model_y_charge_port_latch": {
+      "entity_id": "lock.garage_model_y_charge_port_latch",
+      "state": "locked",
+      "attributes": {},
+      "last_changed": "2026-06-15T14:41:00Z",
+      "last_updated": "2026-06-15T14:41:00Z"
+    },
+    "sensor.garage_model_y_tpms_front_left": {
+      "entity_id": "sensor.garage_model_y_tpms_front_left",
+      "state": "2.9",
+      "attributes": {
+        "unit_of_measurement": "bar"
+      },
+      "last_changed": "2026-06-15T14:41:00Z",
+      "last_updated": "2026-06-15T14:41:00Z"
+    },
+    "sensor.garage_model_y_tpms_front_right": {
+      "entity_id": "sensor.garage_model_y_tpms_front_right",
+      "state": "2.6",
+      "attributes": {
+        "unit_of_measurement": "bar"
+      },
+      "last_changed": "2026-06-15T14:41:00Z",
+      "last_updated": "2026-06-15T14:41:00Z"
+    },
+    "sensor.garage_model_y_tpms_rear_left": {
+      "entity_id": "sensor.garage_model_y_tpms_rear_left",
+      "state": "2.9",
+      "attributes": {
+        "unit_of_measurement": "bar"
+      },
+      "last_changed": "2026-06-15T14:41:00Z",
+      "last_updated": "2026-06-15T14:41:00Z"
+    },
+    "sensor.garage_model_y_tpms_rear_right": {
+      "entity_id": "sensor.garage_model_y_tpms_rear_right",
+      "state": "2.9",
+      "attributes": {
+        "unit_of_measurement": "bar"
+      },
+      "last_changed": "2026-06-15T14:41:00Z",
+      "last_updated": "2026-06-15T14:41:00Z"
+    },
+    "device_tracker.garage_model_y_location_tracker": {
+      "entity_id": "device_tracker.garage_model_y_location_tracker",
+      "state": "home",
+      "attributes": {
+        "latitude": 37.7749,
+        "longitude": -122.4194
+      },
+      "last_changed": "2026-06-15T14:41:00Z",
+      "last_updated": "2026-06-15T14:41:00Z"
+    },
+    "device_tracker.garage_model_y_destination_location_tracker": {
+      "entity_id": "device_tracker.garage_model_y_destination_location_tracker",
+      "state": "unknown",
+      "attributes": {},
+      "last_changed": "2026-06-15T14:41:00Z",
+      "last_updated": "2026-06-15T14:41:00Z"
+    },
+    "sensor.garage_model_y_arrival_time": {
+      "entity_id": "sensor.garage_model_y_arrival_time",
+      "state": "unavailable",
+      "attributes": {},
+      "last_changed": "2026-06-15T14:41:00Z",
+      "last_updated": "2026-06-15T14:41:00Z"
+    },
+    "button.garage_model_y_wake_up": {
+      "entity_id": "button.garage_model_y_wake_up",
+      "state": "2026-06-14T10:00:00+00:00",
+      "attributes": {},
+      "last_changed": "2026-06-15T14:41:00Z",
+      "last_updated": "2026-06-15T14:41:00Z"
+    },
+    "button.garage_model_y_horn": {
+      "entity_id": "button.garage_model_y_horn",
+      "state": "2026-06-14T10:00:00+00:00",
+      "attributes": {},
+      "last_changed": "2026-06-15T14:41:00Z",
+      "last_updated": "2026-06-15T14:41:00Z"
+    },
+    "button.garage_model_y_emissions_test": {
+      "entity_id": "button.garage_model_y_emissions_test",
+      "state": "2026-06-14T10:00:00+00:00",
+      "attributes": {},
+      "last_changed": "2026-06-15T14:41:00Z",
+      "last_updated": "2026-06-15T14:41:00Z"
+    },
+    "switch.garage_model_y_sentry_mode": {
+      "entity_id": "switch.garage_model_y_sentry_mode",
+      "state": "off",
+      "attributes": {},
+      "last_changed": "2026-06-15T14:41:00Z",
+      "last_updated": "2026-06-15T14:41:00Z"
+    },
+    "sensor.garage_model_y_distance_to_arrival": {
+      "entity_id": "sensor.garage_model_y_distance_to_arrival",
+      "state": "unavailable",
+      "attributes": {},
+      "last_changed": "2026-06-15T14:41:00Z",
+      "last_updated": "2026-06-15T14:41:00Z"
+    },
+    "button.garage_model_y_flash_lights": {
+      "entity_id": "button.garage_model_y_flash_lights",
+      "state": "2026-06-14T10:00:00+00:00",
+      "attributes": {},
+      "last_changed": "2026-06-15T14:41:00Z",
+      "last_updated": "2026-06-15T14:41:00Z"
+    },
+    "button.garage_model_y_homelink": {
+      "entity_id": "button.garage_model_y_homelink",
+      "state": "2026-06-14T10:00:00+00:00",
+      "attributes": {},
+      "last_changed": "2026-06-15T14:41:00Z",
+      "last_updated": "2026-06-15T14:41:00Z"
     }
   },
   "entities": {
-    "sensor.garage_model_y_battery_level": {
-      "entity_id": "sensor.garage_model_y_battery_level",
-      "device_id": "tesla_vehicle_custom",
-      "platform": "tesla_custom",
-      "has_entity_name": true,
-      "area_id": null
-    },
-    "sensor.garage_model_y_battery_range": {
-      "entity_id": "sensor.garage_model_y_battery_range",
-      "device_id": "tesla_vehicle_custom",
-      "platform": "tesla_custom",
-      "has_entity_name": true,
-      "area_id": null
-    },
-    "sensor.usable_battery_level": {
-      "entity_id": "sensor.usable_battery_level",
-      "device_id": "tesla_vehicle_custom",
-      "platform": "tesla_custom",
-      "has_entity_name": true,
-      "area_id": null
-    },
-    "sensor.ideal_battery_range": {
-      "entity_id": "sensor.ideal_battery_range",
-      "device_id": "tesla_vehicle_custom",
-      "platform": "tesla_custom",
-      "has_entity_name": true,
-      "area_id": null
-    },
-    "sensor.estimate_battery_range": {
-      "entity_id": "sensor.estimate_battery_range",
-      "device_id": "tesla_vehicle_custom",
-      "platform": "tesla_custom",
-      "has_entity_name": true,
-      "area_id": null
-    },
     "sensor.odometer": {
       "entity_id": "sensor.odometer",
       "device_id": "tesla_vehicle_custom",
@@ -874,29 +568,8 @@
       "has_entity_name": true,
       "area_id": null
     },
-    "update.garage_model_y_update": {
-      "entity_id": "update.garage_model_y_update",
-      "device_id": "tesla_vehicle_custom",
-      "platform": "tesla_custom",
-      "has_entity_name": true,
-      "area_id": null
-    },
-    "binary_sensor.garage_model_y_status": {
-      "entity_id": "binary_sensor.garage_model_y_status",
-      "device_id": "tesla_vehicle_custom",
-      "platform": "tesla_custom",
-      "has_entity_name": true,
-      "area_id": null
-    },
     "binary_sensor.garage_model_y_user_present": {
       "entity_id": "binary_sensor.garage_model_y_user_present",
-      "device_id": "tesla_vehicle_custom",
-      "platform": "tesla_custom",
-      "has_entity_name": true,
-      "area_id": null
-    },
-    "lock.garage_model_y_lock": {
-      "entity_id": "lock.garage_model_y_lock",
       "device_id": "tesla_vehicle_custom",
       "platform": "tesla_custom",
       "has_entity_name": true,
@@ -930,225 +603,8 @@
       "has_entity_name": true,
       "area_id": null
     },
-    "binary_sensor.garage_model_y_front_driver_door": {
-      "entity_id": "binary_sensor.garage_model_y_front_driver_door",
-      "device_id": "tesla_vehicle_custom",
-      "platform": "tesla_custom",
-      "has_entity_name": true,
-      "area_id": null
-    },
-    "binary_sensor.garage_model_y_front_passenger_door": {
-      "entity_id": "binary_sensor.garage_model_y_front_passenger_door",
-      "device_id": "tesla_vehicle_custom",
-      "platform": "tesla_custom",
-      "has_entity_name": true,
-      "area_id": null
-    },
-    "binary_sensor.garage_model_y_rear_driver_door": {
-      "entity_id": "binary_sensor.garage_model_y_rear_driver_door",
-      "device_id": "tesla_vehicle_custom",
-      "platform": "tesla_custom",
-      "has_entity_name": true,
-      "area_id": null
-    },
-    "binary_sensor.garage_model_y_rear_passenger_door": {
-      "entity_id": "binary_sensor.garage_model_y_rear_passenger_door",
-      "device_id": "tesla_vehicle_custom",
-      "platform": "tesla_custom",
-      "has_entity_name": true,
-      "area_id": null
-    },
-    "binary_sensor.garage_model_y_front_driver_window": {
-      "entity_id": "binary_sensor.garage_model_y_front_driver_window",
-      "device_id": "tesla_vehicle_custom",
-      "platform": "tesla_custom",
-      "has_entity_name": true,
-      "area_id": null
-    },
-    "binary_sensor.garage_model_y_front_passenger_window": {
-      "entity_id": "binary_sensor.garage_model_y_front_passenger_window",
-      "device_id": "tesla_vehicle_custom",
-      "platform": "tesla_custom",
-      "has_entity_name": true,
-      "area_id": null
-    },
-    "binary_sensor.garage_model_y_rear_driver_window": {
-      "entity_id": "binary_sensor.garage_model_y_rear_driver_window",
-      "device_id": "tesla_vehicle_custom",
-      "platform": "tesla_custom",
-      "has_entity_name": true,
-      "area_id": null
-    },
-    "binary_sensor.garage_model_y_rear_passenger_window": {
-      "entity_id": "binary_sensor.garage_model_y_rear_passenger_window",
-      "device_id": "tesla_vehicle_custom",
-      "platform": "tesla_custom",
-      "has_entity_name": true,
-      "area_id": null
-    },
-    "climate.garage_model_y_climate": {
-      "entity_id": "climate.garage_model_y_climate",
-      "device_id": "tesla_vehicle_custom",
-      "platform": "tesla_custom",
-      "has_entity_name": true,
-      "area_id": null
-    },
-    "sensor.garage_model_y_inside_temperature": {
-      "entity_id": "sensor.garage_model_y_inside_temperature",
-      "device_id": "tesla_vehicle_custom",
-      "platform": "tesla_custom",
-      "has_entity_name": true,
-      "area_id": null
-    },
-    "sensor.garage_model_y_outside_temperature": {
-      "entity_id": "sensor.garage_model_y_outside_temperature",
-      "device_id": "tesla_vehicle_custom",
-      "platform": "tesla_custom",
-      "has_entity_name": true,
-      "area_id": null
-    },
-    "sensor.driver_temperature_setting": {
-      "entity_id": "sensor.driver_temperature_setting",
-      "device_id": "tesla_vehicle_custom",
-      "platform": "tesla_custom",
-      "has_entity_name": true,
-      "area_id": null
-    },
-    "sensor.passenger_temperature_setting": {
-      "entity_id": "sensor.passenger_temperature_setting",
-      "device_id": "tesla_vehicle_custom",
-      "platform": "tesla_custom",
-      "has_entity_name": true,
-      "area_id": null
-    },
-    "binary_sensor.preconditioning": {
-      "entity_id": "binary_sensor.preconditioning",
-      "device_id": "tesla_vehicle_custom",
-      "platform": "tesla_custom",
-      "has_entity_name": true,
-      "area_id": null
-    },
-    "binary_sensor.preconditioning_enabled": {
-      "entity_id": "binary_sensor.preconditioning_enabled",
-      "device_id": "tesla_vehicle_custom",
-      "platform": "tesla_custom",
-      "has_entity_name": true,
-      "area_id": null
-    },
-    "switch.garage_model_y_defrost": {
-      "entity_id": "switch.garage_model_y_defrost",
-      "device_id": "tesla_vehicle_custom",
-      "platform": "tesla_custom",
-      "has_entity_name": true,
-      "area_id": null
-    },
-    "climate.cabin_overheat_protection": {
-      "entity_id": "climate.cabin_overheat_protection",
-      "device_id": "tesla_vehicle_custom",
-      "platform": "tesla_custom",
-      "has_entity_name": true,
-      "area_id": null
-    },
-    "binary_sensor.cabin_overheat_protection_actively_cooling": {
-      "entity_id": "binary_sensor.cabin_overheat_protection_actively_cooling",
-      "device_id": "tesla_vehicle_custom",
-      "platform": "tesla_custom",
-      "has_entity_name": true,
-      "area_id": null
-    },
-    "select.garage_model_y_seat_heater_front_left": {
-      "entity_id": "select.garage_model_y_seat_heater_front_left",
-      "device_id": "tesla_vehicle_custom",
-      "platform": "tesla_custom",
-      "has_entity_name": true,
-      "area_id": null
-    },
-    "select.garage_model_y_seat_heater_front_right": {
-      "entity_id": "select.garage_model_y_seat_heater_front_right",
-      "device_id": "tesla_vehicle_custom",
-      "platform": "tesla_custom",
-      "has_entity_name": true,
-      "area_id": null
-    },
-    "select.seat_heater_rear_left": {
-      "entity_id": "select.seat_heater_rear_left",
-      "device_id": "tesla_vehicle_custom",
-      "platform": "tesla_custom",
-      "has_entity_name": true,
-      "area_id": null
-    },
-    "select.seat_heater_rear_center": {
-      "entity_id": "select.seat_heater_rear_center",
-      "device_id": "tesla_vehicle_custom",
-      "platform": "tesla_custom",
-      "has_entity_name": true,
-      "area_id": null
-    },
-    "select.seat_heater_rear_right": {
-      "entity_id": "select.seat_heater_rear_right",
-      "device_id": "tesla_vehicle_custom",
-      "platform": "tesla_custom",
-      "has_entity_name": true,
-      "area_id": null
-    },
-    "select.garage_model_y_steering_wheel_heater": {
-      "entity_id": "select.garage_model_y_steering_wheel_heater",
-      "device_id": "tesla_vehicle_custom",
-      "platform": "tesla_custom",
-      "has_entity_name": true,
-      "area_id": null
-    },
-    "switch.garage_model_y_auto_seat_climate_left": {
-      "entity_id": "switch.garage_model_y_auto_seat_climate_left",
-      "device_id": "tesla_vehicle_custom",
-      "platform": "tesla_custom",
-      "has_entity_name": true,
-      "area_id": null
-    },
-    "switch.garage_model_y_auto_seat_climate_right": {
-      "entity_id": "switch.garage_model_y_auto_seat_climate_right",
-      "device_id": "tesla_vehicle_custom",
-      "platform": "tesla_custom",
-      "has_entity_name": true,
-      "area_id": null
-    },
-    "switch.garage_model_y_auto_steering_wheel_heater": {
-      "entity_id": "switch.garage_model_y_auto_steering_wheel_heater",
-      "device_id": "tesla_vehicle_custom",
-      "platform": "tesla_custom",
-      "has_entity_name": true,
-      "area_id": null
-    },
-    "switch.garage_model_y_charge": {
-      "entity_id": "switch.garage_model_y_charge",
-      "device_id": "tesla_vehicle_custom",
-      "platform": "tesla_custom",
-      "has_entity_name": true,
-      "area_id": null
-    },
     "number.garage_model_y_charge_limit": {
       "entity_id": "number.garage_model_y_charge_limit",
-      "device_id": "tesla_vehicle_custom",
-      "platform": "tesla_custom",
-      "has_entity_name": true,
-      "area_id": null
-    },
-    "number.garage_model_y_charge_current": {
-      "entity_id": "number.garage_model_y_charge_current",
-      "device_id": "tesla_vehicle_custom",
-      "platform": "tesla_custom",
-      "has_entity_name": true,
-      "area_id": null
-    },
-    "sensor.garage_model_y_charger_voltage": {
-      "entity_id": "sensor.garage_model_y_charger_voltage",
-      "device_id": "tesla_vehicle_custom",
-      "platform": "tesla_custom",
-      "has_entity_name": true,
-      "area_id": null
-    },
-    "sensor.garage_model_y_charger_current": {
-      "entity_id": "sensor.garage_model_y_charger_current",
       "device_id": "tesla_vehicle_custom",
       "platform": "tesla_custom",
       "has_entity_name": true,
@@ -1161,253 +617,8 @@
       "has_entity_name": true,
       "area_id": null
     },
-    "sensor.garage_model_y_charge_rate": {
-      "entity_id": "sensor.garage_model_y_charge_rate",
-      "device_id": "tesla_vehicle_custom",
-      "platform": "tesla_custom",
-      "has_entity_name": true,
-      "area_id": null
-    },
-    "sensor.garage_model_y_charge_energy_added": {
-      "entity_id": "sensor.garage_model_y_charge_energy_added",
-      "device_id": "tesla_vehicle_custom",
-      "platform": "tesla_custom",
-      "has_entity_name": true,
-      "area_id": null
-    },
-    "sensor.garage_model_y_time_to_full_charge": {
-      "entity_id": "sensor.garage_model_y_time_to_full_charge",
-      "device_id": "tesla_vehicle_custom",
-      "platform": "tesla_custom",
-      "has_entity_name": true,
-      "area_id": null
-    },
-    "sensor.garage_model_y_charging": {
-      "entity_id": "sensor.garage_model_y_charging",
-      "device_id": "tesla_vehicle_custom",
-      "platform": "tesla_custom",
-      "has_entity_name": true,
-      "area_id": null
-    },
-    "cover.garage_model_y_charge_port_door": {
-      "entity_id": "cover.garage_model_y_charge_port_door",
-      "device_id": "tesla_vehicle_custom",
-      "platform": "tesla_custom",
-      "has_entity_name": true,
-      "area_id": null
-    },
-    "binary_sensor.garage_model_y_charge_cable": {
-      "entity_id": "binary_sensor.garage_model_y_charge_cable",
-      "device_id": "tesla_vehicle_custom",
-      "platform": "tesla_custom",
-      "has_entity_name": true,
-      "area_id": null
-    },
-    "lock.garage_model_y_charge_cable_lock": {
-      "entity_id": "lock.garage_model_y_charge_cable_lock",
-      "device_id": "tesla_vehicle_custom",
-      "platform": "tesla_custom",
-      "has_entity_name": true,
-      "area_id": null
-    },
     "binary_sensor.scheduled_charging_pending": {
       "entity_id": "binary_sensor.scheduled_charging_pending",
-      "device_id": "tesla_vehicle_custom",
-      "platform": "tesla_custom",
-      "has_entity_name": true,
-      "area_id": null
-    },
-    "binary_sensor.trip_charging": {
-      "entity_id": "binary_sensor.trip_charging",
-      "device_id": "tesla_vehicle_custom",
-      "platform": "tesla_custom",
-      "has_entity_name": true,
-      "area_id": null
-    },
-    "binary_sensor.charger_has_multiple_phases": {
-      "entity_id": "binary_sensor.charger_has_multiple_phases",
-      "device_id": "tesla_vehicle_custom",
-      "platform": "tesla_custom",
-      "has_entity_name": true,
-      "area_id": null
-    },
-    "binary_sensor.battery_heater": {
-      "entity_id": "binary_sensor.battery_heater",
-      "device_id": "tesla_vehicle_custom",
-      "platform": "tesla_custom",
-      "has_entity_name": true,
-      "area_id": null
-    },
-    "sensor.state_of_charge_at_arrival": {
-      "entity_id": "sensor.state_of_charge_at_arrival",
-      "device_id": "tesla_vehicle_custom",
-      "platform": "tesla_custom",
-      "has_entity_name": true,
-      "area_id": null
-    },
-    "switch.garage_model_y_sentry_mode": {
-      "entity_id": "switch.garage_model_y_sentry_mode",
-      "device_id": "tesla_vehicle_custom",
-      "platform": "tesla_custom",
-      "has_entity_name": true,
-      "area_id": null
-    },
-    "binary_sensor.dashcam": {
-      "entity_id": "binary_sensor.dashcam",
-      "device_id": "tesla_vehicle_custom",
-      "platform": "tesla_custom",
-      "has_entity_name": true,
-      "area_id": null
-    },
-    "sensor.tire_pressure_front_left": {
-      "entity_id": "sensor.tire_pressure_front_left",
-      "device_id": "tesla_vehicle_custom",
-      "platform": "tesla_custom",
-      "has_entity_name": true,
-      "area_id": null
-    },
-    "sensor.tire_pressure_front_right": {
-      "entity_id": "sensor.tire_pressure_front_right",
-      "device_id": "tesla_vehicle_custom",
-      "platform": "tesla_custom",
-      "has_entity_name": true,
-      "area_id": null
-    },
-    "sensor.tire_pressure_rear_left": {
-      "entity_id": "sensor.tire_pressure_rear_left",
-      "device_id": "tesla_vehicle_custom",
-      "platform": "tesla_custom",
-      "has_entity_name": true,
-      "area_id": null
-    },
-    "sensor.tire_pressure_rear_right": {
-      "entity_id": "sensor.tire_pressure_rear_right",
-      "device_id": "tesla_vehicle_custom",
-      "platform": "tesla_custom",
-      "has_entity_name": true,
-      "area_id": null
-    },
-    "binary_sensor.tire_pressure_warning_front_left": {
-      "entity_id": "binary_sensor.tire_pressure_warning_front_left",
-      "device_id": "tesla_vehicle_custom",
-      "platform": "tesla_custom",
-      "has_entity_name": true,
-      "area_id": null
-    },
-    "binary_sensor.tire_pressure_warning_front_right": {
-      "entity_id": "binary_sensor.tire_pressure_warning_front_right",
-      "device_id": "tesla_vehicle_custom",
-      "platform": "tesla_custom",
-      "has_entity_name": true,
-      "area_id": null
-    },
-    "binary_sensor.tire_pressure_warning_rear_left": {
-      "entity_id": "binary_sensor.tire_pressure_warning_rear_left",
-      "device_id": "tesla_vehicle_custom",
-      "platform": "tesla_custom",
-      "has_entity_name": true,
-      "area_id": null
-    },
-    "binary_sensor.tire_pressure_warning_rear_right": {
-      "entity_id": "binary_sensor.tire_pressure_warning_rear_right",
-      "device_id": "tesla_vehicle_custom",
-      "platform": "tesla_custom",
-      "has_entity_name": true,
-      "area_id": null
-    },
-    "device_tracker.garage_model_y_location": {
-      "entity_id": "device_tracker.garage_model_y_location",
-      "device_id": "tesla_vehicle_custom",
-      "platform": "tesla_custom",
-      "has_entity_name": true,
-      "area_id": null
-    },
-    "device_tracker.garage_model_y_route": {
-      "entity_id": "device_tracker.garage_model_y_route",
-      "device_id": "tesla_vehicle_custom",
-      "platform": "tesla_custom",
-      "has_entity_name": true,
-      "area_id": null
-    },
-    "sensor.speed": {
-      "entity_id": "sensor.speed",
-      "device_id": "tesla_vehicle_custom",
-      "platform": "tesla_custom",
-      "has_entity_name": true,
-      "area_id": null
-    },
-    "sensor.power": {
-      "entity_id": "sensor.power",
-      "device_id": "tesla_vehicle_custom",
-      "platform": "tesla_custom",
-      "has_entity_name": true,
-      "area_id": null
-    },
-    "sensor.traffic_delay": {
-      "entity_id": "sensor.traffic_delay",
-      "device_id": "tesla_vehicle_custom",
-      "platform": "tesla_custom",
-      "has_entity_name": true,
-      "area_id": null
-    },
-    "sensor.garage_model_y_distance_to_arrival": {
-      "entity_id": "sensor.garage_model_y_distance_to_arrival",
-      "device_id": "tesla_vehicle_custom",
-      "platform": "tesla_custom",
-      "has_entity_name": true,
-      "area_id": null
-    },
-    "sensor.garage_model_y_time_to_arrival": {
-      "entity_id": "sensor.garage_model_y_time_to_arrival",
-      "device_id": "tesla_vehicle_custom",
-      "platform": "tesla_custom",
-      "has_entity_name": true,
-      "area_id": null
-    },
-    "media_player.garage_model_y_media_player": {
-      "entity_id": "media_player.garage_model_y_media_player",
-      "device_id": "tesla_vehicle_custom",
-      "platform": "tesla_custom",
-      "has_entity_name": true,
-      "area_id": null
-    },
-    "button.garage_model_y_wake": {
-      "entity_id": "button.garage_model_y_wake",
-      "device_id": "tesla_vehicle_custom",
-      "platform": "tesla_custom",
-      "has_entity_name": true,
-      "area_id": null
-    },
-    "button.garage_model_y_honk_horn": {
-      "entity_id": "button.garage_model_y_honk_horn",
-      "device_id": "tesla_vehicle_custom",
-      "platform": "tesla_custom",
-      "has_entity_name": true,
-      "area_id": null
-    },
-    "button.garage_model_y_flash_lights": {
-      "entity_id": "button.garage_model_y_flash_lights",
-      "device_id": "tesla_vehicle_custom",
-      "platform": "tesla_custom",
-      "has_entity_name": true,
-      "area_id": null
-    },
-    "button.garage_model_y_homelink": {
-      "entity_id": "button.garage_model_y_homelink",
-      "device_id": "tesla_vehicle_custom",
-      "platform": "tesla_custom",
-      "has_entity_name": true,
-      "area_id": null
-    },
-    "button.garage_model_y_keyless_driving": {
-      "entity_id": "button.garage_model_y_keyless_driving",
-      "device_id": "tesla_vehicle_custom",
-      "platform": "tesla_custom",
-      "has_entity_name": true,
-      "area_id": null
-    },
-    "button.garage_model_y_play_fart": {
-      "entity_id": "button.garage_model_y_play_fart",
       "device_id": "tesla_vehicle_custom",
       "platform": "tesla_custom",
       "has_entity_name": true,
@@ -1492,6 +703,272 @@
     },
     "sensor.tesla_wall_connector_status": {
       "entity_id": "sensor.tesla_wall_connector_status",
+      "device_id": "tesla_vehicle_custom",
+      "platform": "tesla_custom",
+      "has_entity_name": true,
+      "area_id": null
+    },
+    "sensor.garage_model_y_battery": {
+      "entity_id": "sensor.garage_model_y_battery",
+      "device_id": "tesla_vehicle_custom",
+      "platform": "tesla_custom",
+      "has_entity_name": true,
+      "area_id": null
+    },
+    "sensor.garage_model_y_range": {
+      "entity_id": "sensor.garage_model_y_range",
+      "device_id": "tesla_vehicle_custom",
+      "platform": "tesla_custom",
+      "has_entity_name": true,
+      "area_id": null
+    },
+    "update.garage_model_y_software_update": {
+      "entity_id": "update.garage_model_y_software_update",
+      "device_id": "tesla_vehicle_custom",
+      "platform": "tesla_custom",
+      "has_entity_name": true,
+      "area_id": null
+    },
+    "binary_sensor.garage_model_y_online": {
+      "entity_id": "binary_sensor.garage_model_y_online",
+      "device_id": "tesla_vehicle_custom",
+      "platform": "tesla_custom",
+      "has_entity_name": true,
+      "area_id": null
+    },
+    "lock.garage_model_y_doors": {
+      "entity_id": "lock.garage_model_y_doors",
+      "device_id": "tesla_vehicle_custom",
+      "platform": "tesla_custom",
+      "has_entity_name": true,
+      "area_id": null
+    },
+    "climate.garage_model_y_hvac_climate_system": {
+      "entity_id": "climate.garage_model_y_hvac_climate_system",
+      "device_id": "tesla_vehicle_custom",
+      "platform": "tesla_custom",
+      "has_entity_name": true,
+      "area_id": null
+    },
+    "sensor.garage_model_y_temperature_inside": {
+      "entity_id": "sensor.garage_model_y_temperature_inside",
+      "device_id": "tesla_vehicle_custom",
+      "platform": "tesla_custom",
+      "has_entity_name": true,
+      "area_id": null
+    },
+    "sensor.garage_model_y_temperature_outside": {
+      "entity_id": "sensor.garage_model_y_temperature_outside",
+      "device_id": "tesla_vehicle_custom",
+      "platform": "tesla_custom",
+      "has_entity_name": true,
+      "area_id": null
+    },
+    "select.garage_model_y_cabin_overheat_protection": {
+      "entity_id": "select.garage_model_y_cabin_overheat_protection",
+      "device_id": "tesla_vehicle_custom",
+      "platform": "tesla_custom",
+      "has_entity_name": true,
+      "area_id": null
+    },
+    "select.garage_model_y_heated_seat_left": {
+      "entity_id": "select.garage_model_y_heated_seat_left",
+      "device_id": "tesla_vehicle_custom",
+      "platform": "tesla_custom",
+      "has_entity_name": true,
+      "area_id": null
+    },
+    "select.garage_model_y_heated_seat_right": {
+      "entity_id": "select.garage_model_y_heated_seat_right",
+      "device_id": "tesla_vehicle_custom",
+      "platform": "tesla_custom",
+      "has_entity_name": true,
+      "area_id": null
+    },
+    "select.garage_model_y_heated_seat_rear_left": {
+      "entity_id": "select.garage_model_y_heated_seat_rear_left",
+      "device_id": "tesla_vehicle_custom",
+      "platform": "tesla_custom",
+      "has_entity_name": true,
+      "area_id": null
+    },
+    "select.garage_model_y_heated_seat_rear_center": {
+      "entity_id": "select.garage_model_y_heated_seat_rear_center",
+      "device_id": "tesla_vehicle_custom",
+      "platform": "tesla_custom",
+      "has_entity_name": true,
+      "area_id": null
+    },
+    "select.garage_model_y_heated_seat_rear_right": {
+      "entity_id": "select.garage_model_y_heated_seat_rear_right",
+      "device_id": "tesla_vehicle_custom",
+      "platform": "tesla_custom",
+      "has_entity_name": true,
+      "area_id": null
+    },
+    "select.garage_model_y_heated_steering_wheel": {
+      "entity_id": "select.garage_model_y_heated_steering_wheel",
+      "device_id": "tesla_vehicle_custom",
+      "platform": "tesla_custom",
+      "has_entity_name": true,
+      "area_id": null
+    },
+    "switch.garage_model_y_charger": {
+      "entity_id": "switch.garage_model_y_charger",
+      "device_id": "tesla_vehicle_custom",
+      "platform": "tesla_custom",
+      "has_entity_name": true,
+      "area_id": null
+    },
+    "number.garage_model_y_charging_amps": {
+      "entity_id": "number.garage_model_y_charging_amps",
+      "device_id": "tesla_vehicle_custom",
+      "platform": "tesla_custom",
+      "has_entity_name": true,
+      "area_id": null
+    },
+    "sensor.garage_model_y_charging_rate": {
+      "entity_id": "sensor.garage_model_y_charging_rate",
+      "device_id": "tesla_vehicle_custom",
+      "platform": "tesla_custom",
+      "has_entity_name": true,
+      "area_id": null
+    },
+    "sensor.garage_model_y_energy_added": {
+      "entity_id": "sensor.garage_model_y_energy_added",
+      "device_id": "tesla_vehicle_custom",
+      "platform": "tesla_custom",
+      "has_entity_name": true,
+      "area_id": null
+    },
+    "sensor.garage_model_y_time_charge_complete": {
+      "entity_id": "sensor.garage_model_y_time_charge_complete",
+      "device_id": "tesla_vehicle_custom",
+      "platform": "tesla_custom",
+      "has_entity_name": true,
+      "area_id": null
+    },
+    "binary_sensor.garage_model_y_charging": {
+      "entity_id": "binary_sensor.garage_model_y_charging",
+      "device_id": "tesla_vehicle_custom",
+      "platform": "tesla_custom",
+      "has_entity_name": true,
+      "area_id": null
+    },
+    "cover.garage_model_y_charger_door": {
+      "entity_id": "cover.garage_model_y_charger_door",
+      "device_id": "tesla_vehicle_custom",
+      "platform": "tesla_custom",
+      "has_entity_name": true,
+      "area_id": null
+    },
+    "binary_sensor.garage_model_y_charger": {
+      "entity_id": "binary_sensor.garage_model_y_charger",
+      "device_id": "tesla_vehicle_custom",
+      "platform": "tesla_custom",
+      "has_entity_name": true,
+      "area_id": null
+    },
+    "lock.garage_model_y_charge_port_latch": {
+      "entity_id": "lock.garage_model_y_charge_port_latch",
+      "device_id": "tesla_vehicle_custom",
+      "platform": "tesla_custom",
+      "has_entity_name": true,
+      "area_id": null
+    },
+    "sensor.garage_model_y_tpms_front_left": {
+      "entity_id": "sensor.garage_model_y_tpms_front_left",
+      "device_id": "tesla_vehicle_custom",
+      "platform": "tesla_custom",
+      "has_entity_name": true,
+      "area_id": null
+    },
+    "sensor.garage_model_y_tpms_front_right": {
+      "entity_id": "sensor.garage_model_y_tpms_front_right",
+      "device_id": "tesla_vehicle_custom",
+      "platform": "tesla_custom",
+      "has_entity_name": true,
+      "area_id": null
+    },
+    "sensor.garage_model_y_tpms_rear_left": {
+      "entity_id": "sensor.garage_model_y_tpms_rear_left",
+      "device_id": "tesla_vehicle_custom",
+      "platform": "tesla_custom",
+      "has_entity_name": true,
+      "area_id": null
+    },
+    "sensor.garage_model_y_tpms_rear_right": {
+      "entity_id": "sensor.garage_model_y_tpms_rear_right",
+      "device_id": "tesla_vehicle_custom",
+      "platform": "tesla_custom",
+      "has_entity_name": true,
+      "area_id": null
+    },
+    "device_tracker.garage_model_y_location_tracker": {
+      "entity_id": "device_tracker.garage_model_y_location_tracker",
+      "device_id": "tesla_vehicle_custom",
+      "platform": "tesla_custom",
+      "has_entity_name": true,
+      "area_id": null
+    },
+    "device_tracker.garage_model_y_destination_location_tracker": {
+      "entity_id": "device_tracker.garage_model_y_destination_location_tracker",
+      "device_id": "tesla_vehicle_custom",
+      "platform": "tesla_custom",
+      "has_entity_name": true,
+      "area_id": null
+    },
+    "sensor.garage_model_y_arrival_time": {
+      "entity_id": "sensor.garage_model_y_arrival_time",
+      "device_id": "tesla_vehicle_custom",
+      "platform": "tesla_custom",
+      "has_entity_name": true,
+      "area_id": null
+    },
+    "button.garage_model_y_wake_up": {
+      "entity_id": "button.garage_model_y_wake_up",
+      "device_id": "tesla_vehicle_custom",
+      "platform": "tesla_custom",
+      "has_entity_name": true,
+      "area_id": null
+    },
+    "button.garage_model_y_horn": {
+      "entity_id": "button.garage_model_y_horn",
+      "device_id": "tesla_vehicle_custom",
+      "platform": "tesla_custom",
+      "has_entity_name": true,
+      "area_id": null
+    },
+    "button.garage_model_y_emissions_test": {
+      "entity_id": "button.garage_model_y_emissions_test",
+      "device_id": "tesla_vehicle_custom",
+      "platform": "tesla_custom",
+      "has_entity_name": true,
+      "area_id": null
+    },
+    "switch.garage_model_y_sentry_mode": {
+      "entity_id": "switch.garage_model_y_sentry_mode",
+      "device_id": "tesla_vehicle_custom",
+      "platform": "tesla_custom",
+      "has_entity_name": true,
+      "area_id": null
+    },
+    "sensor.garage_model_y_distance_to_arrival": {
+      "entity_id": "sensor.garage_model_y_distance_to_arrival",
+      "device_id": "tesla_vehicle_custom",
+      "platform": "tesla_custom",
+      "has_entity_name": true,
+      "area_id": null
+    },
+    "button.garage_model_y_flash_lights": {
+      "entity_id": "button.garage_model_y_flash_lights",
+      "device_id": "tesla_vehicle_custom",
+      "platform": "tesla_custom",
+      "has_entity_name": true,
+      "area_id": null
+    },
+    "button.garage_model_y_homelink": {
+      "entity_id": "button.garage_model_y_homelink",
       "device_id": "tesla_vehicle_custom",
       "platform": "tesla_custom",
       "has_entity_name": true,
