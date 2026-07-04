@@ -1,5 +1,7 @@
 import type { HomeAssistant, TeslaCardConfig } from '../types';
 import { DEFAULT_ENTITIES, type EntityKey } from '../const';
+import { TESLA_PLATFORMS } from './platforms';
+import { detectDialect, DIALECT_ENTITY_ALIASES, DIALECT_ABSENT } from './dialect';
 
 /**
  * Entity resolution by stable function-name, not hard-coded IDs.
@@ -16,15 +18,6 @@ import { DEFAULT_ENTITIES, type EntityKey } from '../const';
 
 /** The device-name slug the bundled DEFAULT_ENTITIES were captured against. */
 const REFERENCE_SLUG = 'garage_model_y';
-
-/** Integration platforms whose entities identify a Tesla vehicle device. */
-export const TESLA_PLATFORMS = new Set([
-  'tesla_fleet',
-  'teslemetry',
-  'tessie',
-  'tesla_custom',
-  'tesla',
-]);
 
 interface KeySignature {
   /** entity domain, e.g. "sensor" */
@@ -73,6 +66,19 @@ const KEY_SIGNATURES: Record<EntityKey, KeySignature> = (() => {
   }
   return out;
 })();
+
+/**
+ * The {domain, suffix, canonical} the resolver matches `key` by. Without a
+ * per-dialect alias it is the fleet signature (`KEY_SIGNATURES[key]`). With an
+ * alias (a slug-free `"domain.suffix"` string from `DIALECT_ENTITY_ALIASES`) the
+ * alias IS the canonical (research strings carry no device slug), and its domain
+ * and suffix may both differ from fleet. [Story 14.1 AC1]
+ */
+function signatureFor(key: EntityKey, alias: string | undefined): KeySignature {
+  if (!alias) return KEY_SIGNATURES[key];
+  const { domain, object } = splitEntity(alias);
+  return { domain, suffix: object, canonical: alias };
+}
 
 interface VehicleContext {
   /** device-name slug used as the entity-id prefix, e.g. "model_y" */
@@ -181,6 +187,30 @@ export function resolveEntities(
 
   const { slug, entityIds } = detectVehicle(hass, config);
 
+  // Which integration dialect this install speaks — consulted once per call for
+  // the per-dialect alias/ABSENT tables. Note: this runs a `hass.entities` scan,
+  // acceptable because the sole hot caller memoizes (`tesla-card.ts` `_resolveCache`
+  // skips resolveEntities unless entities/devices/config change by reference). A
+  // `tesla_fleet` (or bare `tesla`, or registry-less) install has no table entry,
+  // so both lookups are `undefined` and every key takes the unchanged fleet path
+  // → byte-identical fleet resolution (AC6). [Story 14.1 AC2]
+  //
+  // AMBIGUITY GUARD: `detectVehicle` picks the vehicle DEVICE independently of
+  // `detectDialect`'s platform count, so on a genuine multi-integration install the
+  // chosen device can belong to one integration while the dialect count elects
+  // another — aliasing then rewrites the device's keys with the wrong dialect's
+  // domains (a live-wrong resolve, strictly worse than the pre-change fleet ghost).
+  // `detectDialect` surfaces this as `ambiguous`; when it is set we fall back to the
+  // un-aliased fleet path (no table entry) rather than alias with a maybe-wrong
+  // dialect. This keeps the single-dialect-per-install assumption honest without
+  // solving full dual-integration disambiguation (a ratified follow-on). An explicit
+  // `config.integration` makes detection non-ambiguous, so a user can still force a
+  // dialect on a mixed install. [Story 14.1 AC2; code-review 2026-07-03]
+  const report = detectDialect(hass, config);
+  const integration = report.ambiguous ? 'tesla_fleet' : report.integration;
+  const aliases = DIALECT_ENTITY_ALIASES[integration];
+  const absent = DIALECT_ABSENT[integration];
+
   // Index the vehicle's registered entities by their canonical identity.
   const byCanonical = new Map<string, string>();
   for (const id of entityIds) {
@@ -192,37 +222,55 @@ export function resolveEntities(
   const states = hass.states ?? {};
 
   for (const key of Object.keys(KEY_SIGNATURES) as EntityKey[]) {
-    const sig = KEY_SIGNATURES[key];
-
-    // 1) Explicit override always wins.
+    // 1) Explicit override always wins (over aliases AND ABSENT).
     const override = config.entities?.[key];
     if (override) {
       resolved[key] = override;
       continue;
     }
 
-    // 2) Registry match within the vehicle device (handles any prefix).
+    // 2) Honest degrade: a key this dialect does not expose resolves to the
+    //    empty-string sentinel — never a fleet-default ghost. `''` survives the
+    //    `?? DEFAULT` in helpers (empty string is not nullish) and reads as
+    //    unavailable (`hass.states['']` is undefined). [Story 14.1 AC4]
+    if (absent?.has(key)) {
+      resolved[key] = '';
+      continue;
+    }
+
+    // Effective signature: the per-dialect alias when present, else the fleet
+    // canonical. An aliased key matches by the alias's own domain.suffix.
+    const alias = aliases?.[key];
+    const sig = signatureFor(key, alias);
+    const guess = `${sig.domain}.${slug}_${sig.suffix}`;
+
+    // 3) Registry match within the vehicle device (handles any prefix).
     const fromRegistry = byCanonical.get(sig.canonical);
     if (fromRegistry) {
       resolved[key] = fromRegistry;
       continue;
     }
 
-    // 3) Direct guess against live states: `${domain}.${slug}_${suffix}`.
-    const guess = `${sig.domain}.${slug}_${sig.suffix}`;
+    // 4) Direct guess against live states: `${domain}.${slug}_${suffix}`.
     if (states[guess]) {
       resolved[key] = guess;
       continue;
     }
 
-    // 4) Bare global entity (e.g. sensor.odometer) if it exists.
-    if (states[sig.canonical]) {
+    // 5) Bare global entity (e.g. sensor.odometer) if it exists — FLEET keys only.
+    //    Skipped for an aliased key: a bare `sensor.battery` could bind an
+    //    unrelated global device (a phone/Zigbee battery), a live-wrong resolve
+    //    worse than an unavailable ghost — the mis-resolve AC4 forbids. Dialect
+    //    entities are always device-scoped/slug-prefixed anyway.
+    if (!alias && states[sig.canonical]) {
       resolved[key] = sig.canonical;
       continue;
     }
 
-    // 5) Graceful fallback: bundled default (worst case = today's behaviour).
-    resolved[key] = DEFAULT_ENTITIES[key];
+    // 6) Graceful fallback: an aliased key falls to its dialect-correct
+    //    slug-prefixed guess (an unverified best-guess, exactly as the fleet
+    //    default is); a fleet key falls to the bundled default (= today's behaviour).
+    resolved[key] = alias ? guess : DEFAULT_ENTITIES[key];
   }
 
   return resolved;

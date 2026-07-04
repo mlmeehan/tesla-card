@@ -148,14 +148,16 @@ describe('AC4 — dialect detection (mechanism, not assumed spellings)', () => {
     expect(r.source).toBe('override');
   });
 
-  test('the tesla_custom ADAPTER applies its alias map + charging override', () => {
+  test('the tesla_custom ADAPTER derives charging from the boolean (capability difference, Story 14.1)', () => {
     const a = adapterFor(hassFrom(teslaCustom), cfg());
     expect(a.integration).toBe('tesla_custom');
-    // alias MECHANISM (assumed spelling, not ground truth — see dialect.ts L303-315).
-    expect(a.alias('charging')).toBe('charging_status');
-    expect(a.alias('battery')).toBe('battery_level');
-    // charging-status OVERRIDE mechanism: charge_complete → complete (assumed).
-    expect(a.normalizeChargingState('charge_complete')).toBe('complete');
+    // CONFIRMED (research §5): tesla_custom has NO charging-status string — charging
+    // is a boolean binary_sensor.charging, so the adapter maps the boolean vocabulary.
+    expect(a.normalizeChargingState('on')).toBe('charging');
+    expect(a.normalizeChargingState('off')).toBe('stopped');
+    // The dead `charge_complete → complete` override was DELETED (the token exists
+    // nowhere in the integration; §5 verdict) → it now degrades to 'unknown'.
+    expect(a.normalizeChargingState('charge_complete')).toBe('unknown');
     // …and an UNKNOWN raw still degrades safely (never throws / passes through).
     expect(a.normalizeChargingState('definitely-not-a-state')).toBe('unknown');
   });
