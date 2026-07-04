@@ -1,7 +1,7 @@
 # tesla-card — CI Pipeline
 
 **Repo:** `tesla-card/` (public, standalone git repo) · **Last Updated:** 2026-06-24
-**Platform:** GitHub Actions · **Runtime:** Node 20 (`.nvmrc` + CI) · **Version:** 0.2.0
+**Platform:** GitHub Actions · **Runtime:** Node 20 (`.nvmrc` + CI) · **Version:** 0.3.0
 
 How the card's continuous-integration pipeline is structured, what gates a change must
 clear, and how to reproduce it locally. Test-authoring details live in
@@ -57,10 +57,11 @@ flowchart LR
   (`tsconfig.json`) and the E2E suite (`tests/tsconfig.json`). The **8 structural lint gates**
   (`npm run lint`) run in `validate.yml`'s `lint` job, not here.
 - **unit** (`test.yml:unit`, "Unit (Vitest)") — `npm run test` (the co-located Vitest unit
-  suite — **65 files / ~1,578 cases**, node env, fully offline: committed fixtures only, no
+  suite — **68 files / 1,655 cases**, node env, fully offline: committed fixtures only, no
   network, no live HA, no browser). The Rollup release path is not exercised here.
 - **test** (`test.yml:test`, "E2E (Playwright)") — `npm run test:e2e` (Playwright drives the
-  offline `demo/` mock-hass harness — **24 specs / ~293 cases**). On CI the config
+  offline `demo/` mock-hass harness — **298 cases / 24 specs (23 active by default;
+  `visual.spec.ts` under `VISUAL=1`)**). On CI the config
   auto-enables `retries:2`, `workers:2`, `forbidOnly`. Caches `~/.cache/ms-playwright`,
   installs chromium, then uploads `playwright-report/` + `test-results/` (HTML report,
   JUnit XML, traces/videos) on `!cancelled()` (7-day retention).

@@ -1,6 +1,6 @@
 # tesla-card — Source Tree Analysis
 
-**Repo:** `tesla-card/` (public, standalone git repo) · **Date:** 2026-06-24 · **Version:** `0.2.0`
+**Repo:** `tesla-card/` (public, standalone git repo) · **Date:** 2026-06-24 · **Version:** `0.3.0`
 
 Annotated structure of the card. For what each piece does at runtime, see
 [`architecture.md`](./architecture.md) and [`component-inventory.md`](./component-inventory.md).
@@ -10,8 +10,9 @@ Annotated structure of the card. For what each piece does at runtime, see
 > (a new energy node type + copper token), and the ~20×-expanded `editor.ts`. Epics 10–11 (Scene-aware
 > standalone editor + render polish) are pure UX/render refinements with **zero** new source modules —
 > the freeze on `flow/balance.ts` (AR-6) and `flow/model.ts` held through all three epics.
-> **51 source modules, 65 co-located test files (116 `.ts` total; ~1,578 unit cases),
-> 24 Playwright e2e specs (~293 cases).** Node 20 · Min HA 2024.4.0.
+> **50 source modules, 68 co-located test files (118 `.ts` total; 1,655 unit cases),
+> 298 e2e cases across 24 Playwright specs (23 active by default; `visual.spec.ts` under `VISUAL=1`).**
+> Node 20 · Min HA 2024.4.0.
 
 ---
 
@@ -19,7 +20,7 @@ Annotated structure of the card. For what each piece does at runtime, see
 
 ```
 tesla-card/                       # public, standalone git repo
-├── package.json                  # npm pkg v0.2.0: scripts (build/watch/dev/typecheck/test/lint/e2e), deps lit + @mdi/js, ESM
+├── package.json                  # npm pkg v0.3.0: scripts (build/watch/dev/typecheck/test/lint/e2e), deps lit + @mdi/js, ESM
 ├── package-lock.json             # npm lockfile (committed)
 ├── .nvmrc                        # pins Node 20
 ├── tsconfig.json                 # strict TS; useDefineForClassFields:false (load-bearing for Lit reactivity)
@@ -54,13 +55,13 @@ tesla-card/                       # public, standalone git repo
 │   ├── support/                  #   page-objects/ · fixtures/ · helpers/  (shared e2e harness)
 │   ├── tsconfig.json             #   e2e-only TS config
 │   └── README.md                 #   e2e harness notes
-└── src/                          # ── 51 source .ts + 65 co-located *.test.ts ──
+└── src/                          # ── 50 source .ts + 68 co-located *.test.ts ──
     ├── tesla-card.ts             # ★ENTRY / PARENT @customElement('tesla-card'): orchestration, tabs (+Energy splice),
     │                             #   vehicle + energy resolution memo, Lovelace contract, child registration, window.customCards
     ├── editor.ts                 # ★Epic 9 — @customElement('tesla-card-editor') ~2,657 LOC: full no-YAML GUI
     │                             #   (5-step wizard + normal form; theming/overrides/node-customization); lazy via getConfigElement; D7 hass.states
     ├── base.ts                   # TcBase extends LitElement → supplies @property hass + resolved config to vehicle children
-    ├── const.ts                  # CARD_VERSION (0.2.0), HERO_VIEWBOX (1024×687), DEFAULT_ENTITIES, EntityKey
+    ├── const.ts                  # CARD_VERSION (0.3.0), HERO_VIEWBOX (1024×687), DEFAULT_ENTITIES, EntityKey
     ├── types.ts                  # HomeAssistant (incl. callWS?), HassEntity, LovelaceCard(Editor), PanelId, TeslaCardConfig + sub-shapes
     ├── helpers.ts                # pure state/format/service helpers (entityId, rawState, num, toggleEntity, selectOption, clamp, …)
     ├── ui.ts                     # render primitives (icon, statTile, batteryGauge, ring) + honest-age helpers
@@ -139,11 +140,12 @@ tesla-card/                       # public, standalone git repo
 
 ## Test Layout
 
-- **Unit tests (Vitest)** are **co-located**: `src/**/*.test.ts` (65 files, ~1,578 cases) — including
+- **Unit tests (Vitest)** are **co-located**: `src/**/*.test.ts` (68 files, 1,655 cases) — including
   the gate self-tests (`src/no-cycle.test.ts`, `src/token-defined.test.ts`,
   `src/no-planning-artifacts.test.ts`, etc.) that mirror `scripts/lint/`.
-- **E2E + visual (Playwright)** live under `tests/e2e/*.spec.ts` (24 specs, ~293 cases) with the
-  shared harness in `tests/support/{page-objects,fixtures,helpers}`.
+- **E2E + visual (Playwright)** live under `tests/e2e/*.spec.ts` (298 cases across 24 specs — 23
+  active by default; `visual.spec.ts` collects only under `VISUAL=1`) with the shared harness in
+  `tests/support/{page-objects,fixtures,helpers}`.
 
 ## File Organization Patterns
 
