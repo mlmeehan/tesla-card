@@ -29,8 +29,9 @@ import { TESLA_PLATFORMS } from './platforms';
  * This module belongs in `data/` because `detectDialect` reads `hass.entities`
  * (the registry) — a read that is legitimate ONLY inside `data/` (AR-1). It
  * imports no `lit`/DOM and nothing upward (`flow/`, `components/`); it may import
- * sibling `data/` (`platforms.ts` for the shared Tesla-platform set, `resolve.ts`'s
- * helpers/tables) and root `types`. The `Integration` ↔ `types.ts` cross-reference is type-only (erased),
+ * the leaf `data/platforms.ts` (the shared Tesla-platform set) and root `types` —
+ * but NOT `resolve.ts` (a value edge back to `resolve` would cycle with the new
+ * `resolve → dialect` edge). The `Integration` ↔ `types.ts` cross-reference is type-only (erased),
  * so there is no runtime cycle. (Story 14.1: the shared Tesla-platform set moved
  * to the leaf `platforms.ts` so `resolve.ts` can now value-import this module — for
  * its per-dialect alias tables — without forming a `resolve ↔ dialect` cycle.)
