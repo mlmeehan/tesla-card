@@ -80,6 +80,31 @@ function signatureFor(key: EntityKey, alias: string | undefined): KeySignature {
   return { domain, suffix: object, canonical: alias };
 }
 
+/**
+ * Distinctive vehicle signatures (`{domain, suffix}`) for the "vehicle-shaped device"
+ * score (Story 14.2 AC3a). A car scores many hits (odometer, tpms, doors, seats,
+ * charge_*…); a Powerwall/solar device scores 0. Two hardening properties (code
+ * review 2026-07-04):
+ *   1. PREFIX-AGNOSTIC. A device's entity_ids are frozen at creation, so a device
+ *      *rename* (`name_by_user`) stops matching the entity-id slug — stripping a
+ *      display-name-derived prefix would silently score a renamed car ≈0 and lose it
+ *      to a co-resident energy device. Instead we match the entity-id SUFFIX
+ *      (`object === suffix` or `object.endsWith('_' + suffix)`), which needs no
+ *      knowledge of the prefix, so a renamed car still scores.
+ *   2. GENERIC suffixes a non-vehicle Tesla device commonly shares are EXCLUDED
+ *      (`sensor.power` on a Powerwall/solar/wall-connector; `sensor.speed`), so the
+ *      "energy device scores 0" property is guaranteed, not incidental to fixture
+ *      naming. Distinctive keys (odometer, tpms, doors, seats, charge_*, …) remain.
+ * This is the *fleet* signature set, but a car on an aliased dialect diverges on only
+ * a few keys — the many SHARED vehicle suffixes still score, so the discriminator
+ * holds without first knowing the dialect (no chicken-and-egg with `detectDialect`).
+ */
+const GENERIC_CANONICAL_SUFFIXES: ReadonlySet<string> = new Set(['power', 'speed']);
+const VEHICLE_SIGNATURES: ReadonlyArray<{ domain: string; suffix: string }> =
+  Object.values(KEY_SIGNATURES)
+    .filter((s) => !GENERIC_CANONICAL_SUFFIXES.has(s.suffix))
+    .map((s) => ({ domain: s.domain, suffix: s.suffix }));
+
 interface VehicleContext {
   /** device-name slug used as the entity-id prefix, e.g. "model_y" */
   slug: string;
@@ -102,16 +127,27 @@ function detectVehicle(
 
   if (entities && devices) {
     const byDevice = new Map<string, string[]>();
-    const add = (deviceId: string, entityId: string): void => {
+    // Story 14.2: track which Tesla platform(s) each device owns, so an explicit
+    // `config.integration` can steer the anonymous fallback onto a device of that
+    // platform. Only the primary (platform-tagged) branch records a platform; a
+    // manufacturer-fallback device has no `platform`, so its set stays empty
+    // (override-steering correctly no-ops there — it cannot name a dialect).
+    const byDevicePlatforms = new Map<string, Set<string>>();
+    const add = (deviceId: string, entityId: string, platform?: string): void => {
       const list = byDevice.get(deviceId) ?? [];
       list.push(entityId);
       byDevice.set(deviceId, list);
+      if (platform) {
+        const set = byDevicePlatforms.get(deviceId) ?? new Set<string>();
+        set.add(platform);
+        byDevicePlatforms.set(deviceId, set);
+      }
     };
 
     // Primary signal: entities owned by a Tesla integration platform.
     for (const ent of Object.values(entities)) {
       if (ent?.device_id && TESLA_PLATFORMS.has(ent.platform)) {
-        add(ent.device_id, ent.entity_id);
+        add(ent.device_id, ent.entity_id, ent.platform);
       }
     }
     // Fallback signal: any device whose manufacturer is Tesla.
@@ -126,6 +162,27 @@ function detectVehicle(
 
     const deviceName = (id: string): string =>
       devices[id]?.name_by_user || devices[id]?.name || '';
+
+    // (3a) Score how vehicle-shaped a candidate device is: the count of its
+    // entities whose id matches a distinctive vehicle SIGNATURE by suffix. The
+    // match is prefix-agnostic (`object === suffix` or ends with `_<suffix>`), so a
+    // renamed device still scores; generic suffixes (`power`/`speed`) are excluded.
+    // A car scores many; a Powerwall/solar device scores 0. See VEHICLE_SIGNATURES.
+    const vehicleScore = (id: string): number => {
+      let score = 0;
+      for (const eid of byDevice.get(id) ?? []) {
+        const { domain, object } = splitEntity(eid);
+        if (
+          VEHICLE_SIGNATURES.some(
+            (sig) =>
+              sig.domain === domain &&
+              (object === sig.suffix || object.endsWith(`_${sig.suffix}`))
+          )
+        )
+          score++;
+      }
+      return score;
+    };
 
     let deviceId: string | undefined;
 
@@ -143,11 +200,34 @@ function detectVehicle(
     if (!deviceId && byDevice.size) {
       const ids = [...byDevice.keys()];
       const want = config.name ? slugify(config.name) : '';
-      deviceId =
-        (want && ids.find((id) => slugify(deviceName(id)) === want)) ||
-        ids.sort(
-          (a, b) => (byDevice.get(b)?.length ?? 0) - (byDevice.get(a)?.length ?? 0)
-        )[0];
+      const byName = want ? ids.find((id) => slugify(deviceName(id)) === want) : undefined;
+      if (byName) {
+        deviceId = byName;
+      } else {
+        // Untargeted fallback ordering (Story 14.2): vehicle-signature score DESC
+        // (3a) → override-platform ownership (3b) → raw most-entities (the former
+        // sole key, now the tie-break). This lets a car beat a higher-count
+        // Powerwall, then lands an `integration:` override on a device of that
+        // platform. `config.integration` naming a platform no candidate owns (3c)
+        // simply no-ops the override key → the vehicle-shaped pick still wins and
+        // the override's dialect still applies downstream (documented mis-config;
+        // escape hatch = `config.device` + `config.entities[key]`).
+        const override =
+          config.integration && TESLA_PLATFORMS.has(config.integration)
+            ? config.integration
+            : undefined;
+        const score = new Map(ids.map((id) => [id, vehicleScore(id)]));
+        deviceId = ids.sort((a, b) => {
+          const vs = (score.get(b) ?? 0) - (score.get(a) ?? 0);
+          if (vs !== 0) return vs;
+          if (override) {
+            const oa = byDevicePlatforms.get(a)?.has(override) ? 1 : 0;
+            const ob = byDevicePlatforms.get(b)?.has(override) ? 1 : 0;
+            if (ob !== oa) return ob - oa;
+          }
+          return (byDevice.get(b)?.length ?? 0) - (byDevice.get(a)?.length ?? 0);
+        })[0];
+      }
     }
 
     if (deviceId) {
@@ -195,18 +275,31 @@ export function resolveEntities(
   // so both lookups are `undefined` and every key takes the unchanged fleet path
   // → byte-identical fleet resolution (AC6). [Story 14.1 AC2]
   //
-  // AMBIGUITY GUARD: `detectVehicle` picks the vehicle DEVICE independently of
-  // `detectDialect`'s platform count, so on a genuine multi-integration install the
-  // chosen device can belong to one integration while the dialect count elects
-  // another — aliasing then rewrites the device's keys with the wrong dialect's
-  // domains (a live-wrong resolve, strictly worse than the pre-change fleet ghost).
-  // `detectDialect` surfaces this as `ambiguous`; when it is set we fall back to the
-  // un-aliased fleet path (no table entry) rather than alias with a maybe-wrong
-  // dialect. This keeps the single-dialect-per-install assumption honest without
-  // solving full dual-integration disambiguation (a ratified follow-on). An explicit
-  // `config.integration` makes detection non-ambiguous, so a user can still force a
-  // dialect on a mixed install. [Story 14.1 AC2; code-review 2026-07-03]
-  const report = detectDialect(hass, config);
+  // Story 14.2: scope the dialect probe to the RESOLVED vehicle device's entities,
+  // so device and dialect agree by construction. `detectVehicle` now prefers the
+  // vehicle-shaped device (a car over a higher-count Powerwall), and feeding its
+  // `entityIds` as the scope means a split-platform household (a `tesla_custom` car
+  // + a `tesla_fleet` Powerwall) probes to the car's single dialect — no false
+  // ambiguity, the aliases apply. When `entityIds` is empty (registry-less / demo
+  // harness), the scope is OMITTED so the unchanged registry-wide default path runs
+  // (passing an empty Set would force a zero-count `source:'default'` on installs
+  // that today probe registry-wide — AC5).
+  //
+  // AMBIGUITY GUARD (retained, defense-in-depth): the guard fires only when the ONE
+  // resolved vehicle device carries ≥2 Tesla platforms simultaneously — after
+  // scoping, a split-*device* household no longer trips it. In real Home Assistant a
+  // `device_id` is owned by a single config entry, so a same-device two-platform
+  // install is essentially production-unreachable; the guard is kept as cheap
+  // insurance (and is the only thing the AC4 fixture exercises), not active
+  // protection. When it does fire we fall to the un-aliased `tesla_fleet` path rather
+  // than alias with a maybe-wrong dialect. An explicit `config.integration` still
+  // short-circuits to `source:'override'`, so a user can force a dialect regardless.
+  // [Story 14.2 AC1/AC4; supersedes the Story 14.1 registry-wide guard]
+  const report = detectDialect(
+    hass,
+    config,
+    entityIds.length ? new Set(entityIds) : undefined
+  );
   const integration = report.ambiguous ? 'tesla_fleet' : report.integration;
   const aliases = DIALECT_ENTITY_ALIASES[integration];
   const absent = DIALECT_ABSENT[integration];
