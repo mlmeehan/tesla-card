@@ -11,6 +11,7 @@
     "dev": "vite",
     "test": "vitest run",
     "test:watch": "vitest",
+    "test:census": "node scripts/lint/test-census.mjs",
     "typecheck": "tsc --noEmit",
     "typecheck:e2e": "tsc -p tests/tsconfig.json",
     "lint": "node scripts/lint/no-bare-hass-states.mjs && node scripts/lint/no-cycle.mjs && node scripts/lint/trade-dress-denylist.mjs && node scripts/lint/import-allowlist.mjs && node scripts/lint/no-network-egress.mjs && node scripts/lint/version-sync.mjs && node scripts/lint/token-defined.mjs && node scripts/lint/no-planning-artifacts.mjs",
