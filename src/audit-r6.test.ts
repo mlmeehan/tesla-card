@@ -154,7 +154,10 @@ describe('AC4 — dialect detection (mechanism, not assumed spellings)', () => {
     // CONFIRMED (research §5): tesla_custom has NO charging-status string — charging
     // is a boolean binary_sensor.charging, so the adapter maps the boolean vocabulary.
     expect(a.normalizeChargingState('on')).toBe('charging');
-    expect(a.normalizeChargingState('off')).toBe('stopped');
+    // Story 15.1: `off` covers Stopped/Complete/Disconnected alike (teslajsonpy)
+    // → 'unknown', routing the consumer to its cable corroboration — never the
+    // shipped 'stopped' (which would false-'Plugged' an uncabled parked car).
+    expect(a.normalizeChargingState('off')).toBe('unknown');
     // The dead `charge_complete → complete` override was DELETED (the token exists
     // nowhere in the integration; §5 verdict) → it now degrades to 'unknown'.
     expect(a.normalizeChargingState('charge_complete')).toBe('unknown');
@@ -328,6 +331,61 @@ describe('AC4 (gap) — remediated reads resolve correctly under tesla_custom (p
     // open → amber cue (closed/missing would be --tc-text-dim). Proves the routed
     // normalizeCoverState('open') open-state cue, not an inline === 'open'.
     expect(style).toContain('--tc-amber');
+    el.remove();
+  });
+});
+
+// ───────────────────────────────────────────────────────────────────────────
+// Story 15.1 — the STAMP path proven end-to-end (the only stamp-load-bearing
+// test): the config carries NO `integration:` key, so the classification below
+// works ONLY if the whole chain holds — fixture registry → the resolver's
+// vehicle-scoped detection → the parent stamp on `_resolvedConfig` → the child's
+// `adapterFor` override branch → the boolean capability map. The component-level
+// tesla_custom tests (hero.test.ts / panel-charging.test.ts) set `integration:`
+// directly in config and therefore BYPASS the stamp — they cannot catch a
+// dropped stamp; this one goes red if it is removed.
+// RED-FIRST evidence (pre-conversion): the cabled fixture rendered
+// 'Plugged-idle' (module-default normalizer → 'unknown' → cable corroboration).
+// ───────────────────────────────────────────────────────────────────────────
+
+describe('Story 15.1 — whole-card stamp path (fixture registry → detection → stamp → adapter)', () => {
+  /** The hero element + its shadow root, settled. */
+  async function heroOf(el: CardEl): Promise<Element> {
+    const hero = el.shadowRoot?.querySelector('tc-hero') as CardEl | null;
+    expect(hero, 'hero renders').toBeTruthy();
+    await hero!.updateComplete;
+    return hero as unknown as Element;
+  }
+
+  test("the fixture's boolean 'on' renders the CHARGING hero (green state, not cable-corroborated 'plugged')", async () => {
+    // model-y-tesla-custom.json: binary_sensor.garage_model_y_charging = 'on',
+    // cable binary_sensor.garage_model_y_charger = 'on' — pre-stamp/conversion
+    // this exact setup read 'Plugged-idle'; only the full stamp path turns it green.
+    const el = await renderCard(cfg(), hassFrom(teslaCustom));
+    const hero = await heroOf(el);
+    expect(hero.shadowRoot?.querySelector('.st-label')?.textContent?.trim()).toBe(
+      STRINGS.status.charging
+    );
+    // The green visual itself, not just the word: halo hook + port glow.
+    expect(heroCar(el)?.classList.contains('charging')).toBe(true);
+    expect(hero.shadowRoot?.querySelector('.tc-port')).toBeTruthy();
+    el.remove();
+  });
+
+  test("boolean 'off' + plug sensor pinned 'on' → 'Plugged-idle' THROUGH the stamp (off → unknown → corroboration)", async () => {
+    // Clone the fixture states (never mutate the shared import); flip the boolean
+    // off and pin the plug sensor 'on' EXPLICITLY — the precondition the assertion
+    // rests on, stated here rather than inherited silently from fixture internals.
+    const fx = JSON.parse(JSON.stringify(teslaCustom)) as typeof teslaCustom;
+    const states = fx.states as Record<string, { state: string }>;
+    states['binary_sensor.garage_model_y_charging'].state = 'off';
+    states['binary_sensor.garage_model_y_charger'].state = 'on';
+    const el = await renderCard(cfg(), hassFrom(fx));
+    const hero = await heroOf(el);
+    expect(hero.shadowRoot?.querySelector('.st-label')?.textContent?.trim()).toBe(
+      STRINGS.status.pluggedIdle
+    );
+    expect(heroCar(el)?.classList.contains('charging')).toBe(false);
     el.remove();
   });
 });

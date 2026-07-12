@@ -225,11 +225,47 @@
         renamed: { prefix: 'my_tesla', deviceName: 'My Tesla', platform: 'tesla_fleet' },
         // ?env=tesla_custom — the COSTLY distinct dialect (Story 5.11 AC4). Same
         // vehicle, registry platform 'tesla_custom' so detectDialect probes it and
-        // the remediated cover/lock/aperture reads exercise the dialect seam. The
-        // exact tesla_custom spellings are the dialect.ts ASSUMPTION set (no captured
-        // corpus); this proves the MECHANISM, not the literals.
-        tesla_custom: { prefix: 'garage_model_y', deviceName: 'Garage Model Y (tesla_custom)', platform: 'tesla_custom' },
+        // the dialect seam is exercised end-to-end. Story 15.1: the deviceName must
+        // slug to the entity prefix ('garage_model_y') — the old parenthetical name
+        // slugged to 'garage_model_y_tesla_custom', sending every 14.1 alias guess
+        // to a dead id, so no divergent key could ever resolve under this env. The
+        // charging shape is derived per-scenario in toTeslaCustomShape() below.
+        tesla_custom: { prefix: 'garage_model_y', deviceName: 'Garage Model Y', platform: 'tesla_custom' },
       };
+
+      // Story 15.1 — env=tesla_custom carries the REAL 14.1 entity shape for the
+      // charge-classification chain: the integration exposes NO charging-status
+      // string (research §5) — only the boolean binary_sensor.charging, the plug
+      // binary_sensor.charger, and binary_sensor.online for the status boolean.
+      // DERIVE all three from the scenario's fleet entities BEFORE dropping them
+      // (never hardcode: the scenario builders mutate the fleet string per-scenario
+      // — asleep→'unavailable', parked→'Disconnected', plugged→'Complete' — and
+      // ?charge= reuses the same builders; a hardcoded 'on' would render
+      // ?scenario=parked&env=tesla_custom as a charging car):
+      //   boolean charging = 'on' iff raw === 'Charging'; 'unavailable' iff raw is
+      //                      dead (unavailable/unknown/absent); else 'off'
+      //   plug charger     = 'unavailable' iff raw is dead (unavailable/unknown/
+      //                      absent); 'off' iff raw === 'Disconnected'; else 'on'
+      //   online           = the fleet status boolean, renamed (the resolver's
+      //                      tesla_custom alias is binary_sensor.online; without it
+      //                      isAsleep() falls to the aliased-away battery and reads
+      //                      the whole env as ASLEEP — charge visuals suppressed)
+      // buildRegistry derives the registry FROM the states object, so the dialect
+      // probe follows these edits automatically.
+      function toTeslaCustomShape(st, prefix) {
+        const out = { ...st };
+        const raw = out[`sensor.${prefix}_charging`]?.state;
+        const dead = raw === undefined || raw === 'unavailable' || raw === 'unknown';
+        out[`binary_sensor.${prefix}_charging`] = s(dead ? 'unavailable' : raw === 'Charging' ? 'on' : 'off');
+        out[`binary_sensor.${prefix}_charger`] = s(dead ? 'unavailable' : raw === 'Disconnected' ? 'off' : 'on');
+        const online = out[`binary_sensor.${prefix}_status`];
+        if (online) out[`binary_sensor.${prefix}_online`] = online;
+        // No status STRING / fleet-spelled cable / fleet-spelled status on this dialect.
+        delete out[`sensor.${prefix}_charging`];
+        delete out[`binary_sensor.${prefix}_charge_cable`];
+        delete out[`binary_sensor.${prefix}_status`];
+        return out;
+      }
 
       function reprefix(src, prefix) {
         if (prefix === 'garage_model_y') return src;
@@ -318,6 +354,11 @@
                 ? aperturesStates()
                 : awakeStates();
         states = reprefix(base, env.prefix);
+        // Story 15.1 — the tesla_custom env carries the dialect's REAL charging
+        // shape (boolean + plug + online, fleet string dropped); see the
+        // toTeslaCustomShape derivation rules above. Must run BEFORE
+        // buildRegistry so the registry (and the dialect probe) follow.
+        if (envKey === 'tesla_custom') states = toTeslaCustomShape(states, env.prefix);
         registry = buildRegistry(states, env);
         // Composed-Scene profiler path (?card=my-home): the Scene's tc-solar renders
         // the Story 6.4 weather vignette from HA-core weather.home (+ sun.sun for

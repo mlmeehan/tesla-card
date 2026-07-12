@@ -17,7 +17,7 @@ import {
   mdiPlayCircleOutline,
 } from '@mdi/js';
 import { CARD_VERSION } from './const';
-import { resolveEntities } from './data/resolve';
+import { resolveEntities, detectVehicleDialect } from './data/resolve';
 import { detectDialect } from './data/dialect';
 import { resolveEnergyEntities, hasEnergySite, type EnergyEntities } from './data/energy';
 import { tokens, sharedStyles } from './styles';
@@ -81,7 +81,9 @@ export class TeslaCard extends LitElement implements LovelaceCard {
   @state() private _config!: TeslaCardConfig;
   @state() private _panel: PanelId = 'charging';
 
-  /** `_config` with `entities` filled in by auto-resolution; passed to children. */
+  /** `_config` with `entities` filled in by auto-resolution AND `integration`
+   *  stamped with the resolver's effective vehicle dialect (Story 15.1 —
+   *  in-memory only, never persisted); passed to children. */
   private _resolvedConfig?: TeslaCardConfig;
   /** Auto-detected Tesla energy-site + Wall-Connector entities. */
   private _energy?: EnergyEntities;
@@ -161,6 +163,18 @@ export class TeslaCard extends LitElement implements LovelaceCard {
     this._resolvedConfig = {
       ...this._config,
       entities: resolveEntities(this.hass, this._config),
+      // Story 15.1 (D-DGT-2): stamp the resolver's EFFECTIVE vehicle dialect
+      // (vehicle-scoped detection + the ambiguity-guard collapse, single-sourced
+      // in resolve.ts) so children's `adapterFor` short-circuits on the override
+      // branch — zero per-render registry scan, and hero/panel classify with the
+      // SAME dialect the resolver aliased by. Placed AFTER the spread so the
+      // effective value deterministically wins over a garbage user `integration:`
+      // on the resolved COPY only (a valid override re-stamps itself — detection
+      // short-circuits on it). In-memory only: `_config` is never mutated and the
+      // card dispatches no `config-changed`; the memo above keys on the same
+      // registry references the probe reads, so the stamp recomputes exactly when
+      // resolution does (registry-less/boot stamps self-correct on arrival).
+      integration: detectVehicleDialect(this.hass, this._config),
     };
     this._energy = resolveEnergyEntities(this.hass, this._config);
     this._resolveCache = { entities, devices, config: this._config };

@@ -308,6 +308,35 @@ test.describe('hero — charge visual states (Story 3.4)', () => {
     await expect(demo.heroStatusLabel).toHaveText('Plugged-idle');
     await expect(demo.heroStatus).not.toContainText('kW');
   });
+
+  // Story 15.1 — the tesla_custom BOOLEAN dialect classifies end-to-end in a real
+  // browser against the built bundle: registry probe → parent stamp → adapter.
+  // The demo env carries the dialect's real shape (binary_sensor.charging +
+  // binary_sensor.charger derived per-scenario from the fleet string — see
+  // demo/index.html toTeslaCustomShape), so this PAIR pins the derivation, not
+  // just the happy path: awake ⇒ boolean 'on' ⇒ green; parked ⇒ 'off' + plug
+  // 'off' ⇒ neutral Parked (a hardcoded 'on' in the env would fail the second).
+  test('Story 15.1: tesla_custom awake — the boolean derives the GREEN charge visual', async ({
+    demo,
+  }) => {
+    await demo.open({ scenario: 'awake', env: 'tesla_custom' });
+    await expect(demo.heroStatusLabel).toHaveText('Charging');
+    await expect(demo.heroPort).toBeVisible();
+    await expect(demo.heroStage.locator('.tc-port-core')).toHaveCSS(
+      'fill',
+      'rgb(52, 211, 153)'
+    );
+    await expect(demo.heroSvg).toHaveClass(/\bcharging\b/);
+  });
+
+  test('Story 15.1: tesla_custom parked — boolean off + plug off reads Parked (no port, no halo)', async ({
+    demo,
+  }) => {
+    await demo.open({ scenario: 'parked', env: 'tesla_custom' });
+    await expect(demo.heroStatusLabel).toHaveText('Parked');
+    await expect(demo.heroPort).toHaveCount(0);
+    await expect(demo.heroSvg).not.toHaveClass(/\bcharging\b/);
+  });
 });
 
 // Story 3.5 — aperture open-state overlays, locked in a real browser against the

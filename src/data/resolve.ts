@@ -1,7 +1,12 @@
 import type { HomeAssistant, TeslaCardConfig } from '../types';
 import { DEFAULT_ENTITIES, type EntityKey } from '../const';
 import { TESLA_PLATFORMS } from './platforms';
-import { detectDialect, DIALECT_ENTITY_ALIASES, DIALECT_ABSENT } from './dialect';
+import {
+  detectDialect,
+  DIALECT_ENTITY_ALIASES,
+  DIALECT_ABSENT,
+  type Integration,
+} from './dialect';
 
 /**
  * Entity resolution by stable function-name, not hard-coded IDs.
@@ -248,6 +253,62 @@ function detectVehicle(
 }
 
 /**
+ * The resolver's EFFECTIVE vehicle dialect (Story 15.1 / D-DGT-2): the Story-14.2
+ * vehicle-device-scoped `detectDialect` WITH the ambiguity-guard collapse applied —
+ * exactly the dialect {@link resolveEntities} aliases by. Exported so the parent
+ * (`tesla-card.ts` `_resolve()`) can stamp it onto the resolved config as
+ * `integration:`, making every child's `adapterFor` short-circuit on the override
+ * branch and consume the SAME dialect the resolver used (a naive unscoped,
+ * uncollapsed `detectDialect` re-run in the parent could stamp a DIFFERENT dialect
+ * than the resolver aliased by — the exact resolver-vs-component mismatch D-DGT-2
+ * closes).
+ *
+ * Returns the collapsed `Integration`, deliberately NOT a `DialectReport`:
+ * everywhere else `report.integration` means the UNcollapsed tie-break pick (with
+ * `ambiguous` flagging it) — silently pre-collapsing that field would invite a
+ * future consumer to misread `ambiguous: true` beside an already-collapsed value.
+ *
+ * `!hass` (Lovelace sets config before hass, so the parent stamp path DOES run
+ * here) returns WITHOUT touching `detectVehicle` — which dereferences
+ * `hass.entities` unguarded — via the empty-scope path: a valid
+ * `config.integration` override still wins through `detectDialect`'s override
+ * branch, and otherwise the probe finds nothing ⇒ the same effective
+ * `tesla_fleet` default the resolver's `!hass` early-return implies. Both the
+ * `!hass` and registry-less stamps self-correct on the next resolve once the
+ * registry arrives (the parent's `_resolveCache` keys on `hass.entities` /
+ * `hass.devices` reference identity). [Story 15.1 AC3a/AC3e]
+ */
+export function detectVehicleDialect(
+  hass: HomeAssistant | undefined,
+  config: TeslaCardConfig
+): Integration {
+  const entityIds = hass ? detectVehicle(hass, config).entityIds : [];
+  return effectiveDialect(hass, config, entityIds);
+}
+
+/**
+ * The ONE ambiguity-guard collapse over the scoped probe — single-sourced so the
+ * parent stamp ({@link detectVehicleDialect}) and the resolver
+ * ({@link resolveEntities}) can never drift [Story 15.1 AC3b]. Preserves the
+ * Story-14.2 empty-vs-OMIT scope rule exactly: empty `entityIds` ⇒ the scope is
+ * OMITTED (registry-wide probe), never an empty `Set` (which would force a
+ * zero-count `source:'default'` on registry-less installs — the regression 14.2
+ * explicitly guarded against).
+ */
+function effectiveDialect(
+  hass: HomeAssistant | undefined,
+  config: TeslaCardConfig,
+  entityIds: readonly string[]
+): Integration {
+  const report = detectDialect(
+    hass,
+    config,
+    entityIds.length ? new Set(entityIds) : undefined
+  );
+  return report.ambiguous ? 'tesla_fleet' : report.integration;
+}
+
+/**
  * Build a complete entity map for every key, resolving each by stable
  * function-name where possible. Always returns a value for every key.
  */
@@ -295,12 +356,11 @@ export function resolveEntities(
   // than alias with a maybe-wrong dialect. An explicit `config.integration` still
   // short-circuits to `source:'override'`, so a user can force a dialect regardless.
   // [Story 14.2 AC1/AC4; supersedes the Story 14.1 registry-wide guard]
-  const report = detectDialect(
-    hass,
-    config,
-    entityIds.length ? new Set(entityIds) : undefined
-  );
-  const integration = report.ambiguous ? 'tesla_fleet' : report.integration;
+  //
+  // Story 15.1: the scoped probe + collapse live in `effectiveDialect` (single-
+  // sourced) so the parent's `detectVehicleDialect` stamp can never disagree with
+  // the dialect this loop aliases by.
+  const integration = effectiveDialect(hass, config, entityIds);
   const aliases = DIALECT_ENTITY_ALIASES[integration];
   const absent = DIALECT_ABSENT[integration];
 

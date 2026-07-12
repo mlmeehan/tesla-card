@@ -8,7 +8,7 @@ import { icon, batteryGauge, ageHint, keyAgeHint } from '../ui';
 import { carView, carStyles, CLOSED_APERTURES } from './car';
 import type { ApertureState, ChargeVisual } from './car';
 import { resolvePaint } from '../paint';
-import { normalizeChargingState, normalizeCoverState, normalizeLockState } from '../data/dialect';
+import { adapterFor } from '../data/dialect';
 import {
   num,
   rawState,
@@ -36,8 +36,11 @@ export class TcHero extends TcBase {
 
   /**
    * Classify the glanceable charge state (AC1/AC2) from the DISCRETE charging-state
-   * entity via the Epic-1 canonical normalizer — never signed power, never an inline
-   * `=== 'Charging'` (the debt `data/dialect` was built to retire, dialect.ts:78-81).
+   * entity via the VEHICLE DIALECT's adapter normalizer (Story 15.1 / D-DGT-2:
+   * `adapterFor` on the parent-stamped resolved config — the stamp short-circuits
+   * detection on its override branch, an O(1) table dispatch with zero per-render
+   * registry scan) — never signed power, never an inline `=== 'Charging'` (the
+   * debt `data/dialect`'s canonical-vocabulary section was built to retire).
    * The 7-member `ChargingState` union collapses to the 3 visual states the Hero shows:
    *   charging                                  → 'charging'
    *   starting | stopped | complete | no_power  → 'plugged'  (connected, not drawing)
@@ -46,9 +49,13 @@ export class TcHero extends TcBase {
    *                                                false Charging/Plugged; NFR-4)
    * `Charging ⇒ plugged` (AC2) is structural: the port-glow/cable renders for BOTH
    * 'plugged' and 'charging' (car.ts), so green is a superset of blue.
+   * On tesla_custom the source is a BOOLEAN (`on` → 'charging'; `off` → 'unknown',
+   * because teslajsonpy's off covers Stopped/Complete/Disconnected alike) — the
+   * default branch's cable corroboration below then classifies off+cabled as
+   * 'plugged' and off+uncabled as 'parked', from real physical evidence.
    */
   private _chargeVisual(): ChargeVisual {
-    const state = normalizeChargingState(
+    const state = adapterFor(this.hass, this.config).normalizeChargingState(
       rawState(this.hass, this.config, 'charging_status')
     );
     switch (state) {
@@ -89,12 +96,15 @@ export class TcHero extends TcBase {
    * zone); on a Model Y the rear hatch IS the `trunk` cover (the design's "liftgate").
    */
   private _apertures(): ApertureState {
-    // Cover apertures route through the dialect seam (`normalizeCoverState`,
-    // Story 5.11) instead of an inline fleet-shaped `=== 'open'`; the doors are
-    // `binary_sensor` on/off, kept on `isOn` (already canonical). Behaviour-
-    // identical for tesla_fleet (the default COVER_MAP is identity for 'open').
+    // Cover apertures route through the dialect seam — since Story 15.1 the
+    // VEHICLE DIALECT's adapter normalizer (the parent-stamped `integration`
+    // short-circuits detection), superseding the Story-5.11 module-default read;
+    // the doors are `binary_sensor` on/off, kept on `isOn` (already canonical).
+    // Behaviour-identical for every current dialect (no adapter carries a cover
+    // override — pinned by the AC6 equivalence table in dialect.test.ts).
+    const adapter = adapterFor(this.hass, this.config);
     const isCoverOpen = (key: 'frunk' | 'trunk' | 'windows'): boolean =>
-      normalizeCoverState(rawState(this.hass, this.config, key)) === 'open';
+      adapter.normalizeCoverState(rawState(this.hass, this.config, key)) === 'open';
     return {
       frunk: isCoverOpen('frunk'),
       liftgate: isCoverOpen('trunk'),
@@ -131,14 +141,17 @@ export class TcHero extends TcBase {
     glyph: string;
     tone: 'calm' | 'muted' | 'exception';
   } | null {
-    const lockState = normalizeLockState(rawState(this.hass, this.config, 'lock'));
+    // Lock/cover reads through the vehicle dialect's adapter (Story 15.1) —
+    // behaviour-identical today (no adapter overrides lock/cover; AC6-pinned).
+    const adapter = adapterFor(this.hass, this.config);
+    const lockState = adapter.normalizeLockState(rawState(this.hass, this.config, 'lock'));
     const doorOpen =
       isOn(this.hass, this.config, 'door_fl') ||
       isOn(this.hass, this.config, 'door_fr') ||
       isOn(this.hass, this.config, 'door_rl') ||
       isOn(this.hass, this.config, 'door_rr');
     const windowOpen =
-      normalizeCoverState(rawState(this.hass, this.config, 'windows')) === 'open';
+      adapter.normalizeCoverState(rawState(this.hass, this.config, 'windows')) === 'open';
     // Omit when nothing is resolvable — never a fabricated dash for lock state.
     if (lockState === 'unknown' && !doorOpen && !windowOpen) return null;
     // Escalation: door > window > unlocked > locked.
@@ -186,7 +199,10 @@ export class TcHero extends TcBase {
     }
     const shift = rawState(this.hass, this.config, 'shift_state');
     const visual = this._chargeVisual();
-    const locked = normalizeLockState(rawState(this.hass, this.config, 'lock')) === 'locked';
+    const locked =
+      adapterFor(this.hass, this.config).normalizeLockState(
+        rawState(this.hass, this.config, 'lock')
+      ) === 'locked';
     // Lock sub-line — useful while either parked OR plugged-idle (both stationary).
     const lockSub = html`<span class="lockline">
       ${icon(locked ? mdiLock : mdiLockOpenVariant, { size: 14 })}
