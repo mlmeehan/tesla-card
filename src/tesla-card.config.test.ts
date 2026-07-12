@@ -445,6 +445,148 @@ describe('K8 — setup_complete renders byte-identically (card-side inertness)',
   });
 });
 
+// ── Story 15.1 — the parent-resolved dialect stamp (AC3) ────────────────────
+// `_resolve()` stamps the resolver's EFFECTIVE vehicle dialect (vehicle-scoped
+// detection + the ambiguity-guard collapse, single-sourced from resolve.ts's
+// `detectVehicleDialect`) onto `_resolvedConfig.integration` — the object every
+// child already receives — so `adapterFor` in hero/panel short-circuits on the
+// override branch (zero per-render registry scan) and consumes the SAME dialect
+// the resolver aliased by. In-memory only: `_config` is never mutated and the
+// card dispatches no `config-changed`.
+describe('Story 15.1 — the parent-resolved dialect stamp (AC3)', () => {
+  type StampCard = CardEl & {
+    _resolvedConfig?: TeslaCardConfig & { integration?: string };
+  };
+
+  /** Split-platform household: a tesla_custom CAR (vehicle-shaped via its
+   *  odometer + the alias-target battery/charging entities) + a tesla_fleet
+   *  POWERWALL owning MORE entities (honest fixture shape — a car-majority
+   *  registry would hide the device-selection half of the mechanism). */
+  function splitHouseholdHass(): HomeAssistant {
+    const spec: Record<string, { platform: string; device: string }> = {
+      'sensor.car_battery': { platform: 'tesla_custom', device: 'car1' },
+      'sensor.car_odometer': { platform: 'tesla_custom', device: 'car1' },
+      'binary_sensor.car_charging': { platform: 'tesla_custom', device: 'car1' },
+      'sensor.pw_battery_power': { platform: 'tesla_fleet', device: 'pw1' },
+      'sensor.pw_solar_power': { platform: 'tesla_fleet', device: 'pw1' },
+      'sensor.pw_load_power': { platform: 'tesla_fleet', device: 'pw1' },
+      'sensor.pw_grid_power': { platform: 'tesla_fleet', device: 'pw1' },
+    };
+    const entities: Record<string, unknown> = {};
+    const states: Record<string, unknown> = {};
+    for (const [id, { platform, device }] of Object.entries(spec)) {
+      entities[id] = { entity_id: id, platform, device_id: device };
+      states[id] = {
+        entity_id: id,
+        state: '1',
+        attributes: {},
+        last_updated: '2026-06-15T14:41:00Z',
+        last_changed: '2026-06-15T14:41:00Z',
+      };
+    }
+    return {
+      states,
+      entities,
+      devices: {
+        car1: { name: 'car', manufacturer: 'Tesla' },
+        pw1: { name: 'pw', manufacturer: 'Tesla' },
+      },
+      locale: { language: 'en' },
+      callService: () => Promise.resolve(),
+    } as unknown as HomeAssistant;
+  }
+
+  /** Two Tesla platforms on ONE device — the retained-guard shape: the scoped
+   *  probe stays ambiguous (tie-break pick = tesla_custom) and the collapse
+   *  forces tesla_fleet. */
+  function sameDeviceHass(): HomeAssistant {
+    const entities: Record<string, unknown> = {
+      'sensor.d_battery': { entity_id: 'sensor.d_battery', platform: 'tesla_custom', device_id: 'd1' },
+      'sensor.d_range': { entity_id: 'sensor.d_range', platform: 'tesla_custom', device_id: 'd1' },
+      'sensor.d_odometer': { entity_id: 'sensor.d_odometer', platform: 'tesla_fleet', device_id: 'd1' },
+    };
+    return {
+      states: {},
+      entities,
+      devices: { d1: { name: 'd', manufacturer: 'Tesla' } },
+      locale: { language: 'en' },
+      callService: () => Promise.resolve(),
+    } as unknown as HomeAssistant;
+  }
+
+  async function stampCard(cfg: TeslaCardConfig, hass: HomeAssistant): Promise<StampCard> {
+    const el = makeCard() as StampCard;
+    el.setConfig(cfg);
+    el.hass = hass;
+    await el.updateComplete;
+    return el;
+  }
+
+  test('AC3a + AC3b — stamps the EFFECTIVE vehicle-scoped dialect AND the same pass applied its aliases', async () => {
+    const el = await stampCard({ type: 'custom:tesla-card' }, splitHouseholdHass());
+    // The stamp literal: the car device's dialect (registry-wide would be
+    // ambiguous → collapsed tesla_fleet — the scoped detection is what stamps).
+    expect(el._resolvedConfig?.integration).toBe('tesla_custom');
+    // The agreement pin, SAME resolve pass (never stamp === helper-re-run — a
+    // tautology): the resolved entity map carries an alias-SHAPED id only the
+    // tesla_custom table produces. Stamp and aliases came from one derivation.
+    expect(el._resolvedConfig?.entities?.charging_status).toBe('binary_sensor.car_charging');
+    el.remove();
+  });
+
+  test('AC3a (collapse) — a same-device two-platform install stamps the COLLAPSED tesla_fleet', async () => {
+    const el = await stampCard({ type: 'custom:tesla-card' }, sameDeviceHass());
+    expect(el._resolvedConfig?.integration).toBe('tesla_fleet');
+    el.remove();
+  });
+
+  test('AC3c — a valid user override stamps the same value back (idempotent)', async () => {
+    const el = await stampCard(
+      { type: 'custom:tesla-card', integration: 'tessie' } as TeslaCardConfig,
+      splitHouseholdHass()
+    );
+    expect(el._resolvedConfig?.integration).toBe('tessie');
+    // Raw config keeps the user's key untouched.
+    expect(el._config?.integration).toBe('tessie');
+    el.remove();
+  });
+
+  test('AC3c — a GARBAGE override: the resolved copy stamps the probed dialect; _config keeps the bytes', async () => {
+    const el = await stampCard(
+      { type: 'custom:tesla-card', integration: 'not_a_platform' } as unknown as TeslaCardConfig,
+      splitHouseholdHass()
+    );
+    // Detection ignores the invalid value (isIntegration fails) → probed dialect;
+    // the stamp-after-spread order makes the effective value win on the COPY…
+    expect(el._resolvedConfig?.integration).toBe('tesla_custom');
+    // …while the user's exact bytes stay on the raw config (never mutated).
+    expect(el._config?.integration).toBe('not_a_platform');
+    el.remove();
+  });
+
+  test('AC3d — in-memory only: _config gains no integration key and no config-changed is dispatched', async () => {
+    const el = makeCard() as StampCard;
+    let dispatched = 0;
+    el.addEventListener('config-changed', () => dispatched++);
+    el.setConfig({ type: 'custom:tesla-card' });
+    el.hass = splitHouseholdHass();
+    await el.updateComplete;
+    // The resolved COPY carries the stamp; the stored raw config does not.
+    expect(el._resolvedConfig?.integration).toBe('tesla_custom');
+    expect(el._config?.integration).toBeUndefined();
+    expect(dispatched).toBe(0); // the card never writes config upward
+    el.remove();
+  });
+
+  test('AC3e — a registry-less resolve stamps the effective default (tesla_fleet)', async () => {
+    // fullHass() carries empty entities/devices maps → scope omitted → probe
+    // finds no platform → the same tesla_fleet default the resolver used.
+    const el = await stampCard({ type: 'custom:tesla-card' }, fullHass());
+    expect(el._resolvedConfig?.integration).toBe('tesla_fleet');
+    el.remove();
+  });
+});
+
 describe('AC3 — editor setConfig is equally tolerant', () => {
   test('unknown/future keys: editor setConfig does not throw and preserves them', async () => {
     const el = makeEditor();

@@ -17,6 +17,7 @@ import { TcHero } from './hero';
 import { formatAge } from '../helpers';
 import { STRINGS } from '../strings';
 import { DEFAULT_ENTITIES } from '../const';
+import { DIALECT_ENTITY_ALIASES } from '../data/dialect';
 import type { HassEntity, HomeAssistant, TeslaCardConfig } from '../types';
 
 type HeroEl = HTMLElement & {
@@ -1034,5 +1035,114 @@ describe('Story 11.2 AC7 — standalone (non-compact) is byte-identical (no chip
   test('full + variant:"full" explicit → still no chip', async () => {
     const el = await mountHero(makeStates({ locked: false }), { variant: 'full' });
     expect(chip(el)).toBeNull();
+  });
+});
+
+// ───────────────────────────────────────────────────────────────────────────
+// Story 15.1 — tesla_custom boolean charging through the stamped dialect
+// (AC1/AC2). `_chargeVisual` reads `adapterFor(hass, config).normalizeChargingState`;
+// the config below carries `integration: 'tesla_custom'` — the EXACT shape a
+// child sees after the parent stamp (the stamp itself is proven whole-card in
+// audit-r6.test.ts; these pin the component classification matrix).
+// RED-FIRST evidence (pre-conversion, module-default normalizer): boolean 'on'
+// → 'unknown' → cable-corroborated 'plugged'/'parked' — never 'charging'.
+// ───────────────────────────────────────────────────────────────────────────
+
+describe('Story 15.1 — tesla_custom boolean charging (stamped dialect, AC1/AC2)', () => {
+  // The dialect entity ids are DERIVED from the live alias table (the same
+  // research-§5 source the resolver consults), slug-prefixed the way a real
+  // install's resolver output would be — never inlined spellings that could
+  // drift from the table (and the components/ no-hard-coded-ids guard holds:
+  // no quoted full ids appear here).
+  const tcAlias = (key: 'charging_status' | 'charge_cable'): string => {
+    const alias = DIALECT_ENTITY_ALIASES.tesla_custom?.[key] ?? '';
+    const dot = alias.indexOf('.');
+    // Loud, never masked: a dropped/renamed table entry must fail HERE — the
+    // `?? ''` fallback would otherwise build a malformed-but-self-consistent
+    // `.mycar_` id these tests would still pass against.
+    if (dot < 0) throw new Error(`no tesla_custom alias for '${key}' — table drift`);
+    return `${alias.slice(0, dot)}.mycar_${alias.slice(dot + 1)}`;
+  };
+  const TC = {
+    charging: tcAlias('charging_status'), // binary_sensor.mycar_charging
+    cable: tcAlias('charge_cable'), // binary_sensor.mycar_charger
+  } as const;
+
+  /** Fleet base states MINUS the charging-status string (tesla_custom exposes
+   *  none — research §5), plus the boolean and an optional plug sensor. */
+  function tcStates(boolState: string, cableState?: string): Record<string, HassEntity> {
+    const states = makeStates();
+    delete states[ID.charging]; // no charging-status STRING on this dialect
+    states[TC.charging] = ent(TC.charging, boolState, at(0));
+    if (cableState !== undefined) states[TC.cable] = ent(TC.cable, cableState, at(0));
+    return states;
+  }
+
+  /** The post-stamp child config shape (AC4). */
+  const TC_CONFIG: Partial<TeslaCardConfig> = {
+    integration: 'tesla_custom',
+    entities: { charging_status: TC.charging, charge_cable: TC.cable },
+  };
+
+  test("AC1 — boolean 'on' → CHARGING: green dot + label + port/halo (+ live kW read)", async () => {
+    const states = tcStates('on', 'on');
+    states[ID.power] = ent(ID.power, '7.2', at(0)); // charger_power is fleet-convergent
+    const el = await mountHero(states, TC_CONFIG);
+    expect(labelOf(el)).toBe(STRINGS.status.charging);
+    expect(dotOf(el)).toContain('var(--tc-green');
+    expect(port(el)).toBeTruthy();
+    expect(statusText(el)).toContain('7.2 kW'); // AC1 kW: resolves + renders, never NaN
+  });
+
+  test("AC1 — boolean 'on' with NO cable entity still reads CHARGING (the boolean alone proves it)", async () => {
+    const el = await mountHero(tcStates('on'), TC_CONFIG);
+    expect(labelOf(el)).toBe(STRINGS.status.charging);
+    expect(port(el)).toBeTruthy();
+  });
+
+  test("AC2 — 'off' + cable 'on' → PLUGGED (off routes to the cable corroboration)", async () => {
+    const el = await mountHero(tcStates('off', 'on'), TC_CONFIG);
+    expect(labelOf(el)).toBe(STRINGS.status.pluggedIdle);
+    expect(dotOf(el)).toContain('var(--tc-blue');
+    expect(port(el)).toBeTruthy();
+  });
+
+  test("AC2 — 'off' + cable 'off' → PARKED, never a false 'plugged' (the uncabled majority case)", async () => {
+    const el = await mountHero(tcStates('off', 'off'), TC_CONFIG);
+    expect(labelOf(el)).toBe(STRINGS.status.parked);
+    expect(port(el)).toBeNull();
+  });
+
+  test("AC2 — 'off' + cable ABSENT → PARKED (absence never fabricates a connection)", async () => {
+    const el = await mountHero(tcStates('off'), TC_CONFIG);
+    expect(labelOf(el)).toBe(STRINGS.status.parked);
+    expect(port(el)).toBeNull();
+  });
+
+  test("AC2 (third raw value) — boolean 'unavailable' + cable 'on' → PLUGGED (ABSENT-set → 'unknown' → corroboration)", async () => {
+    const el = await mountHero(tcStates('unavailable', 'on'), TC_CONFIG);
+    expect(labelOf(el)).toBe(STRINGS.status.pluggedIdle);
+    expect(port(el)).toBeTruthy();
+  });
+
+  test("AC2 (third raw value) — boolean 'unavailable' + cable 'unavailable' → PARKED (the honest lesser claim)", async () => {
+    const el = await mountHero(tcStates('unavailable', 'unavailable'), TC_CONFIG);
+    expect(labelOf(el)).toBe(STRINGS.status.parked);
+    expect(port(el)).toBeNull();
+  });
+
+  test('hardening — a cross-wired override (fleet STRING sensor on a stamped tesla_custom config) still classifies', async () => {
+    // normalizeStatus consults the dialect override map THEN falls to the base
+    // map (dialect.ts) — so an explicit charging_status override pointing at a
+    // fleet-vocabulary sensor degrades correctly ('Charging' → 'charging'),
+    // never to a dead 'unknown'.
+    const states = makeStates({ chargeStatus: 'Charging' }); // fleet string id (ID.charging)
+    const el = await mountHero(states, {
+      integration: 'tesla_custom',
+      // The EXPLICIT cross-wired override the narration describes — not the
+      // DEFAULT_ENTITIES fallback (which happens to reach the same id).
+      entities: { charging_status: ID.charging },
+    });
+    expect(labelOf(el)).toBe(STRINGS.status.charging);
   });
 });

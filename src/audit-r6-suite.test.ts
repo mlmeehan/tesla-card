@@ -212,7 +212,11 @@ describe('AC4 — the ecosystem cards + Scene resolve by function-name across di
 describe('Suite invariant — Hero halo (discrete) agrees with the Wall-Connector flow edge (FlowModel)', () => {
   test('a charging car (discrete entity) ⇒ an ACTIVE wall_connector flow edge — no mismatch', () => {
     const s = states(awakeFx);
-    // The Hero halo authority: the discrete charging entity through normalizeChargingState.
+    // The Hero halo authority: the discrete charging entity through the vehicle
+    // dialect adapter's normalizer (Story 15.1). On the fleet corpus this suite
+    // drives, the module-default normalizer used below is EQUIVALENT (no Fleet-
+    // family adapter overrides charging — the AC6 equivalence table pins it), so
+    // this pin reads the default directly and stays green untouched.
     const halo = normalizeChargingState(s['sensor.garage_model_y_charging']?.state);
     expect(halo).toBe('charging');
 

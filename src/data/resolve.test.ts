@@ -11,7 +11,7 @@
 import { describe, expect, test } from 'vitest';
 import fixture from '../fixtures/model-y-awake.json';
 import fleetGolden from '../fixtures/resolve-fleet-golden.json';
-import { resolveEntities, slugify } from './resolve';
+import { resolveEntities, detectVehicleDialect, slugify } from './resolve';
 import { adapterFor, normalizeChargingState, detectDialect } from './dialect';
 import { DEFAULT_ENTITIES, type EntityKey } from '../const';
 import type { HomeAssistant, TeslaCardConfig } from '../types';
@@ -260,7 +260,9 @@ describe('Story 14.1 — per-dialect resolution (alias + ABSENT wiring)', () => 
       const a = adapterFor(hass, cfg());
       expect(a.integration).toBe('tesla_custom');
       expect(a.normalizeChargingState('on')).toBe('charging');
-      expect(a.normalizeChargingState('off')).toBe('stopped');
+      // Story 15.1: off → 'unknown' (cable corroboration classifies), never the
+      // shipped 'stopped' (a false-'Plugged' on uncabled cars once consumed).
+      expect(a.normalizeChargingState('off')).toBe('unknown');
     });
 
     test('(f) the dead charge_complete override is gone — default normalizer returns unknown', () => {
@@ -558,5 +560,109 @@ describe('Story 14.2 — vehicle-device-scoped dialect detection', () => {
       // ⇒ Powerwall selected ⇒ scope tesla_fleet ⇒ battery_level = the fleet default.
       expect(resolved.battery_level).not.toBe(DEFAULT_ENTITIES.battery_level);
     });
+  });
+});
+
+// ── Story 15.1 — detectVehicleDialect: the exported EFFECTIVE-dialect helper ──
+//
+// The parent stamp (`tesla-card.ts` `_resolve()`) must carry the SAME dialect the
+// resolver aliased by: the Story-14.2 vehicle-scoped probe WITH the ambiguity-
+// guard collapse applied, single-sourced in `effectiveDialect` so the two can
+// never drift. These pin the helper's own contract; the stamp itself + the AC3b
+// same-pass agreement pin live in tesla-card.config.test.ts (the card seam).
+describe('Story 15.1 — detectVehicleDialect (effective vehicle dialect)', () => {
+  /** Split household: a tesla_custom CAR (vehicle-shaped via its odometer) + a
+   *  tesla_fleet POWERWALL owning MORE entities (the honest 14.2 fixture shape —
+   *  a car-majority fixture would hide the device-selection half). */
+  function splitHass(): HomeAssistant {
+    const spec: Record<string, { platform: string; device: string }> = {
+      'sensor.car_battery': { platform: 'tesla_custom', device: 'car1' },
+      'sensor.car_odometer': { platform: 'tesla_custom', device: 'car1' },
+      'binary_sensor.car_charging': { platform: 'tesla_custom', device: 'car1' },
+      'sensor.pw_battery_power': { platform: 'tesla_fleet', device: 'pw1' },
+      'sensor.pw_solar_power': { platform: 'tesla_fleet', device: 'pw1' },
+      'sensor.pw_load_power': { platform: 'tesla_fleet', device: 'pw1' },
+      'sensor.pw_grid_power': { platform: 'tesla_fleet', device: 'pw1' },
+    };
+    const entities: Record<string, any> = {};
+    const states: Record<string, any> = {};
+    for (const [id, { platform, device }] of Object.entries(spec)) {
+      entities[id] = { entity_id: id, platform, device_id: device };
+      states[id] = { entity_id: id, state: '1' };
+    }
+    return makeHass({
+      entities,
+      devices: {
+        car1: { name: 'car', manufacturer: 'Tesla' },
+        pw1: { name: 'pw', manufacturer: 'Tesla' },
+      },
+      states,
+    });
+  }
+
+  test('split household → the CAR device dialect (vehicle-scoped, not the registry-wide ambiguity)', () => {
+    const hass = splitHass();
+    // Registry-wide the household is ambiguous (both platforms present)…
+    expect(detectDialect(hass, cfg()).ambiguous).toBe(true);
+    // …but the helper scopes to the resolved vehicle device → its single dialect.
+    expect(detectVehicleDialect(hass, cfg())).toBe('tesla_custom');
+  });
+
+  test('same-device two-platform → the ambiguity COLLAPSE applies (tesla_fleet, not the tie-break pick)', () => {
+    // Two platforms on ONE device: the scoped probe stays ambiguous and its
+    // tie-break pick is tesla_custom (count winner) — the helper must return the
+    // COLLAPSED tesla_fleet, proving it applies the resolver's guard, not the
+    // raw report.integration.
+    const entities: Record<string, any> = {
+      'sensor.d_battery': { entity_id: 'sensor.d_battery', platform: 'tesla_custom', device_id: 'd1' },
+      'sensor.d_range': { entity_id: 'sensor.d_range', platform: 'tesla_custom', device_id: 'd1' },
+      'sensor.d_odometer': { entity_id: 'sensor.d_odometer', platform: 'tesla_fleet', device_id: 'd1' },
+    };
+    const hass = makeHass({
+      entities,
+      devices: { d1: { name: 'd', manufacturer: 'Tesla' } },
+      states: {},
+    });
+    const scoped = detectDialect(hass, cfg(), new Set(Object.keys(entities)));
+    expect(scoped.ambiguous).toBe(true);
+    expect(scoped.integration).toBe('tesla_custom'); // the pick the collapse overrides
+    expect(detectVehicleDialect(hass, cfg())).toBe('tesla_fleet');
+  });
+
+  test('a valid config.integration override short-circuits (idempotent stamp value)', () => {
+    expect(detectVehicleDialect(splitHass(), cfg({ integration: 'tessie' }))).toBe('tessie');
+  });
+
+  test('a GARBAGE config.integration is ignored → the probed dialect (matches detectDialect today)', () => {
+    expect(
+      detectVehicleDialect(splitHass(), cfg({ integration: 'not_a_platform' as any }))
+    ).toBe('tesla_custom');
+  });
+
+  test('!hass → the effective default, WITHOUT touching detectVehicle (no boot-time TypeError)', () => {
+    // detectVehicle dereferences hass.entities unguarded; the parent stamp path
+    // runs in _resolve() where hass can still be undefined (Lovelace sets config
+    // before hass) — the helper must guard, not throw.
+    expect(() => detectVehicleDialect(undefined, cfg())).not.toThrow();
+    expect(detectVehicleDialect(undefined, cfg())).toBe('tesla_fleet');
+    // A valid override still wins pre-hass (detectDialect's override branch).
+    expect(detectVehicleDialect(undefined, cfg({ integration: 'tesla_custom' }))).toBe(
+      'tesla_custom'
+    );
+  });
+
+  test('registry-less hass (states only) → tesla_fleet (scope omitted, probe finds nothing)', () => {
+    const hass = makeHass({ states: fixture.states as HomeAssistant['states'] });
+    expect(detectVehicleDialect(hass, cfg())).toBe('tesla_fleet');
+  });
+
+  test('agreement: the helper names the dialect whose aliases resolveEntities applied', () => {
+    // Same fixture, both derivations: the helper says tesla_custom AND the
+    // resolver's output is alias-shaped (sensor.car_battery, not the fleet
+    // default) — the unit-level half of the AC3b agreement (the card-level pin
+    // asserts stamp literal + alias-shaped id from ONE resolve pass).
+    const hass = splitHass();
+    expect(detectVehicleDialect(hass, cfg())).toBe('tesla_custom');
+    expect(resolveEntities(hass, cfg()).battery_level).toBe('sensor.car_battery');
   });
 });

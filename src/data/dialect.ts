@@ -36,13 +36,15 @@ import { TESLA_PLATFORMS } from './platforms';
  * to the leaf `platforms.ts` so `resolve.ts` can now value-import this module — for
  * its per-dialect alias tables — without forming a `resolve ↔ dialect` cycle.)
  *
- * CONSUMERS (Story 14.1): `resolveEntities` (`resolve.ts`) now consults this
+ * CONSUMERS (Story 14.1 → 15.1): `resolveEntities` (`resolve.ts`) consults this
  * module's per-dialect alias/ABSENT tables (`DIALECT_ENTITY_ALIASES` /
  * `DIALECT_ABSENT`) via `detectDialect`, so the alias mechanism is live in the
- * resolution path — it is no longer a tested-but-unwired hub. The status
- * normalizers (`normalizeChargingState` etc.) remain reachable via `adapterFor`;
- * routing the running components' charging read through the dialect-aware
- * normalizer is a ratified follow-on (research §6.4 #3), NOT this story.
+ * resolution path. Since Story 15.1 (D-DGT-2) the running components ALSO consume
+ * the dialect-aware normalizers: `hero.ts` and `panel-charging.ts` classify
+ * charging/lock/cover via `adapterFor(hass, config).normalize*` — reached through
+ * the PARENT-RESOLVED STAMP (`tesla-card.ts` `_resolve()` writes the resolver's
+ * effective vehicle dialect onto `_resolvedConfig.integration`, so `detectDialect`
+ * short-circuits on its override branch with zero per-render registry scan).
  */
 
 // ───────────────────────────────────────────────────────────────────────────
@@ -87,11 +89,12 @@ function isIntegration(x: unknown): x is Integration {
 // 3.4 / 5.7 will branch on) and always carrying an `'unknown'` member so an
 // unrecognized raw string degrades gracefully (NFR-4) instead of throwing.
 //
-// The canonical values are driven from the present inline checks so they are
-// real, not invented:
-//   - charging: hero.ts:34 / panel-charging.ts:56 test `=== 'Charging'`.
-//   - lock:     panel-closures.ts test `=== 'locked'` / `'unlocked'`.
-//   - cover:    panel-closures.ts:23 tests `=== 'open'` (and `'on'` for doors).
+// The canonical values were ORIGINALLY driven from the then-inline component
+// checks so they were real, not invented — hero/panel-charging tested raw
+// `=== 'Charging'`, panel-closures `=== 'locked'`/`'open'` (and `'on'` for
+// doors). Those inline checks were retired in Story 3.4/5.11 (this module's
+// normalizers replaced them; Story 15.1 routed the reads through the per-dialect
+// adapter) — the vocabulary below is the surviving contract.
 
 export type ChargingState =
   | 'charging'
@@ -319,12 +322,25 @@ export function makeAdapter(spec: AdapterSpec): DialectAdapter {
 // teslajsonpy) exposes charging ONLY as a boolean `binary_sensor.charging`
 // (`is_on = charging_state == "Charging"`) — there is NO charging-status *string*
 // entity. So this dialect's charging state must be DERIVED from the boolean, not
-// normalized from a status string. This override maps the boolean vocabulary
-// (`on → charging`, `off → stopped`) so `adapterFor(hass,config).normalizeChargingState`
-// reads the boolean correctly. Capability limitation: a boolean source cannot
-// express `'complete'` (the default map reaches it only from the string vocab),
-// so a fully-charged tesla_custom car derives `stopped`, not `complete` — inherent
-// to the integration's shape, documented, not a defect.
+// normalized from a status string.
+//
+// The boolean's shape (Story 15.1 refinement, superseding the shipped
+// `off → 'stopped'`): `on` PROVES actively charging; `off` proves ONLY
+// "not charging" — teslajsonpy collapses Stopped / Complete / **Disconnected**
+// alike into `off`, so the map must not claim a specific connected state for it.
+// `off → 'unknown'` is the honest canonical encoding: it routes the consumer to
+// its cable corroboration (hero.ts `_chargeVisual` default branch — `charge_cable`
+// [aliased: `binary_sensor.charger`, plug ≠ Disconnected] `on` ⇒ 'plugged', else
+// 'parked'), classifying from REAL physical evidence. Mapping `off → 'stopped'`
+// would have rendered an UNCABLED parked car as a false "Plugged-in but idle"
+// (`case 'stopped'` → 'plugged' without consulting the cable) — a persistent
+// false state in the car's majority condition, the moment components consume
+// this adapter (which Story 15.1 makes them do).
+//
+// Capability limitation (documented, not a defect — do not re-litigate): a
+// boolean source cannot express `'complete'`, so a fully-charged CABLED car
+// derives `off` → 'unknown' → cable-corroborated 'plugged' — visually identical
+// to fleet 'complete' (the Hero collapses stopped/complete to 'plugged' anyway).
 //
 // Story 14.1 cleared two dead tesla_custom constructs: (1) the old reverse-direction
 // `TESLA_CUSTOM_ALIASES` placeholder was DELETED outright (`.alias`/`.aliasMap` have
@@ -335,7 +351,7 @@ export function makeAdapter(spec: AdapterSpec): DialectAdapter {
 // capability map below.
 const TESLA_CUSTOM_CHARGING: Readonly<Record<string, ChargingState>> = {
   on: 'charging',
-  off: 'stopped',
+  off: 'unknown',
 };
 
 /**
@@ -553,6 +569,14 @@ function byPrecedence(candidates: Iterable<Integration>): Integration[] {
  * fire-and-forget editor caller (`tesla-card.ts`) and `adapterFor` keep their
  * "which dialects exist anywhere" semantics. The scope is passed DOWN as a
  * parameter — `dialect.ts` never imports `resolve.ts` (the `no-cycle` gate holds).
+ *
+ * Post-Story-15.1 reality: the DOMINANT call path arrives with a parent-stamped
+ * `config.integration` (the resolver's effective dialect, written onto the
+ * resolved config by `tesla-card.ts` `_resolve()`), so this function usually
+ * returns from the override branch with ZERO registry iteration. The unscoped
+ * registry-wide probe still runs, but only for genuinely unstamped configs —
+ * the editor stub probe, the Scene's energy path (`bindFlowModel`), and
+ * pre-first-resolve renders. "Unscoped by design" ≠ "unscoped in practice".
  */
 export function detectDialect(
   hass: HomeAssistant | undefined,
@@ -618,7 +642,16 @@ export function detectDialect(
   return { integration, source: 'probe', ambiguous: true, candidates };
 }
 
-/** Convenience dispatch: the adapter for the detected/overridden dialect. */
+/**
+ * Convenience dispatch: the adapter for the detected/overridden dialect.
+ * Deliberately unscoped — but since Story 15.1 the components' calls arrive on a
+ * parent-stamped config (`_resolvedConfig.integration` = the resolver's effective
+ * vehicle dialect), so the detection inside short-circuits on the override branch:
+ * an O(1) table dispatch per call, no registry scan, and hero/panel classify with
+ * the SAME dialect the resolver aliased by. Only genuinely unstamped callers
+ * (the Scene's `bindFlowModel` energy path, pre-first-resolve renders) still
+ * reach the registry-wide probe.
+ */
 export function adapterFor(
   hass: HomeAssistant | undefined,
   config: TeslaCardConfig

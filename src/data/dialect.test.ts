@@ -209,9 +209,18 @@ describe('dialect-adapter layer (Story 1.4)', () => {
   // What remains, CONFIRMED by §5: tesla_custom exposes charging ONLY as a boolean
   // binary_sensor.charging (on/off), so its adapter derives charging from that boolean.
   describe('AC5 — tesla_custom charging derives from the boolean (capability difference)', () => {
-    test('the tesla_custom adapter maps the boolean vocabulary (on→charging, off→stopped)', () => {
+    test("the tesla_custom adapter maps the boolean vocabulary (on→charging, off→'unknown' [Story 15.1])", () => {
       expect(DIALECTS.tesla_custom.normalizeChargingState('on')).toBe('charging');
-      expect(DIALECTS.tesla_custom.normalizeChargingState('off')).toBe('stopped');
+      // Story 15.1 refinement (supersedes the shipped off→'stopped'): teslajsonpy's
+      // `off` covers Stopped/Complete/DISCONNECTED alike, so it must map to
+      // 'unknown' — routing the consumer to its cable corroboration — never a
+      // claimed connected state ('stopped' would render an uncabled parked car as
+      // a false 'Plugged' via the Hero's `case 'stopped' → plugged`).
+      expect(DIALECTS.tesla_custom.normalizeChargingState('off')).toBe('unknown');
+      expect(DIALECTS.tesla_custom.normalizeChargingState('off')).not.toBe('stopped');
+      // The override map is normKey'd — spelling/case variants collapse the same way.
+      expect(DIALECTS.tesla_custom.normalizeChargingState('On')).toBe('charging');
+      expect(DIALECTS.tesla_custom.normalizeChargingState('OFF')).toBe('unknown');
       // It still inherits the default mappings it didn't override.
       expect(DIALECTS.tesla_custom.normalizeChargingState('Charging')).toBe('charging');
     });
@@ -371,6 +380,137 @@ describe('normalizePower — raw battery sign → canonical (Story 4.1)', () => 
       expect(a.normalizePower('powerwall', -2).value).toBe(2); // flipped everywhere
       expect(a.normalizePower('grid', 2).value).toBe(2); // passthrough everywhere
     }
+  });
+});
+
+// ── Story 15.1 AC6 — Fleet-family adapters ≡ the module-default normalizers ────
+//
+// The component conversion (hero/panel → `adapterFor(...).normalize*`) is
+// behaviour-preserving for the Fleet family BY CONSTRUCTION: no Fleet-family
+// adapter carries a charging/lock/cover override, so `makeAdapter`'s normalizer
+// is the module default. This table PINS that equivalence over the FULL raw
+// vocabulary — every map key/spelling, the ABSENT sentinels, garbage, and the
+// boolean tokens — so a future adapter entry that silently diverges a Fleet
+// dialect fails here, not in a user's dashboard. Lock/cover are included for ALL
+// five dialects (tesla_custom carries no lock/cover override either), covering
+// the Task-3 co-located conversion.
+describe('Story 15.1 AC6 — Fleet-family adapter normalizers ≡ module defaults (full vocab)', () => {
+  // Derived from the DIALECTS registry, never hand-maintained: a future dialect
+  // added to the table lands in these equivalence pins AUTOMATICALLY (a deliberate
+  // divergence must then consciously exclude itself here — drift-catch by design).
+  const ALL_DIALECTS = Object.keys(DIALECTS) as Integration[];
+  const FLEET_FAMILY: Integration[] = ALL_DIALECTS.filter((i) => i !== 'tesla_custom');
+
+  // Every CHARGING_MAP key/spelling + ABSENT sentinels + garbage + the boolean
+  // vocabulary (which the Fleet family maps to 'unknown' — only tesla_custom
+  // overrides it, and it is deliberately EXCLUDED from the charging half).
+  const CHARGING_VOCAB: Array<string | undefined> = [
+    'Charging', 'charging', 'CHARGING',
+    'Starting', 'ChargeStarting', 'charge_starting',
+    'Stopped', 'stopped',
+    'Complete', 'complete', 'Charged',
+    'Disconnected', 'disconnected',
+    'NoPower', 'no_power',
+    'on', 'off', 'On', 'Off',
+    '', 'unavailable', 'unknown', 'none', 'null',
+    'garbage-token', 'charge_complete',
+    undefined,
+  ];
+  const LOCK_VOCAB: Array<string | undefined> = [
+    'locked', 'Locked', 'unlocked', 'Unlocked',
+    'on', 'off', 'jammed',
+    '', 'unavailable', 'unknown', 'none', 'null',
+    undefined,
+  ];
+  const COVER_VOCAB: Array<string | undefined> = [
+    'open', 'Open', 'closed', 'Closed',
+    'on', 'off', 'On', 'Off', 'ajar',
+    '', 'unavailable', 'unknown', 'none', 'null',
+    undefined,
+  ];
+
+  test('charging: each Fleet-family adapter matches the module default for every raw value', () => {
+    for (const i of FLEET_FAMILY) {
+      for (const raw of CHARGING_VOCAB) {
+        expect(
+          DIALECTS[i].normalizeChargingState(raw),
+          `${i}.normalizeChargingState(${JSON.stringify(raw)})`
+        ).toBe(normalizeChargingState(raw));
+      }
+    }
+  });
+
+  test('lock: EVERY dialect (incl. tesla_custom) matches the module default for every raw value', () => {
+    for (const i of ALL_DIALECTS) {
+      for (const raw of LOCK_VOCAB) {
+        expect(
+          DIALECTS[i].normalizeLockState(raw),
+          `${i}.normalizeLockState(${JSON.stringify(raw)})`
+        ).toBe(normalizeLockState(raw));
+      }
+    }
+  });
+
+  test('cover: EVERY dialect (incl. tesla_custom) matches the module default for every raw value', () => {
+    for (const i of ALL_DIALECTS) {
+      for (const raw of COVER_VOCAB) {
+        expect(
+          DIALECTS[i].normalizeCoverState(raw),
+          `${i}.normalizeCoverState(${JSON.stringify(raw)})`
+        ).toBe(normalizeCoverState(raw));
+      }
+    }
+  });
+
+  test("the OBSERVABLE divergence is exactly tesla_custom charging 'on' (nothing else)", () => {
+    // The complement proof: the one deliberate capability override, nowhere else.
+    // 'on' → 'charging' vs the default's 'unknown' — the live-green enabler.
+    expect(DIALECTS.tesla_custom.normalizeChargingState('on')).toBe('charging');
+    expect(normalizeChargingState('on')).toBe('unknown');
+    // 'off' → 'unknown' is VALUE-IDENTICAL to the default (the Story 15.1
+    // refinement's whole point: off makes no claim, so it lands where an
+    // unmapped raw lands — the map entry documents intent, not divergence).
+    expect(DIALECTS.tesla_custom.normalizeChargingState('off')).toBe(normalizeChargingState('off'));
+    // Everywhere else tesla_custom charging matches the default too.
+    for (const raw of CHARGING_VOCAB) {
+      const k = (raw ?? '').toLowerCase().replace(/[^a-z0-9]/g, '');
+      if (k === 'on') continue;
+      expect(DIALECTS.tesla_custom.normalizeChargingState(raw)).toBe(normalizeChargingState(raw));
+    }
+  });
+});
+
+// ── Story 15.1 AC4 — the stamp short-circuit is genuinely ZERO-scan ──────────
+//
+// The per-render cost story rests on `detectDialect` returning from its override
+// branch BEFORE any registry read (the parent-stamped `integration:` makes
+// `adapterFor` an O(1) table dispatch — "zero per-render registry scan", AC4).
+// Pin it with a registry that THROWS on access: if a future edit consults
+// `hass.entities` before honouring the override, these fail loudly instead of
+// silently regressing every stamped component render to a full registry scan.
+describe('Story 15.1 AC4 — a stamped/override config short-circuits before ANY registry read', () => {
+  /** hass whose registry EXPLODES if touched — the zero-scan tripwire. */
+  const trapHass = {
+    get entities(): never {
+      throw new Error(
+        'hass.entities read on the override branch — the stamp short-circuit is broken'
+      );
+    },
+  } as unknown as HomeAssistant;
+
+  test('detectDialect returns the override report without touching hass.entities', () => {
+    expect(detectDialect(trapHass, cfg({ integration: 'tesla_custom' }))).toEqual({
+      integration: 'tesla_custom',
+      source: 'override',
+      ambiguous: false,
+      candidates: ['tesla_custom'],
+    });
+  });
+
+  test('adapterFor dispatches the stamped dialect without touching hass.entities', () => {
+    expect(adapterFor(trapHass, cfg({ integration: 'tesla_custom' })).integration).toBe(
+      'tesla_custom'
+    );
   });
 });
 

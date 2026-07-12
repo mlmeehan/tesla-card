@@ -16,10 +16,11 @@ import { STRINGS } from '../strings';
  * The three glanceable charge states the Hero renders (Story 3.4, FR-5/UX-DR10):
  * `parked` (neutral, not plugged), `plugged` (connected, at rest — blue port glow
  * + cable) and `charging` (live kW — green port glow + cable + pulsing halo).
- * Derived from the discrete charging-state entity via `normalizeChargingState`
- * (NOT signed power). `charging ⇒ plugged` (AC2) is structural: the port-glow/cable
- * renders for BOTH `plugged` and `charging`, so green is a superset of blue. Shared
- * by the Hero (classifier) and `carView` (the render opt).
+ * Derived from the discrete charging-state entity via the vehicle dialect
+ * adapter's normalizer (Story 15.1; NOT signed power). `charging ⇒ plugged` (AC2)
+ * is structural: the port-glow/cable renders for BOTH `plugged` and `charging`,
+ * so green is a superset of blue. Shared by the Hero (classifier) and `carView`
+ * (the render opt).
  */
 export type ChargeVisual = 'parked' | 'plugged' | 'charging';
 

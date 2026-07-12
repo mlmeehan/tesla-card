@@ -20,6 +20,7 @@ import { afterEach, describe, expect, test, vi } from 'vitest';
 import './panel-charging';
 import { STRINGS } from '../strings';
 import { DEFAULT_ENTITIES } from '../const';
+import { DIALECT_ENTITY_ALIASES } from '../data/dialect';
 import awakeFx from '../fixtures/model-y-awake.json';
 import type { HassEntity, HomeAssistant, TeslaCardConfig } from '../types';
 
@@ -52,10 +53,15 @@ function makeHass(states: Record<string, HassEntity>): HomeAssistant {
   } as unknown as HomeAssistant;
 }
 
-async function mount(hass: HomeAssistant): Promise<PanelEl> {
+async function mount(
+  hass: HomeAssistant,
+  configOver: Partial<TeslaCardConfig> = {}
+): Promise<PanelEl> {
   const el = document.createElement('tc-panel-charging') as PanelEl;
   el.hass = hass;
-  el.config = { type: 'custom:tesla-card' }; // entities default to DEFAULT_ENTITIES
+  // entities default to DEFAULT_ENTITIES; Story 15.1 cases pass the post-stamp
+  // shape (integration + alias-resolved entity overrides) a child really sees.
+  el.config = { type: 'custom:tesla-card', ...configOver };
   document.body.appendChild(el);
   await el.updateComplete;
   return el;
@@ -194,6 +200,63 @@ describe('AC4 — live cue derives from normalizeChargingState (canonical)', () 
     const states = baseStates();
     states[ID.status].state = 'unavailable';
     const el = await mount(makeHass(states));
+    const cstatus = el.shadowRoot!.querySelector('.cstatus')!;
+    expect(cstatus.classList.contains('live')).toBe(false);
+    expect(cstatus.textContent).toContain(STRINGS.charging.idle);
+  });
+});
+
+// ── Story 15.1 — tesla_custom boolean charging lights the live cue (AC1/AC2) ──
+// The classifier now reads `adapterFor(hass, config).normalizeChargingState`; a
+// config stamped `integration: 'tesla_custom'` (the exact post-stamp child shape)
+// maps the boolean vocabulary. RED-FIRST (pre-conversion): the module-default
+// normalizer reads 'on' → 'unknown' → cue OFF.
+describe("Story 15.1 — tesla_custom boolean lights the live cue via the stamped dialect", () => {
+  // Derived from the live alias table (research §5), slug-prefixed like a real
+  // resolver output — no inlined id spelling that could drift from the table.
+  const TC_CHARGING = ((): string => {
+    const alias = DIALECT_ENTITY_ALIASES.tesla_custom?.charging_status ?? '';
+    const dot = alias.indexOf('.');
+    // Loud, never masked: a dropped/renamed table entry must fail HERE — the
+    // `?? ''` fallback would otherwise build a malformed-but-self-consistent
+    // `.mycar_` id this suite would still pass against.
+    if (dot < 0) throw new Error("no tesla_custom alias for 'charging_status' — table drift");
+    return `${alias.slice(0, dot)}.mycar_${alias.slice(dot + 1)}`;
+  })(); // binary_sensor.mycar_charging
+
+  const TC_CONFIG: Partial<TeslaCardConfig> = {
+    integration: 'tesla_custom',
+    entities: { charging_status: TC_CHARGING },
+  };
+
+  /** Fleet fixture states minus its charging STRING (tesla_custom exposes none —
+   *  and leaving it would let an override-ignoring regression read the string's
+   *  'Charging' and false-green this test), plus the boolean. */
+  function tcStates(boolState: string): Record<string, HassEntity> {
+    const states = baseStates();
+    delete states[ID.status];
+    states[TC_CHARGING] = {
+      entity_id: TC_CHARGING,
+      state: boolState,
+      attributes: {},
+    } as HassEntity;
+    return states;
+  }
+
+  test("boolean 'on' → .cstatus.live + the bolt icon (AC1)", async () => {
+    const el = await mount(makeHass(tcStates('on')), TC_CONFIG);
+    const cstatus = el.shadowRoot!.querySelector('.cstatus')!;
+    expect(cstatus.classList.contains('live')).toBe(true);
+    expect(cstatus.querySelector('svg')).toBeTruthy(); // the lightning bolt renders
+  });
+
+  test("boolean 'off' → cue OFF (not charging; the panel makes no connected-state claim)", async () => {
+    const el = await mount(makeHass(tcStates('off')), TC_CONFIG);
+    expect(el.shadowRoot!.querySelector('.cstatus')!.classList.contains('live')).toBe(false);
+  });
+
+  test("boolean 'unavailable' → cue OFF + the idle display text (the isUnavailable branch)", async () => {
+    const el = await mount(makeHass(tcStates('unavailable')), TC_CONFIG);
     const cstatus = el.shadowRoot!.querySelector('.cstatus')!;
     expect(cstatus.classList.contains('live')).toBe(false);
     expect(cstatus.textContent).toContain(STRINGS.charging.idle);

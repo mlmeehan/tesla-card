@@ -14,7 +14,7 @@ import { TcBase } from '../base';
 import { sharedStyles } from '../styles';
 import { STRINGS } from '../strings';
 import { icon, batteryGauge, statTile } from '../ui';
-import { normalizeChargingState, normalizeCoverState } from '../data/dialect';
+import { adapterFor } from '../data/dialect';
 import './slider';
 import {
   num,
@@ -80,13 +80,18 @@ export class TcPanelCharging extends TcBase {
     const battery = num(this.hass, cfg, 'battery_level');
     const limit = num(this.hass, cfg, 'charge_limit');
     const status = rawState(this.hass, cfg, 'charging_status');
-    // Canonical charge-state classifier (AC4) — the one `data/dialect` authority,
-    // identical to the Hero's `_chargeVisual()`. Replaces the retired inline
-    // `status === 'Charging'` (Story 3.4 debt). The live-green cue is `charging`
-    // ONLY — 'starting'/'complete'/etc. read as connected-but-not-drawing, so they
-    // are not the live cue (mirrors the Hero treating them as 'plugged'). NaN-safe:
-    // the normalizer returns 'unknown' for absent/'unavailable'.
-    const charging = normalizeChargingState(status) === 'charging';
+    // Canonical charge-state classifier (AC4) — the VEHICLE DIALECT's adapter
+    // normalizer (Story 15.1: `adapterFor` short-circuits on the parent-stamped
+    // `integration`, an O(1) table dispatch), identical to the Hero's
+    // `_chargeVisual()`. Replaces the retired inline `status === 'Charging'`
+    // (Story 3.4 debt). The live-green cue is `charging` ONLY —
+    // 'starting'/'complete'/etc. read as connected-but-not-drawing, so they are
+    // not the live cue (mirrors the Hero treating them as 'plugged'). On
+    // tesla_custom the source is the boolean `binary_sensor.charging` (`on` →
+    // 'charging'; `off` → 'unknown' → cue off). NaN-safe: the normalizer returns
+    // 'unknown' for absent/'unavailable'.
+    const adapter = adapterFor(this.hass, cfg);
+    const charging = adapter.normalizeChargingState(status) === 'charging';
     const rangeNum = num(this.hass, cfg, 'battery_range');
     const rangeUnit = attr(this.hass, cfg, 'battery_range', 'unit_of_measurement') || 'mi';
     const showRange = this._display === 'range';
@@ -249,9 +254,10 @@ export class TcPanelCharging extends TcBase {
             label: STRINGS.charging.chargePort,
             // Present (open/closed/etc.) → prettyText; missing/unavailable → hide (AC1).
             value: portState && !isUnavailable(portState) ? prettyText(portState) : undefined,
-            // Open-state cue routes through the dialect seam (Story 5.11), not an
-            // inline `=== 'open'`; identity for tesla_fleet (default COVER_MAP).
-            color: normalizeCoverState(portState) === 'open' ? 'var(--tc-amber, #fbbf24)' : 'var(--tc-text-dim, #9aa7b8)',
+            // Open-state cue routes through the dialect seam — the vehicle
+            // dialect's adapter since Story 15.1 (behaviour-identical: no adapter
+            // carries a cover override, AC6-pinned) — never an inline `=== 'open'`.
+            color: adapter.normalizeCoverState(portState) === 'open' ? 'var(--tc-amber, #fbbf24)' : 'var(--tc-text-dim, #9aa7b8)',
           })}
         </div>
       </div>
