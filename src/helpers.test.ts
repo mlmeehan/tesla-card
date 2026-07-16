@@ -223,6 +223,17 @@ describe('service-call wrappers dispatch the right (domain, service, data)', () 
     expect(callService).toHaveBeenLastCalledWith('homeassistant', 'toggle', { entity_id: 'sensor.mystery' });
   });
 
+  test("toggleEntity('') is a NO-OP — resolves, calls NO service (the dialect ABSENT '' sentinel)", async () => {
+    // Story 16.1 AC6: the resolver's ABSENT sentinel `''` must be UNREPRESENTABLE
+    // as a service call, not merely unreached (every current call site is gated,
+    // but `domainOf('')` matches no case, so pre-guard the domain-blind default
+    // branch fired `callService('homeassistant','toggle',{entity_id:''})` — this
+    // row was RED against exactly that).
+    const { hass, callService } = stubHass();
+    await expect(toggleEntity(hass, '')).resolves.toBeUndefined();
+    expect(callService).not.toHaveBeenCalled();
+  });
+
   test('pressButton / setNumber / selectOption forward their exact payloads', () => {
     const { hass, callService } = stubHass();
     pressButton(hass, 'button.honk');

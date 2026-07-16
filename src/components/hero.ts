@@ -8,7 +8,7 @@ import { icon, batteryGauge, ageHint, keyAgeHint } from '../ui';
 import { carView, carStyles, CLOSED_APERTURES } from './car';
 import type { ApertureState, ChargeVisual } from './car';
 import { resolvePaint } from '../paint';
-import { adapterFor } from '../data/dialect';
+import { adapterFor, classifyChargeState } from '../data/dialect';
 import {
   num,
   rawState,
@@ -41,40 +41,38 @@ export class TcHero extends TcBase {
    * detection on its override branch, an O(1) table dispatch with zero per-render
    * registry scan) — never signed power, never an inline `=== 'Charging'` (the
    * debt `data/dialect`'s canonical-vocabulary section was built to retire).
-   * The 7-member `ChargingState` union collapses to the 3 visual states the Hero shows:
+   * The 7→3 collapse itself is the SHARED `classifyChargeState` in `data/dialect`
+   * (Story 16.1 — the SINGLE declaration; the charging panel's cue/gauge/status
+   * word consume the same table, so Hero and panel can never drift on a
+   * CLASSIFIED state. Above the collapse they still diverge by design: the
+   * panel's `unavailable`→"Idle" short-circuit and the Hero-only asleep/shift
+   * gates — e.g. `unavailable`+cabled reads "Plugged-idle" here, "Idle" on the
+   * panel. AC1-ratified; the asleep flavor is ledgered in deferred-work 16.1):
    *   charging                                  → 'charging'
    *   starting | stopped | complete | no_power  → 'plugged'  (connected, not drawing)
    *   disconnected                              → 'parked'
-   *   unknown                                   → 'parked'   (neutral degrade — never a
-   *                                                false Charging/Plugged; NFR-4)
+   *   unknown                                   → the cable corroboration — the
+   *     physical `charge_cable` sensor only (real evidence of a connection,
+   *     never a fabricated charge state): cabled ⇒ 'plugged', else neutral
+   *     'parked' (never a false Charging/Plugged; NFR-4). charging_status stays
+   *     the authority (AC1).
    * `Charging ⇒ plugged` (AC2) is structural: the port-glow/cable renders for BOTH
    * 'plugged' and 'charging' (car.ts), so green is a superset of blue.
    * On tesla_custom the source is a BOOLEAN (`on` → 'charging'; `off` → 'unknown',
    * because teslajsonpy's off covers Stopped/Complete/Disconnected alike) — the
-   * default branch's cable corroboration below then classifies off+cabled as
-   * 'plugged' and off+uncabled as 'parked', from real physical evidence.
+   * classifier's cable corroboration then reads off+cabled as 'plugged' and
+   * off+uncabled as 'parked', from real physical evidence.
    */
   private _chargeVisual(): ChargeVisual {
-    const state = adapterFor(this.hass, this.config).normalizeChargingState(
-      rawState(this.hass, this.config, 'charging_status')
+    // The eager cable read is a side-effect-free map lookup — behaviour-identical
+    // to the old lazy default-branch read (`ChargeVisual` and the classifier's
+    // return union are structurally identical string-literal unions).
+    return classifyChargeState(
+      adapterFor(this.hass, this.config).normalizeChargingState(
+        rawState(this.hass, this.config, 'charging_status')
+      ),
+      isOn(this.hass, this.config, 'charge_cable')
     );
-    switch (state) {
-      case 'charging':
-        return 'charging';
-      case 'starting':
-      case 'stopped':
-      case 'complete':
-      case 'no_power':
-        return 'plugged';
-      case 'disconnected':
-        return 'parked';
-      default:
-        // 'unknown' → neutral Parked. Corroborate ONLY with the physical cable
-        // sensor (real evidence of a connection, never a fabricated charge state):
-        // an `on` cable means plugged-idle even when charging_status hasn't reported
-        // a usable value. charging_status stays the authority (AC1).
-        return isOn(this.hass, this.config, 'charge_cable') ? 'plugged' : 'parked';
-    }
   }
 
   /**

@@ -18,11 +18,13 @@ import {
   DIALECT_ENTITY_ALIASES,
   DIALECT_ABSENT,
   adapterFor,
+  classifyChargeState,
   detectDialect,
   makeAdapter,
   normalizeChargingState,
   normalizeCoverState,
   normalizeLockState,
+  type ChargingState,
   type DialectAdapter,
   type Integration,
 } from './dialect';
@@ -77,6 +79,25 @@ describe('dialect-adapter layer (Story 1.4)', () => {
     // The known divergent dialects DO carry entries (sanity: the tables aren't empty).
     expect(Object.keys(DIALECT_ENTITY_ALIASES.tesla_custom ?? {}).length).toBeGreaterThan(0);
     expect((DIALECT_ABSENT.tessie?.size ?? 0)).toBeGreaterThan(0);
+  });
+
+  // ── Story 16.1 AC5 — DIALECT_ENTITY_ALIASES shape invariant ─────────────────────────
+  test('every alias value in every dialect map is `domain.suffix` shape (lowercase slug, exactly one dot)', () => {
+    // A unit-level TABLE invariant, deliberately NOT a 9th lint gate (the table
+    // lives in this one module; the 8-gate count is load-bearing across docs/CI).
+    // Iterates the table's OWN entries, so a future dialect's rows are covered
+    // automatically — a malformed row fails CI loudly, naming dialect + key +
+    // offending value. The character class excludes dots ⇒ exactly-one-dot is
+    // enforced by the single literal `\.`; lowercase-slug by the class itself.
+    const SHAPE = /^[a-z0-9_]+\.[a-z0-9_]+$/;
+    for (const [dialect, map] of Object.entries(DIALECT_ENTITY_ALIASES)) {
+      for (const [key, value] of Object.entries(map ?? {})) {
+        expect(
+          SHAPE.test(value ?? ''),
+          `DIALECT_ENTITY_ALIASES.${dialect}.${key} = ${JSON.stringify(value)} is not \`domain.suffix\` shape`
+        ).toBe(true);
+      }
+    }
   });
 
   // ── AC1 — detection + override + ambiguity ─────────────────────────────────────────
@@ -471,11 +492,129 @@ describe('Story 15.1 AC6 — Fleet-family adapter normalizers ≡ module default
     // refinement's whole point: off makes no claim, so it lands where an
     // unmapped raw lands — the map entry documents intent, not divergence).
     expect(DIALECTS.tesla_custom.normalizeChargingState('off')).toBe(normalizeChargingState('off'));
+    // [Story 16.1] This VALUE-level complement stays true and must never be
+    // weakened — but the coverage predicate (`chargingOverrideCovers`, pinned in
+    // the describe below) now ALSO observes 'off': the word-substitution gate
+    // reads map MEMBERSHIP, not the normalized value, so the PANEL's word
+    // diverges on 'off' too ("Parked"/"Plugged-idle" vs prettyText). Membership
+    // is the predicate's business; the normalizer equivalence here is unchanged.
     // Everywhere else tesla_custom charging matches the default too.
     for (const raw of CHARGING_VOCAB) {
       const k = (raw ?? '').toLowerCase().replace(/[^a-z0-9]/g, '');
       if (k === 'on') continue;
       expect(DIALECTS.tesla_custom.normalizeChargingState(raw)).toBe(normalizeChargingState(raw));
+    }
+  });
+
+  // ── Story 16.1 — chargingOverrideCovers: the canonical-word gate ─────────────
+  // The panel substitutes the fixed STRINGS charge-state word ONLY when the
+  // dialect's adapter carries a charging override covering the raw value — a
+  // CAPABILITY test, never a dialect-name test (FR-22). These pins are AC2's
+  // mechanism: `false` for every Fleet-family dialect over the FULL vocabulary
+  // ⇒ the fleet family can never lose its richer prettyText words.
+  describe('Story 16.1 — chargingOverrideCovers (the canonical-word gate)', () => {
+    test('every Fleet-family dialect returns false for the ENTIRE charging vocabulary', () => {
+      for (const i of FLEET_FAMILY) {
+        for (const raw of CHARGING_VOCAB) {
+          expect(
+            DIALECTS[i].chargingOverrideCovers(raw),
+            `${i}.chargingOverrideCovers(${JSON.stringify(raw)})`
+          ).toBe(false);
+        }
+      }
+    });
+
+    test("tesla_custom covers exactly the boolean spellings ('on'/'off', case-folded by normKey)", () => {
+      // The vocab's actual boolean spellings (it has no 'OFF'; normKey case-folds,
+      // so no extra case row is needed).
+      for (const raw of ['on', 'off', 'On', 'Off']) {
+        expect(
+          DIALECTS.tesla_custom.chargingOverrideCovers(raw),
+          `tesla_custom.chargingOverrideCovers(${JSON.stringify(raw)})`
+        ).toBe(true);
+      }
+    });
+
+    test('tesla_custom does NOT cover ABSENT tokens, garbage, fleet spellings, or undefined', () => {
+      const uncovered: Array<string | undefined> = [
+        // The ABSENT set — normalizeStatus short-circuits these BEFORE the
+        // override consult, and the predicate mirrors that reachability exactly.
+        '', 'unavailable', 'unknown', 'none', 'null',
+        // Garbage + fleet vocabulary — base-map territory, never the override.
+        'garbage-token', 'charge_complete',
+        'Charging', 'charging', 'Stopped', 'Disconnected', 'NoPower',
+        undefined,
+      ];
+      for (const raw of uncovered) {
+        expect(
+          DIALECTS.tesla_custom.chargingOverrideCovers(raw),
+          `tesla_custom.chargingOverrideCovers(${JSON.stringify(raw)})`
+        ).toBe(false);
+      }
+    });
+
+    test("the live-cue predicate is value-identical for ALL dialects (classify === 'charging' ⇔ normalize === 'charging')", () => {
+      // AC2's cue half: the panel's new `classifyChargeState(...) === 'charging'`
+      // is the SAME boolean as the previous `normalizeChargingState(raw) ===
+      // 'charging'` for every dialect × raw × cable state — the collapse maps
+      // exactly `charging` → 'charging' and nothing else there.
+      for (const i of ALL_DIALECTS) {
+        for (const raw of CHARGING_VOCAB) {
+          const normalized = DIALECTS[i].normalizeChargingState(raw);
+          for (const cable of [true, false]) {
+            expect(
+              classifyChargeState(normalized, cable) === 'charging',
+              `${i} raw=${JSON.stringify(raw)} cable=${cable}`
+            ).toBe(normalized === 'charging');
+          }
+        }
+      }
+    });
+  });
+});
+
+// ── Story 16.1 — classifyChargeState: the 7→3 collapse, declared once ─────────
+//
+// The Hero's `_chargeVisual()` switch extracted to `data/dialect.ts` (the
+// `ChargingState` union's home) so the Hero's visual and the charging panel's
+// status WORD can never drift — a component-local copy of this table is the
+// forbidden "private copy of the machine" shape. The full table is pinned HERE,
+// where it now lives; `hero.test.ts` stays untouched-green as the delegation's
+// behaviour proof (Story 16.1 Task 2.2/5.4).
+describe('Story 16.1 — classifyChargeState pins the full 7-member collapse × cable', () => {
+  type Visual = ReturnType<typeof classifyChargeState>;
+  // Typecheck-driven exhaustiveness (the house pattern): keyed by the FULL
+  // ChargingState union — an 8th union member fails compilation here until its
+  // collapse row is declared.
+  const EXPECTED: Record<ChargingState, { cabled: Visual; uncabled: Visual }> = {
+    charging: { cabled: 'charging', uncabled: 'charging' },
+    starting: { cabled: 'plugged', uncabled: 'plugged' },
+    stopped: { cabled: 'plugged', uncabled: 'plugged' },
+    complete: { cabled: 'plugged', uncabled: 'plugged' },
+    no_power: { cabled: 'plugged', uncabled: 'plugged' },
+    disconnected: { cabled: 'parked', uncabled: 'parked' },
+    // 'unknown' → the cable corroboration (REAL physical evidence of a
+    // connection, never a fabricated charge state): cabled ⇒ plugged-idle.
+    unknown: { cabled: 'plugged', uncabled: 'parked' },
+  };
+
+  test('every (state × cable) row lands on the pinned visual', () => {
+    for (const [state, want] of Object.entries(EXPECTED) as Array<
+      [ChargingState, { cabled: Visual; uncabled: Visual }]
+    >) {
+      expect(classifyChargeState(state, true), `classifyChargeState('${state}', true)`).toBe(
+        want.cabled
+      );
+      expect(classifyChargeState(state, false), `classifyChargeState('${state}', false)`).toBe(
+        want.uncabled
+      );
+    }
+  });
+
+  test('the cable input matters ONLY on unknown (the corroboration is not a general override)', () => {
+    for (const state of Object.keys(EXPECTED) as ChargingState[]) {
+      const differs = classifyChargeState(state, true) !== classifyChargeState(state, false);
+      expect(differs, `cable-sensitivity of '${state}'`).toBe(state === 'unknown');
     }
   });
 });

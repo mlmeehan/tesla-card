@@ -388,6 +388,26 @@ describe('Story 15.1 — whole-card stamp path (fixture registry → detection �
     expect(heroCar(el)?.classList.contains('charging')).toBe(false);
     el.remove();
   });
+
+  test("Story 16.1 — the stamped boolean 'on' renders the canonical WORD in the panel's .cstatus (never the raw 'On')", async () => {
+    // NO `integration:` in config — the component-level word rows
+    // (panel-charging.test.ts) set it directly and BYPASS the stamp; this is the
+    // ONLY row proving the WORD substitution reads the STAMPED dialect
+    // end-to-end: fixture registry → vehicle-scoped detection → parent stamp →
+    // the child's coverage gate (`chargingOverrideCovers`) → STRINGS word.
+    // RED-FIRST evidence (pre-substitution): the span rendered prettyText('on')
+    // — the literal word "On" — beside a correct live cue.
+    const el = await renderCard(cfg(), hassFrom(teslaCustom));
+    // The charging panel is the card's default first panel — assert it mounted (loud).
+    const panel = el.shadowRoot?.querySelector('tc-panel-charging') as CardEl | null;
+    expect(panel, 'charging panel mounted (the default open panel)').toBeTruthy();
+    await panel!.updateComplete;
+    const cue = panel!.shadowRoot?.querySelector('.cstatus');
+    expect(cue, '.cstatus present').toBeTruthy();
+    expect(cue!.textContent?.trim().replace(/\s+/g, ' ')).toBe(STRINGS.status.charging);
+    expect(cue!.classList.contains('live')).toBe(true);
+    el.remove();
+  });
 });
 
 // ═══════════════════════════════════════════════════════════════════════════
