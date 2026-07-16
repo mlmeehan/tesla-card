@@ -250,9 +250,19 @@ describe("Story 15.1 — tesla_custom boolean lights the live cue via the stampe
     expect(cstatus.querySelector('svg')).toBeTruthy(); // the lightning bolt renders
   });
 
-  test("boolean 'off' → cue OFF (not charging; the panel makes no connected-state claim)", async () => {
+  test("boolean 'off' → cue OFF, WORD 'Plugged-idle' (this mold is CABLED — the fixture cable reads 'on')", async () => {
+    // Pre-16.1 narration said "the panel makes no connected-state claim" — no
+    // longer true: the coverage-gated WORD now claims one. Inputs, precisely:
+    // this describe's TC_CONFIG doesn't override `charge_cable` and tcStates
+    // doesn't delete the fleet cable, so the DEFAULT-resolved
+    // `binary_sensor.…_charge_cable` reads the awake fixture's 'on' → 'off'
+    // classifies plugged → "Plugged-idle". (A genuinely cable-less 'off' reads
+    // "Parked" — pinned in the Story 16.1 describe below.) The CUE assertion is
+    // unchanged — cue and word are two halves of one classification.
     const el = await mount(makeHass(tcStates('off')), TC_CONFIG);
-    expect(el.shadowRoot!.querySelector('.cstatus')!.classList.contains('live')).toBe(false);
+    const cstatus = el.shadowRoot!.querySelector('.cstatus')!;
+    expect(cstatus.classList.contains('live')).toBe(false);
+    expect(cstatus.textContent?.trim().replace(/\s+/g, ' ')).toBe(STRINGS.status.pluggedIdle);
   });
 
   test("boolean 'unavailable' → cue OFF + the idle display text (the isUnavailable branch)", async () => {
@@ -260,5 +270,119 @@ describe("Story 15.1 — tesla_custom boolean lights the live cue via the stampe
     const cstatus = el.shadowRoot!.querySelector('.cstatus')!;
     expect(cstatus.classList.contains('live')).toBe(false);
     expect(cstatus.textContent).toContain(STRINGS.charging.idle);
+  });
+});
+
+// ── Story 16.1 — the canonical charge-state WORD (coverage-gated substitution) ──
+// The `.cstatus` span renders the fixed STRINGS charge-state word whenever the
+// dialect's adapter carries a charging override covering the raw value
+// (`chargingOverrideCovers`) — boolean raw tokens are meaningless as user copy
+// ("On"/"Off"), so the panel speaks the card's own words (EXPERIENCE.md:206-208 /
+// UX-DR18), single-sourced with the cue/gauge classification
+// (`classifyChargeState` + the Hero's cable corroboration).
+// RED-FIRST evidence (pre-substitution): every covered row rendered
+// prettyText(raw) — the literal words "On" / "Off" — beside a correct cue.
+describe('Story 16.1 — tesla_custom .cstatus renders the canonical WORD, never "On"/"Off"', () => {
+  // Loud alias derivation (the hero.test.ts mold): a dropped/renamed table entry
+  // must fail HERE — the `?? ''` fallback would otherwise build a
+  // malformed-but-self-consistent `.mycar_` id these tests still pass against.
+  const tcAlias = (key: 'charging_status' | 'charge_cable'): string => {
+    const alias = DIALECT_ENTITY_ALIASES.tesla_custom?.[key] ?? '';
+    const dot = alias.indexOf('.');
+    if (dot < 0) throw new Error(`no tesla_custom alias for '${key}' — table drift`);
+    return `${alias.slice(0, dot)}.mycar_${alias.slice(dot + 1)}`;
+  };
+  const TC = {
+    charging: tcAlias('charging_status'), // binary_sensor.mycar_charging
+    cable: tcAlias('charge_cable'), // binary_sensor.mycar_charger
+  } as const;
+
+  /** The post-stamp child config shape — EXPLICIT overrides for every entity the
+   *  scenario narrates, never the DEFAULT_ENTITIES fallback riding along. */
+  const TC_CONFIG: Partial<TeslaCardConfig> = {
+    integration: 'tesla_custom',
+    entities: { charging_status: TC.charging, charge_cable: TC.cable },
+  };
+
+  /** Fleet states minus the charging STRING (tesla_custom exposes none), plus
+   *  the boolean and an optional cable sensor. */
+  function tcStates(boolState: string, cableState?: string): Record<string, HassEntity> {
+    const states = baseStates();
+    delete states[ID.status];
+    states[TC.charging] = {
+      entity_id: TC.charging,
+      state: boolState,
+      attributes: {},
+    } as HassEntity;
+    if (cableState !== undefined) {
+      states[TC.cable] = {
+        entity_id: TC.cable,
+        state: cableState,
+        attributes: {},
+      } as HassEntity;
+    }
+    return states;
+  }
+
+  const cueOf = (el: PanelEl) => el.shadowRoot!.querySelector('.cstatus')!;
+  /** The cue's rendered word (the svg bolt contributes no text). */
+  const cueWord = (el: PanelEl) => cueOf(el).textContent?.trim().replace(/\s+/g, ' ') ?? '';
+
+  test("'on' → STRINGS.status.charging + .live + the bolt (RED pre-16.1: rendered 'On')", async () => {
+    const el = await mount(makeHass(tcStates('on', 'on')), TC_CONFIG);
+    expect(cueWord(el)).toBe(STRINGS.status.charging);
+    expect(cueOf(el).classList.contains('live')).toBe(true);
+    expect(cueOf(el).querySelector('svg')).toBeTruthy(); // the lightning bolt
+  });
+
+  test("'off' + cable 'on' → STRINGS.status.pluggedIdle, cue off (RED pre-16.1: 'Off')", async () => {
+    const el = await mount(makeHass(tcStates('off', 'on')), TC_CONFIG);
+    expect(cueWord(el)).toBe(STRINGS.status.pluggedIdle);
+    expect(cueOf(el).classList.contains('live')).toBe(false);
+  });
+
+  test("'off' + cable 'off' → STRINGS.status.parked (RED pre-16.1: 'Off')", async () => {
+    const el = await mount(makeHass(tcStates('off', 'off')), TC_CONFIG);
+    expect(cueWord(el)).toBe(STRINGS.status.parked);
+    expect(cueOf(el).classList.contains('live')).toBe(false);
+  });
+
+  test("'off' + cable ABSENT → STRINGS.status.parked (absence never fabricates a connection)", async () => {
+    const el = await mount(makeHass(tcStates('off')), TC_CONFIG);
+    expect(cueWord(el)).toBe(STRINGS.status.parked);
+  });
+
+  test("'unavailable' → STRINGS.charging.idle UNCHANGED (the outer isUnavailable branch wins, even cabled)", async () => {
+    const el = await mount(makeHass(tcStates('unavailable', 'on')), TC_CONFIG);
+    expect(cueWord(el)).toBe(STRINGS.charging.idle);
+    expect(cueOf(el).classList.contains('live')).toBe(false);
+  });
+});
+
+// ── Story 16.1 AC2 — fleet byte-identity: prettyText survives VERBATIM ────────
+// No `integration:` key ⇒ default fleet resolution (makeHass carries no registry,
+// so detectDialect lands on the tesla_fleet default). No fleet adapter carries a
+// charging override, so `chargingOverrideCovers` is false over the entire
+// vocabulary (the dialect.test.ts equivalence pins are the mechanism) — these
+// rows are the RENDER-level half: the richer 7-state words keep rendering
+// byte-identically. Green BEFORE and AFTER the 16.1 substitution.
+describe('Story 16.1 AC2 — fleet .cstatus keeps prettyText verbatim (no word substitution)', () => {
+  const fleetCue = async (raw: string): Promise<string> => {
+    const states = baseStates();
+    states[ID.status].state = raw;
+    const el = await mount(makeHass(states));
+    return el.shadowRoot!.querySelector('.cstatus')!.textContent?.trim().replace(/\s+/g, ' ') ?? '';
+  };
+
+  test("raw 'Charging' → 'Charging' (the prettyText path, unchanged)", async () => {
+    expect(await fleetCue('Charging')).toBe('Charging');
+  });
+
+  test("raw 'Stopped' → 'Stopped' — the richer word SURVIVES, never 'Plugged-idle'", async () => {
+    expect(await fleetCue('Stopped')).toBe('Stopped');
+  });
+
+  test("raw 'NoPower' → 'NoPower' (prettyText verbatim, no canonical rewrite)", async () => {
+    expect(await fleetCue('NoPower')).toBe('NoPower');
   });
 });

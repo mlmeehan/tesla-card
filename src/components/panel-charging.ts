@@ -14,7 +14,7 @@ import { TcBase } from '../base';
 import { sharedStyles } from '../styles';
 import { STRINGS } from '../strings';
 import { icon, batteryGauge, statTile } from '../ui';
-import { adapterFor } from '../data/dialect';
+import { adapterFor, classifyChargeState } from '../data/dialect';
 import './slider';
 import {
   num,
@@ -31,6 +31,16 @@ import {
   prettyText,
 } from '../helpers';
 import type { EntityKey } from '../const';
+
+// The canonical charge-state WORDS for the coverage-gated status span (Story
+// 16.1), keyed by the shared classifier's 3-state visual. Copy SELECTION lives
+// HERE beside the STRINGS import — `data/dialect.ts` returns states, never
+// user-facing copy (AR-18).
+const WORD: Record<'charging' | 'plugged' | 'parked', string> = {
+  charging: STRINGS.status.charging,
+  plugged: STRINGS.status.pluggedIdle,
+  parked: STRINGS.status.parked,
+};
 
 @customElement('tc-panel-charging')
 export class TcPanelCharging extends TcBase {
@@ -80,18 +90,27 @@ export class TcPanelCharging extends TcBase {
     const battery = num(this.hass, cfg, 'battery_level');
     const limit = num(this.hass, cfg, 'charge_limit');
     const status = rawState(this.hass, cfg, 'charging_status');
-    // Canonical charge-state classifier (AC4) — the VEHICLE DIALECT's adapter
-    // normalizer (Story 15.1: `adapterFor` short-circuits on the parent-stamped
-    // `integration`, an O(1) table dispatch), identical to the Hero's
-    // `_chargeVisual()`. Replaces the retired inline `status === 'Charging'`
-    // (Story 3.4 debt). The live-green cue is `charging` ONLY —
-    // 'starting'/'complete'/etc. read as connected-but-not-drawing, so they are
-    // not the live cue (mirrors the Hero treating them as 'plugged'). On
-    // tesla_custom the source is the boolean `binary_sensor.charging` (`on` →
-    // 'charging'; `off` → 'unknown' → cue off). NaN-safe: the normalizer returns
-    // 'unknown' for absent/'unavailable'.
+    // Classify ONCE (Story 16.1) — the VEHICLE DIALECT's adapter normalizer
+    // (Story 15.1: `adapterFor` short-circuits on the parent-stamped
+    // `integration`, an O(1) table dispatch) through the SHARED
+    // `classifyChargeState` collapse (the Hero's 7→3 table + cable
+    // corroboration, declared once in data/dialect). The bolt cue
+    // (`.cstatus.live`), the battery gauge AND the status word all derive from
+    // THIS one classified value — the span and the bolt can never disagree.
+    // The live-green cue is `charging` ONLY ('starting'/'complete'/etc. read as
+    // connected-but-not-drawing — 'plugged', mirroring the Hero); the cue
+    // predicate is value-identical to the pre-16.1 `normalize === 'charging'`
+    // for every dialect (dialect.test.ts equivalence pins). On tesla_custom the
+    // source is the boolean `binary_sensor.charging` (`on` → 'charging'; `off`
+    // → 'unknown' → cable-corroborated 'plugged'/'parked'), and the coverage
+    // gate below swaps the raw "On"/"Off" for the canonical STRINGS word.
+    // NaN-safe: the normalizer returns 'unknown' for absent/'unavailable'.
     const adapter = adapterFor(this.hass, cfg);
-    const charging = adapter.normalizeChargingState(status) === 'charging';
+    const visual = classifyChargeState(
+      adapter.normalizeChargingState(status),
+      isOn(this.hass, cfg, 'charge_cable')
+    );
+    const charging = visual === 'charging';
     const rangeNum = num(this.hass, cfg, 'battery_range');
     const rangeUnit = attr(this.hass, cfg, 'battery_range', 'unit_of_measurement') || 'mi';
     const showRange = this._display === 'range';
@@ -152,7 +171,11 @@ export class TcPanelCharging extends TcBase {
               </div>
               <span class="cstatus ${charging ? 'live' : ''}">
                 ${charging ? icon(mdiLightningBolt, { size: 14 }) : nothing}
-                ${status && !isUnavailable(status) ? prettyText(status) : STRINGS.charging.idle}
+                ${status && !isUnavailable(status)
+                  ? adapter.chargingOverrideCovers(status)
+                    ? WORD[visual]
+                    : prettyText(status)
+                  : STRINGS.charging.idle}
               </span>
             </div>
           </div>

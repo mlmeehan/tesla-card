@@ -45,6 +45,11 @@ import { TESLA_PLATFORMS } from './platforms';
  * the PARENT-RESOLVED STAMP (`tesla-card.ts` `_resolve()` writes the resolver's
  * effective vehicle dialect onto `_resolvedConfig.integration`, so `detectDialect`
  * short-circuits on its override branch with zero per-render registry scan).
+ * Story 16.1 (D-DSM-1) adds two more consumed seams: the shared
+ * `classifyChargeState` 7→3 collapse (hero visual + panel cue/gauge/word all
+ * derive from the ONE table) and the `chargingOverrideCovers` coverage predicate
+ * (`panel-charging.ts` gates its canonical status WORD on it — covered raw →
+ * the fixed `STRINGS.status` word; uncovered → honest `prettyText` passthrough).
  */
 
 // ───────────────────────────────────────────────────────────────────────────
@@ -175,6 +180,44 @@ export const normalizeLockState = (raw: string | undefined): LockState =>
 export const normalizeCoverState = (raw: string | undefined): CoverState =>
   normalizeStatus(COVER_MAP, 'unknown', raw);
 
+/**
+ * The 7→3 charge-state collapse, declared ONCE (Story 16.1 / D-DSM-1).
+ * Extracted verbatim from the Hero's `_chargeVisual()` switch so every
+ * charge-state consumer — the Hero's visual, the charging panel's live cue,
+ * battery gauge AND canonical status word — derives from the ONE table (a
+ * component-local copy of this collapse is the forbidden "private copy of the
+ * machine" shape):
+ *   charging                                  → 'charging'
+ *   starting | stopped | complete | no_power  → 'plugged'  (connected, not drawing)
+ *   disconnected                              → 'parked'
+ *   unknown (default)                         → the cable corroboration:
+ *     `cableOn` ⇒ 'plugged', else 'parked' — REAL physical evidence of a
+ *     connection, never a fabricated charge state (NFR-4; the tesla_custom
+ *     boolean's `off`/`unavailable` land here).
+ * Pure function of already-read values — no `hass`, no entity read. The return
+ * union is structurally identical to `car.ts`'s `ChargeVisual`, so the Hero
+ * returns it directly (importing `ChargeVisual` HERE would add a
+ * data→components edge — the wrong direction; structural typing does the work).
+ */
+export function classifyChargeState(
+  state: ChargingState,
+  cableOn: boolean
+): 'charging' | 'plugged' | 'parked' {
+  switch (state) {
+    case 'charging':
+      return 'charging';
+    case 'starting':
+    case 'stopped':
+    case 'complete':
+    case 'no_power':
+      return 'plugged';
+    case 'disconnected':
+      return 'parked';
+    default:
+      return cableOn ? 'plugged' : 'parked';
+  }
+}
+
 // ───────────────────────────────────────────────────────────────────────────
 // DialectAdapter table (pure functions, not a class hierarchy)
 // ───────────────────────────────────────────────────────────────────────────
@@ -245,6 +288,19 @@ export interface DialectAdapter {
   normalizeChargingState(raw: string | undefined): ChargingState;
   normalizeLockState(raw: string | undefined): LockState;
   normalizeCoverState(raw: string | undefined): CoverState;
+  /**
+   * Does this dialect's charging OVERRIDE cover `raw` — i.e. did
+   * `normalizeChargingState(raw)` consult the override map for it? Mirrors
+   * `normalizeStatus`'s reachability EXACTLY (the ABSENT set short-circuits
+   * BEFORE the override consult), so `true` always means the classification
+   * came from the dialect's own capability map, never the fleet base map.
+   * Fleet-family adapters carry no `charging` spec ⇒ `false` for every input
+   * by construction. Consumer (Story 16.1): `panel-charging.ts`'s
+   * canonical-word gate — covered raw → the fixed `STRINGS.status` word;
+   * uncovered → honest `prettyText` passthrough (the fleet family's richer
+   * 7-state words survive byte-identically, AC2).
+   */
+  chargingOverrideCovers(raw: string | undefined): boolean;
 }
 
 function defaultCombine(parts: ReadonlyArray<number | undefined>): number | undefined {
@@ -313,6 +369,13 @@ export function makeAdapter(spec: AdapterSpec): DialectAdapter {
     normalizeChargingState: (raw) => normalizeStatus(CHARGING_MAP, 'unknown', raw, charging),
     normalizeLockState: (raw) => normalizeStatus(LOCK_MAP, 'unknown', raw, lock),
     normalizeCoverState: (raw) => normalizeStatus(COVER_MAP, 'unknown', raw, cover),
+    // The `!ABSENT.has(...)` guard keeps this predicate exactly mirroring
+    // `normalizeStatus`'s reachability: ABSENT short-circuits BEFORE the
+    // override consult, so a covers()=true raw is always one the normalizer
+    // actually routed through the override. Additive — flows to every adapter
+    // (incl. the seam test's synthetic one) with no per-dialect edit.
+    chargingOverrideCovers: (raw) =>
+      raw != null && !ABSENT.has(normKey(raw)) && charging?.[normKey(raw)] !== undefined,
   };
 }
 
@@ -349,6 +412,10 @@ export function makeAdapter(spec: AdapterSpec): DialectAdapter {
 // `{charge_complete → complete}` entry was removed (the token `charge_complete` exists
 // nowhere in the integration, §5 verdict) and the const now holds the boolean
 // capability map below.
+//
+// Story 16.1: this map's COVERAGE (via `chargingOverrideCovers`) also gates the
+// charging panel's canonical status WORD — a covered boolean renders
+// "Charging"/"Plugged-idle"/"Parked" (`STRINGS.status`), never the raw "On"/"Off".
 const TESLA_CUSTOM_CHARGING: Readonly<Record<string, ChargingState>> = {
   on: 'charging',
   off: 'unknown',
@@ -415,6 +482,16 @@ export const DIALECT_ENTITY_ALIASES: Partial<
     defrost: 'switch.defrost_mode',
     seat_fl: 'select.seat_heater_left',
     seat_fr: 'select.seat_heater_right',
+    // 2026-07-15 re-verify (Story 16.1 AC4, HA-core `dev` strings.json): the
+    // three auto-climate keys now ship in tessie — as READ-ONLY binary_sensor
+    // twins of the fleet SWITCHES ("Auto seat climate left/right", "Auto
+    // steering wheel heater"). Suffixes are fleet-convergent but the DOMAIN
+    // diverges, so the alias rows carry tessie's real domain (the resolver's
+    // canonical match is domain-aware; without these rows the keys would fall
+    // to a nonexistent switch-domain guess).
+    auto_seat_left: 'binary_sensor.auto_seat_climate_left',
+    auto_seat_right: 'binary_sensor.auto_seat_climate_right',
+    auto_steering_wheel: 'binary_sensor.auto_steering_wheel_heater',
   },
   // §5 — tesla_custom `slug(type)` naming (domains change; charging_status points
   // at the boolean binary_sensor.charging = the capability difference, AC5).
@@ -469,14 +546,14 @@ export const DIALECT_ENTITY_ALIASES: Partial<
  * override still wins over an ABSENT marker (resolver step-1 precedence). [AC4]
  */
 export const DIALECT_ABSENT: Partial<Record<Integration, ReadonlySet<EntityKey>>> = {
-  // §4 — tessie: entity not exposed by the integration.
+  // §4 — tessie: entity not exposed by the integration. Re-verified against
+  // HA-core `dev` 2026-07-15 (Story 16.1 AC4): battery_heater + the three
+  // auto-climate keys were REMOVED — tessie now ships them (battery_heater
+  // fleet-convergent; the auto-climate trio as read-only binary_sensor twins,
+  // aliased above). The two keys below remain genuinely un-exposed.
   tessie: new Set<EntityKey>([
     'preconditioning',
-    'auto_seat_left',
-    'auto_seat_right',
-    'auto_steering_wheel',
     'charger_has_multiple_phases',
-    'battery_heater',
   ]),
   // §5 — tesla_custom ABSENT list (only names that ARE EntityKeys; `usable_battery_level`
   // is ABSENT while `battery_level` aliases to sensor.battery — usable folds in there).

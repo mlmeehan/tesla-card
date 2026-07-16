@@ -123,7 +123,7 @@ export const STRINGS = {
     stop: 'Stop charging',
     chargeLimit: 'Charge limit',
     chargeCurrent: 'Charge current',
-    idle: 'Idle', // empty status fallback (HA value via prettyText otherwise)
+    idle: 'Idle', // empty status fallback (otherwise prettyText — unless the dialect's charging override covers the raw value, then the canonical STRINGS.status word; Story 16.1)
     power: 'Power',
     rate: 'Rate',
     added: 'Added',

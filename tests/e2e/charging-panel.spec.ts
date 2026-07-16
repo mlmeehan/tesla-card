@@ -174,6 +174,10 @@ test.describe('AC3 — range/% toggle + charge-target line', () => {
 });
 
 // ── AC4 — canonical live charging cue ────────────────────────────────────────
+// The two fleet-env rows here are ALSO the e2e half of Story 16.1 AC2's fleet
+// byte-identity: the default env's words ("Charging"/"Idle") come through the
+// prettyText/idle paths untouched by the 16.1 canonical-word substitution —
+// they stay green with zero edits.
 test.describe('AC4 — live charging cue derives from canonical charge state', () => {
   test('an actively-charging car lights the live cue', async ({ demo }) => {
     await demo.open({ scenario: 'awake' }); // charging_status = "Charging"
@@ -187,5 +191,35 @@ test.describe('AC4 — live charging cue derives from canonical charge state', (
     const cue = demo.chargeStatusCue;
     await expect(cue).not.toHaveClass(/live/);
     await expect(cue).toContainText('Idle');
+  });
+});
+
+// ── Story 16.1 (AC3) — tesla_custom renders the canonical WORD, never "On"/"Off" ──
+// Sibling of the AC4 describe above, REUSING its `chargeStatusCue` locator (no
+// second `.cstatus` getter). The demo env carries the dialect's REAL
+// boolean/cable/online shape derived per-scenario from the fleet entities
+// (demo/index.html `toTeslaCustomShape`): the default/awake scenario IS the
+// charging scenario (boolean 'on'; the charging panel is the open default
+// panel), and scenario=parked derives boolean 'off' + plug 'off'.
+// SHAPE-asserting per the demo-env Testing rule: the cue's literal WORD is
+// pinned — a clean render of the wrong words would not pass.
+test.describe('Story 16.1 — tesla_custom charge words in the panel cue (shape assertions)', () => {
+  test("charging (default awake scenario) — the cue reads 'Charging', never the raw boolean", async ({
+    demo,
+  }) => {
+    await demo.open({ scenario: 'awake', env: 'tesla_custom' });
+    const cue = demo.chargeStatusCue;
+    await expect(cue).toHaveClass(/live/);
+    await expect(cue).toContainText('Charging');
+    // Belt-and-braces vs the exact pre-16.1 defect (the span read "On"/"Off").
+    await expect(cue).not.toHaveText(/^(On|Off)$/);
+  });
+
+  test("parked — boolean off + plug off reads 'Parked', never 'Off'", async ({ demo }) => {
+    await demo.open({ scenario: 'parked', env: 'tesla_custom' });
+    const cue = demo.chargeStatusCue;
+    await expect(cue).not.toHaveClass(/live/);
+    await expect(cue).toContainText('Parked');
+    await expect(cue).not.toHaveText(/^(On|Off)$/);
   });
 });

@@ -270,6 +270,51 @@ describe('Story 14.1 — per-dialect resolution (alias + ABSENT wiring)', () => 
     });
   });
 
+  // ── Story 16.1 AC4 — tessie ABSENT-set corrections (2026-07-15 upstream re-verify) ──
+  // Raw HA-core `dev` strings.json read (the dev's own fetch, superseding the
+  // create-story fast-model leads): four once-ABSENT keys now ship in tessie.
+  // battery_heater is fleet-convergent (binary_sensor + battery_heater — domain
+  // AND suffix), so removal alone resolves it; the three auto-climate keys are
+  // READ-ONLY binary_sensor twins of the fleet SWITCHES (suffixes convergent,
+  // domain diverges), so each carries a new DIALECT_ENTITY_ALIASES row — the
+  // resolver's canonical match is domain-aware (`signatureFor`), and removal
+  // without the alias would resolve to a nonexistent fleet-domain guess.
+  // RED-FIRST: every row below was red against the stale table (ABSENT forced '').
+  describe('Story 16.1 — tessie ABSENT corrections (re-verified vs HA-core dev, 2026-07-15)', () => {
+    test('battery_heater resolves to the real tessie binary_sensor (fleet-convergent, no alias row needed)', () => {
+      const hass = dialectHass('tessie', 'mycar', [
+        'binary_sensor.mycar_battery_heater',
+        // a §4-aliased anchor so the install is unmistakably tessie-shaped
+        'cover.mycar_vent_windows',
+      ]);
+      const resolved = resolveEntities(hass, cfg());
+      expect(resolved.battery_heater).toBe('binary_sensor.mycar_battery_heater');
+      expect(resolved.battery_heater).not.toBe('');
+    });
+
+    test('auto_seat_left/right + auto_steering_wheel resolve via the NEW alias rows (read-only binary_sensor twins)', () => {
+      const hass = dialectHass('tessie', 'mycar', [
+        'binary_sensor.mycar_auto_seat_climate_left',
+        'binary_sensor.mycar_auto_seat_climate_right',
+        'binary_sensor.mycar_auto_steering_wheel_heater',
+      ]);
+      const resolved = resolveEntities(hass, cfg());
+      expect(resolved.auto_seat_left).toBe('binary_sensor.mycar_auto_seat_climate_left');
+      expect(resolved.auto_seat_right).toBe('binary_sensor.mycar_auto_seat_climate_right');
+      expect(resolved.auto_steering_wheel).toBe('binary_sensor.mycar_auto_steering_wheel_heater');
+    });
+
+    test("the two genuinely-absent keys STAY ABSENT ('' sentinel) — the guard against over-removal", () => {
+      // preconditioning (is_preconditioning) + charger_has_multiple_phases:
+      // re-verified NOT exposed by tessie (HA-core dev, 2026-07-15) — the
+      // honest sentinel stands.
+      const hass = dialectHass('tessie', 'mycar', ['binary_sensor.mycar_battery_heater']);
+      const resolved = resolveEntities(hass, cfg());
+      expect(resolved.preconditioning).toBe('');
+      expect(resolved.charger_has_multiple_phases).toBe('');
+    });
+  });
+
   describe('AC6 — tesla_fleet resolution is byte-identical to the pre-change golden', () => {
     test('resolveEntities on the fleet corpus deep-equals the committed golden', () => {
       const hass = makeHass({ states: fixture.states as HomeAssistant['states'] });

@@ -179,8 +179,14 @@ export function domainOf(entity: string): string {
   return entity.split('.')[0];
 }
 
-/** Toggle a switch/lock/cover/climate/button entity the sensible way. */
+/**
+ * Toggle a switch/lock/cover/climate/button entity the sensible way. An empty
+ * id — the dialect ABSENT `''` sentinel — is a NO-OP: it must never reach the
+ * domain-blind default branch's `homeassistant.toggle` (degenerate value made
+ * unrepresentable, not just unreached at the gated call sites).
+ */
 export function toggleEntity(hass: HomeAssistant, entity: string): Promise<unknown> {
+  if (!entity) return Promise.resolve();
   const domain = domainOf(entity);
   const st = hass.states[entity]?.state;
   switch (domain) {
