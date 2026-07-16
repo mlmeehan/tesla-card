@@ -119,7 +119,9 @@ interface VehicleContext {
 
 /**
  * Find the vehicle's device and its entity-id prefix slug.
- * Precedence: config.device (id or name) → name match → most Tesla entities.
+ * Precedence: config.device (id or name) → config.name match → the four-tier
+ * untargeted fallback (vehicle-shaped → override-platform → vehicle-signature
+ * score → most entities; see the ordering comment at the sort).
  * `config.prefix` overrides the derived slug. Falls back gracefully when the
  * entity/device registry is unavailable (older HA, the demo harness).
  */
@@ -209,11 +211,18 @@ function detectVehicle(
       if (byName) {
         deviceId = byName;
       } else {
-        // Untargeted fallback ordering (Story 14.2): vehicle-signature score DESC
-        // (3a) → override-platform ownership (3b) → raw most-entities (the former
-        // sole key, now the tie-break). This lets a car beat a higher-count
-        // Powerwall, then lands an `integration:` override on a device of that
-        // platform. `config.integration` naming a platform no candidate owns (3c)
+        // Untargeted fallback ordering [D-DSM-1 2026-07-15; completes the 14.2
+        // override↔device AC]: (1) vehicle-shaped (score>0) DESC → (2)
+        // override-platform ownership DESC → (3) vehicle-signature score DESC →
+        // (4) raw most-entities (the former sole key, now the last tie-break).
+        // Vehicle-shaped is the OUTER tier so a score-0 device (a Powerwall)
+        // owning the override's platform never beats a car — the override steers
+        // among CARS (which one the card resolves against on a mixed-platform
+        // multi-car install), never onto energy hardware (the retained 14.2
+        // car-beats-Powerwall guard). Without an override tier (2) is inert, and
+        // a shaped disagreement is decided identically by score DESC — so
+        // no-override / all-score-0 orderings are byte-identical to the 14.2
+        // sort. `config.integration` naming a platform no candidate owns (3c)
         // simply no-ops the override key → the vehicle-shaped pick still wins and
         // the override's dialect still applies downstream (documented mis-config;
         // escape hatch = `config.device` + `config.entities[key]`).
@@ -223,13 +232,16 @@ function detectVehicle(
             : undefined;
         const score = new Map(ids.map((id) => [id, vehicleScore(id)]));
         deviceId = ids.sort((a, b) => {
-          const vs = (score.get(b) ?? 0) - (score.get(a) ?? 0);
-          if (vs !== 0) return vs;
+          const sa = score.get(a) ?? 0;
+          const sb = score.get(b) ?? 0;
+          const shaped = (sb > 0 ? 1 : 0) - (sa > 0 ? 1 : 0);
+          if (shaped !== 0) return shaped;
           if (override) {
             const oa = byDevicePlatforms.get(a)?.has(override) ? 1 : 0;
             const ob = byDevicePlatforms.get(b)?.has(override) ? 1 : 0;
             if (ob !== oa) return ob - oa;
           }
+          if (sb !== sa) return sb - sa;
           return (byDevice.get(b)?.length ?? 0) - (byDevice.get(a)?.length ?? 0);
         })[0];
       }

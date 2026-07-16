@@ -711,3 +711,161 @@ describe('Story 15.1 — detectVehicleDialect (effective vehicle dialect)', () =
     expect(resolveEntities(hass, cfg()).battery_level).toBe('sensor.car_battery');
   });
 });
+
+// ── Story 16.2 — override-steered device selection (guarded reorder) ─────────
+//
+// D-DSM-1 (2026-07-15; architecture.md D2 amendment (b)): detectVehicle's
+// untargeted fallback reorders to vehicle-shaped (score>0) DESC →
+// override-platform ownership DESC → vehicleScore DESC → raw count DESC. The
+// `integration:` override now picks WHICH car on a mixed-platform multi-car
+// install (completing the 14.2 override↔device-consistency AC that Task 3b
+// delivered at score-ties only); a score-0 device owning the override's
+// platform still never beats a car (tier 1 — the retained 14.2
+// car-beats-Powerwall guard); the override tier is INERT without an override
+// (no-override / all-score-0 orderings byte-identical — every untouched-green
+// 14.x/15.x/16.1 describe above is the behaviour pin, plus the explicit
+// all-score-0 pin below). Synthetic fixtures in the twoCarsHass /
+// splitHouseholdHass mold (inline maps + makeHass; NOT dialectHass — that is
+// single-device).
+describe('Story 16.2 — override-steered device selection (guarded reorder)', () => {
+  /**
+   * Two vehicle-shaped cars with UNEQUAL vehicle-signature scores: the
+   * tesla_fleet car `cfa` (inserted FIRST) owns TWO distinctive signature hits
+   * (`_odometer` + `_shift_state` — both non-generic suffixes, matched by the
+   * anchored `endsWith('_' + suffix)` rule), the tesla_custom car `ccb` owns
+   * ONE (`_odometer`); its `sensor.ccb_battery` scores 0 (`battery` is not a
+   * signature suffix — `battery_level` is) and resolves ONLY via the
+   * tesla_custom alias (battery_level → sensor.battery). Entity counts are
+   * EQUAL (2 each) and the higher-scoring car is inserted FIRST, so neither
+   * the count tier nor stable-sort insertion order can mask a broken override
+   * tier: on the pre-16.2 sort (score first) cfa wins regardless of override.
+   */
+  function unequalCarsHass(): HomeAssistant {
+    const entities: Record<string, any> = {
+      'sensor.cfa_odometer': { entity_id: 'sensor.cfa_odometer', platform: 'tesla_fleet', device_id: 'cfa' },
+      'sensor.cfa_shift_state': { entity_id: 'sensor.cfa_shift_state', platform: 'tesla_fleet', device_id: 'cfa' },
+      'sensor.ccb_odometer': { entity_id: 'sensor.ccb_odometer', platform: 'tesla_custom', device_id: 'ccb' },
+      'sensor.ccb_battery': { entity_id: 'sensor.ccb_battery', platform: 'tesla_custom', device_id: 'ccb' },
+    };
+    const states: Record<string, any> = {};
+    for (const id of Object.keys(entities)) states[id] = { entity_id: id, state: '1' };
+    return makeHass({
+      entities,
+      devices: {
+        cfa: { name: 'cfa', manufacturer: 'Tesla' },
+        ccb: { name: 'ccb', manufacturer: 'Tesla' },
+      },
+      states,
+    });
+  }
+
+  describe('AC1 — the override steers among UNEQUAL-score cars (red-first)', () => {
+    test('integration: tesla_custom picks the LOWER-scoring tesla_custom car and its aliases apply to IT', () => {
+      // RED before the 16.2 reorder: the score-first sort picked cfa (2 hits > 1)
+      // no matter the override, so battery_level received the DEAD alias guess
+      // against the A slug (sensor.cfa_battery — nothing resolves there) and
+      // odometer landed on the wrong device (sensor.cfa_odometer). After the
+      // reorder: shaped ties (both cars >0) → tier 2 steers onto ccb.
+      const resolved = resolveEntities(unequalCarsHass(), cfg({ integration: 'tesla_custom' }));
+      // The divergent aliased key resolves to the B-car's REAL entity…
+      expect(resolved.battery_level).toBe('sensor.ccb_battery');
+      // …and a shared key resolves on the SAME B device (device-selection proof).
+      expect(resolved.odometer).toBe('sensor.ccb_odometer');
+    });
+
+    test('WITHOUT the override the higher-scoring car wins on the SAME fixture (tier 2 inert)', () => {
+      // Green before AND after the reorder: shaped ties at >0, the override tier
+      // is inert with no override, and score DESC decides — pinning tier-2
+      // inertness on the exact fixture where tier 2 CAN steer (the byte-identity
+      // half of AC1's fixture).
+      const resolved = resolveEntities(unequalCarsHass(), cfg());
+      expect(resolved.odometer).toBe('sensor.cfa_odometer');
+    });
+  });
+
+  /**
+   * AC2 guard fixture: a vehicle-shaped tesla_fleet car (score 1 via its
+   * odometer) + a tesla_custom-platform POWERWALL owning MORE entities (4 > 1),
+   * every one score-0 by NAME SHAPE, not by luck: `_battery_power` /
+   * `_solar_power` / `_grid_power` suffix-strip to canonicals absent from the
+   * signature set, and the bare `sensor.pw_power` strips to the EXCLUDED
+   * generic `power` (mirroring the AC3a-hardening fixture) — so "the Powerwall
+   * scores 0" is guaranteed, not incidental to fixture naming.
+   */
+  function carPlusOverridePowerwall(): HomeAssistant {
+    const entities: Record<string, any> = {
+      'sensor.car_odometer': { entity_id: 'sensor.car_odometer', platform: 'tesla_fleet', device_id: 'car1' },
+      'sensor.pw_power': { entity_id: 'sensor.pw_power', platform: 'tesla_custom', device_id: 'pw1' },
+      'sensor.pw_battery_power': { entity_id: 'sensor.pw_battery_power', platform: 'tesla_custom', device_id: 'pw1' },
+      'sensor.pw_solar_power': { entity_id: 'sensor.pw_solar_power', platform: 'tesla_custom', device_id: 'pw1' },
+      'sensor.pw_grid_power': { entity_id: 'sensor.pw_grid_power', platform: 'tesla_custom', device_id: 'pw1' },
+    };
+    const states: Record<string, any> = {};
+    for (const id of Object.keys(entities)) states[id] = { entity_id: id, state: '1' };
+    return makeHass({
+      entities,
+      devices: {
+        car1: { name: 'car', manufacturer: 'Tesla' },
+        pw1: { name: 'pw', manufacturer: 'Tesla' },
+      },
+      states,
+    });
+  }
+
+  describe('AC2 — the guard tier holds: the override steers among CARS, never to energy hardware', () => {
+    test('a score-0 Powerwall owning the override platform still loses to the car', () => {
+      // GREEN today (the score tier picks the car) AND after the correct reorder
+      // (tier 1 does) — this row's value is that it is RED under the NAIVE wrong
+      // reorder (override-platform placed ABOVE vehicle-shaped), which is exactly
+      // the mis-implementation it fences. The override's dialect still governs
+      // resolution downstream (the documented 14.2 AC3c mis-config semantics —
+      // unasserted here; AC3c pins it).
+      const resolved = resolveEntities(
+        carPlusOverridePowerwall(),
+        cfg({ integration: 'tesla_custom' })
+      );
+      expect(resolved.odometer).toBe('sensor.car_odometer');
+    });
+  });
+
+  describe('AC3b — the all-score-0 + override pin (previously uncovered)', () => {
+    /**
+     * NO car at all: two score-0 ENERGY devices on different platforms (the
+     * 14.2 splitHousehold name shapes, proven score-0 there). The tesla_fleet
+     * device `ea` is inserted FIRST and owns MORE entities (3 > 2), so the
+     * count tier / insertion order alone would pick it — only the override
+     * tier selects `eb`. The outcome is identical before and after the 16.2
+     * reorder (today: score-tie-everywhere → override; after:
+     * shaped-tie-everywhere → override) — now positively pinned instead of
+     * assumed.
+     */
+    function twoEnergyDevicesHass(): HomeAssistant {
+      const entities: Record<string, any> = {
+        'sensor.ea_battery_power': { entity_id: 'sensor.ea_battery_power', platform: 'tesla_fleet', device_id: 'ea' },
+        'sensor.ea_solar_power': { entity_id: 'sensor.ea_solar_power', platform: 'tesla_fleet', device_id: 'ea' },
+        'sensor.ea_grid_power': { entity_id: 'sensor.ea_grid_power', platform: 'tesla_fleet', device_id: 'ea' },
+        'sensor.eb_load_power': { entity_id: 'sensor.eb_load_power', platform: 'tesla_custom', device_id: 'eb' },
+        'sensor.eb_percentage': { entity_id: 'sensor.eb_percentage', platform: 'tesla_custom', device_id: 'eb' },
+      };
+      const states: Record<string, any> = {};
+      for (const id of Object.keys(entities)) states[id] = { entity_id: id, state: '1' };
+      return makeHass({
+        entities,
+        devices: {
+          ea: { name: 'ea', manufacturer: 'Tesla' },
+          eb: { name: 'eb', manufacturer: 'Tesla' },
+        },
+        states,
+      });
+    }
+
+    test('integration: tesla_custom selects the tesla_custom energy device (score-tie ≡ shaped-tie override)', () => {
+      const resolved = resolveEntities(twoEnergyDevicesHass(), cfg({ integration: 'tesla_custom' }));
+      // Device-scoped proof: battery_level falls to the tesla_custom alias GUESS
+      // against the SELECTED device's slug — sensor.eb_battery (eb owns no
+      // battery entity, so the resolver's step-6 alias-guess fallback names the
+      // device it selected). sensor.ea_battery would mean count/insertion won.
+      expect(resolved.battery_level).toBe('sensor.eb_battery');
+    });
+  });
+});
