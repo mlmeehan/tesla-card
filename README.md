@@ -87,9 +87,14 @@ matching **My Home** scene.
   controls): a Powerwall / Wall Connector exposed by `tesla_fleet` and/or the
   core [`powerwall`](https://www.home-assistant.io/integrations/powerwall/)
   integration.
-- Other Tesla integrations (`tesla_custom`, TeslaMate, …) are **not
-  supported** — entity resolution targets the Fleet / Teslemetry naming.
-  Manual [entity overrides](#entity-overrides-escape-hatch) may get partial
+- [`tesla_custom`](https://github.com/alandtse/tesla) has first-class dialect
+  support — entity aliases + boolean-charging classification, verified
+  against the integration's source and synthetic fixtures, **not yet against
+  a live install**
+  ([report differences](https://github.com/mlmeehan/tesla-card/issues)).
+- Other Tesla integrations (TeslaMate, …) are **not supported** — entity
+  resolution targets the Fleet / Teslemetry / `tesla_custom` naming. Manual
+  [entity overrides](#entity-overrides-escape-hatch) may get partial
   results, but that path is untested.
 
 ## Installation
@@ -199,7 +204,7 @@ cell, and the rows marked *(scene)* only take effect there.
 | `appearance`             | map          | _auto_        | Card-only light/dark theme override — see [Theming](#theming).                                                                                                           |
 | `device`                 | string       | _auto_        | Vehicle device id or name, if you have more than one Tesla.                                                                                                               |
 | `prefix`                 | string       | _auto_        | Force the entity-id prefix slug (e.g. `model_y`). Rarely needed.                                                                                                          |
-| `integration`            | string       | _auto_        | Force the integration dialect (`tesla_fleet` / `teslemetry`). Auto-detected; rarely needed.                                                                               |
+| `integration`            | string       | _auto_        | Force the integration dialect (`tesla_fleet` / `teslemetry` / `tesla_custom`). Auto-detected; rarely needed.                                                                               |
 | `entities`               | map          | _auto_        | Per-key entity overrides — see [Entity overrides](#entity-overrides-escape-hatch).                                                                                       |
 | `default_panel`          | string       | `charging`    | One of `climate`, `charging`, `energy`, `closures`, `tires`, `location`, `media`.                                                                                         |
 | `variant`                | string       | `full`        | `full` or `compact` — a condensed hero for narrow columns. Presentation-only: sections still follow their own `hide_*` switches.                                                                                 |
@@ -466,8 +471,13 @@ default, fully auto-detected scene.
 - **Every entity shows "— not found"** — confirm the `tesla_fleet` /
   Teslemetry integration is set up and has entities, then re-run the wizard's
   **Detect** step; with more than one Tesla, set `device:`.
-- **On `tesla_custom` or TeslaMate?** Those integrations aren't supported —
-  entity resolution targets the Fleet / Teslemetry naming (see
+- **On `tesla_custom`?** Supported — entities resolve through the card's
+  dialect aliases automatically (source-verified + synthetic fixtures, not
+  yet a live install). If a key shows "—", fix it with the editor's
+  **remap** (or `entities:` in YAML) and
+  [open an issue](https://github.com/mlmeehan/tesla-card/issues).
+- **On TeslaMate?** Not supported — entity resolution targets the
+  Fleet / Teslemetry / `tesla_custom` naming (see
   [Requirements](#requirements)).
 - **A few entities show ⚠ or "—"** — those are named unusually in your install
   (hand-renamed, or an HA server language that localises entity ids); fix just
