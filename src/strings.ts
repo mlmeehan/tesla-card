@@ -700,6 +700,6 @@ export const STRINGS = {
   // copy, so centralized here for single-sourcing.
   card: {
     name: 'Tesla Card',
-    description: 'A Tesla-app-inspired vehicle card for Tesla Fleet / Teslemetry.',
+    description: 'A Tesla-app-inspired vehicle card for Tesla Fleet / Teslemetry / Tessie.',
   },
 } as const;
