@@ -160,7 +160,7 @@ The demo harness can render your layers with no Home Assistant:
    `highlight.webp`, `paintmask.png` (this folder is gitignored — your art stays
    out of the repo).
 2. `npm run build && npm run demo`, then open the demo with, e.g.,
-   `?recolor=1&paint=Deep%20Blue` — or sweep colours by changing `paint=`.
+   `?recolor=1&paint=blue` — or sweep colours by changing `paint=`.
 
 Tune `shade`/`highlight` and re-export until it reads right across a few very
 different colours (white, black, red, blue). If white looks flat, your `shade`
