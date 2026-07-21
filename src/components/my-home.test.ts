@@ -2119,20 +2119,20 @@ describe('Story 9.2 — hide a present node at the model/binding seam (hidden ==
 
   // AC5 has TWO _presentKey components: the present-energy-role set AND `veh:`. The
   // existing AC5 tests exercise the energy-role half (hide/unhide solar). This pins
-  // the vehicle half — hiding the Vehicle flips `vehiclePresent`, which must also fire
+  // the vehicle half — hiding the Vehicle flips the `veh:` component, which must also fire
   // the present-set reflow EXACTLY once (never per-tick) on the config change.
   test('AC5 — hiding the VEHICLE across a config change fires the present-set reflow exactly once (the veh: key path)', async () => {
     const el = await mount(makeHass(states(awakeFx)));
     expect(vehCell(el)).not.toBeNull(); // present to begin with
     const spy = vi.spyOn(el as unknown as { _scheduleGeometry: () => void }, '_scheduleGeometry');
-    el.setConfig(hideCfg('vehicle')); // flips _vehiclePresent ⇒ the `veh:` _presentKey component changes
+    el.setConfig(hideCfg('vehicle')); // empties _vehicleInstanceCells ⇒ the `veh:` _presentKey component changes
     await el.updateComplete;
     expect(spy).toHaveBeenCalledTimes(1); // ONE recompute on reflow
     expect(vehCell(el)).toBeNull();
   });
 
   // The two seams (energy-node hide at the binding/model layer; vehicle hide at the
-  // `_vehiclePresent` gate) must COMPOSE — a user who hides their car AND their solar
+  // `_vehicleInstanceCells` gate) must COMPOSE — a user who hides their car AND their solar
   // in one list gets both dropped, each via its own seam, neither interfering.
   test('AC1/AC2 compose — hide:["vehicle","solar"] drops BOTH the vehicle cell and the solar energy cell together', async () => {
     const el = await mount(makeHass(states(awakeFx)), hideCfg('vehicle', 'solar'));
