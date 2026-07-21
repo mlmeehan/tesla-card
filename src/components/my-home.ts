@@ -956,7 +956,7 @@ export class TcMyHome extends LitElement implements LovelaceCard {
    * The Scene's hidden-node set from `energy.nodes.hide` (Story 9.2). Defensive
    * (FR-24): a non-array / garbage `hide` degrades to "nothing hidden", never throws.
    * Energy-role members flow to the binding seam (→ `present:false`); `'vehicle'` is
-   * honored in {@link _vehiclePresent}; unknown strings are inert at both seams. The
+   * honored in {@link _vehicleInstanceCells}; unknown strings are inert at both seams. The
    * list is passed THROUGH to `bindFlowModel` unfiltered — the binding only acts on
    * `ENERGY_ROLES` members, so non-energy entries no-op there by construction.
    */
@@ -1014,8 +1014,8 @@ export class TcMyHome extends LitElement implements LovelaceCard {
    * config change (same present-set, new order) flips the key and trips EXACTLY ONE
    * rAF-coalesced reflow (AC5), keeping the bus tap walk + legs in sync with the moved
    * cards. The source row orders over `SOURCE_ROW`; the load row orders over
-   * {@link LOAD_ROW_WITH_VEHICLE} with `'vehicle'` present iff {@link _vehiclePresent}
-   * (which already honors 9.2 hide — so "hide wins over order" falls out for free).
+   * {@link LOAD_ROW_WITH_VEHICLE} with `'vehicle'` present iff {@link _vehicleInstanceCells}
+   * yields cells (which already honors 9.2 hide — so "hide wins over order" falls out for free).
    */
   private _orderedRows(cfg: TeslaCardConfig): { source: SceneCell[]; load: SceneCell[] } {
     const present = new Set<Role>(this._model.nodes.filter((n) => n.present).map((n) => n.role));
