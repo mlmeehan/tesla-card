@@ -496,18 +496,32 @@ export class TcMyHome extends LitElement implements LovelaceCard {
     // The Solar card's vignette reads HA CORE entities (not energy function-slugs).
     const w = this._config?.weather;
     ids.push(w?.entity ?? 'weather.home', w?.sun ?? 'sun.sun');
-    // Story 8.5 (the 6.5 full-union lesson): the vehicle cell reads these vehicle
-    // ids — gating on the energy `*_power` union ALONE would FREEZE the cell (and it
-    // would never reflow when the car appears/disappears). Add exactly the ids the
-    // cell surfaces; keep truly-unrelated vehicle entities (climate/doors/media…) OUT
-    // (they don't render in the Scene) so the AC3c anti-thrash invariant still holds.
+    // Story 8.5 (the 6.5 full-union lesson) + Story 17.1 (the COMPLETED union):
+    // the vehicle cell reads these vehicle ids — gating on the energy `*_power`
+    // union ALONE would FREEZE the cell (and it would never reflow when the car
+    // appears/disappears). The union is EVERY entity the embedded hero surface
+    // reads: the four summary ids + `charge_cable` (the Story-15.1 cable-
+    // corroboration input to `_chargeVisual`) + the Story-11.2 security-chip /
+    // aperture closure set (`lock`, the four doors, `windows`) — a cable-only
+    // or lock-only flip re-renders the embed instantly, never on the next
+    // coincidentally-watched tick. Truly-unrelated vehicle entities
+    // (climate/media…) stay OUT (they don't render in the Scene) so the AC3c
+    // anti-thrash invariant still holds. ABSENT-dialect ids are the `''`
+    // sentinel and contribute no gate (sliceChanged skips falsy ids).
     const cfg = this._resolvedConfig ?? this._config;
     if (cfg) {
       ids.push(
         entityId(cfg, 'battery_level'),
         entityId(cfg, 'charging_status'),
         entityId(cfg, 'battery_range'),
-        entityId(cfg, 'status')
+        entityId(cfg, 'status'),
+        entityId(cfg, 'charge_cable'),
+        entityId(cfg, 'lock'),
+        entityId(cfg, 'door_fl'),
+        entityId(cfg, 'door_fr'),
+        entityId(cfg, 'door_rl'),
+        entityId(cfg, 'door_rr'),
+        entityId(cfg, 'windows')
       );
     }
     // Story 9.7: `_energy` is the BASE resolution (covers instance #1 + the global
@@ -1575,8 +1589,10 @@ export class TcMyHome extends LitElement implements LovelaceCard {
    * HORIZONTAL bus + wrapped band ONLY (the ≤540px phone reflow stacks single-column with
    * no channel offset, so there is no overflow leg to route — mirrors the `.long` horiz-gate).
    * For each overflow card (the cells past {@link WRAP_MAX_PER_ROW} in a band) it:
-   *   1. derives the leg's along-axis x ANALYTICALLY as the card's channel centre, from the
-   *      PRIMARY sub-row anchors + the CSS `(track+80)/2` pitch — NOT the overflow card's own
+   *   1. derives the leg's along-axis x ANALYTICALLY as the card's channel centre, PER-GAP
+   *      from the PRIMARY sub-row anchors (Story 17.3/D1: the midpoint of ITS adjacent
+   *      primary centres, beyond-last stepped by the LAST actual gap — never an averaged
+   *      pitch, so non-uniform primary spacing keeps leg == card) — NOT the overflow card's own
    *      (post-mount-widen-stale) measured centre (DSD-2/AC3). Leg and card agree by
    *      construction, so the stale-anchor defect the README shot exposed cannot recur. (The
    *      primary sub-row does NOT move on the `--subrow-offset`/`--scene-track` publish that
@@ -1625,16 +1641,19 @@ export class TcMyHome extends LitElement implements LovelaceCard {
         .sort((a, b) => cX(a) - cX(b));
       if (primary.length < 2) continue; // need ≥2 primaries to derive the channel pitch
       const pCentres = primary.map(cX);
-      const pitch = (pCentres[pCentres.length - 1] - pCentres[0]) / (pCentres.length - 1);
+      // Story 17.3 (D1): the per-gap widths between ADJACENT primary centres (length ≥ 1 by
+      // the ≥2-primaries guard above). The retired first/last averaged pitch detached a leg
+      // from its card the moment a middle primary sat off the uniform grid (13.1 Defer-D1).
+      const gaps = pCentres.slice(1).map((c, j) => c - pCentres[j]);
       // Every card box in the band (obstacles for the clearance test — incl. sibling overflow).
       const bandRects = visible.map((c) => anchors[c.id]).filter((r): r is RectLike => !!r);
       // The clear vertical LANES a routed leg may drop through: the between-primary channel
       // centres (the 80px gaps — clear by construction) then the band's always-clear outer
-      // edges (half a pitch beyond the outermost card).
+      // edges (half the LOCAL first/last gap beyond the outermost card — per-gap, like startX).
       const betweenLanes = pCentres.slice(0, -1).map((c, j) => (c + pCentres[j + 1]) / 2);
       const outerLanes = [
-        Math.min(...primary.map((r) => r.left)) - pitch / 2,
-        Math.max(...primary.map(rightOf)) + pitch / 2,
+        Math.min(...primary.map((r) => r.left)) - gaps[0] / 2,
+        Math.max(...primary.map(rightOf)) + gaps[gaps.length - 1] / 2,
       ];
       const bandCentre = (pCentres[0] + pCentres[pCentres.length - 1]) / 2;
 
@@ -1645,9 +1664,15 @@ export class TcMyHome extends LitElement implements LovelaceCard {
       overflowCells.forEach((c, i) => {
         const self = anchors[c.id];
         if (!self) return; // no anchor ⇒ leave to _legs' measured straight fallback
-        // The channel centre this overflow card sits on = primary[0] + half a pitch + i pitches
-        // (the CSS `padding-left:(track+80)/2` + `i·(track+gap)`), derived from PRIMARY centres.
-        const startX = pCentres[0] + pitch / 2 + i * pitch;
+        // The channel centre this overflow card sits on, PER-GAP from the PRIMARY centres
+        // (17.3/D1): in-gap = the midpoint of ITS adjacent primary centres; beyond the last
+        // primary = the last centre stepped by the LAST actual gap. Under uniform pitch this
+        // reduces algebraically to the retired `p0 + pitch/2 + i·pitch` (the CSS
+        // `padding-left:(track+80)/2` + `i·(track+gap)`) — the AC3 uniform pins prove it.
+        const startX =
+          i < gaps.length
+            ? (pCentres[i] + pCentres[i + 1]) / 2
+            : pCentres[pCentres.length - 1] + (i - gaps.length + 0.5) * gaps[gaps.length - 1];
         const dir = cross > cY(self) ? 1 : -1; // +1 trunk below (source) / -1 above (load)
         const nearY = dir > 0 ? bottomOf(self) : self.top;
         const clear = !bandRects.some((r) => r !== self && piercesVert(startX, nearY, cross, r));

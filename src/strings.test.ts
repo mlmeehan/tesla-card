@@ -292,3 +292,14 @@ describe('centralized strings — voice contract (Story 2.5)', () => {
     }
   });
 });
+
+describe('Story 17.4 — dialect positioning (picker copy)', () => {
+  test('card-picker description bills Fleet / Teslemetry / Tessie verbatim (D-LF-1 tier ruling)', () => {
+    // The ruled billing surface: Tessie named; tesla_custom / bare `tesla` /
+    // TeslaMate deliberately NOT billed here. Exact equality enforces the
+    // boundary — any wording drift must come back through this pin.
+    expect(STRINGS.card.description).toBe(
+      'A Tesla-app-inspired vehicle card for Tesla Fleet / Teslemetry / Tessie.'
+    );
+  });
+});

@@ -2,6 +2,7 @@ import type { HomeAssistant, TeslaCardConfig } from '../types';
 import { DEFAULT_ENTITIES, type EntityKey } from '../const';
 import { TESLA_PLATFORMS } from './platforms';
 import {
+  collapseDialect,
   detectDialect,
   DIALECT_ENTITY_ALIASES,
   DIALECT_ABSENT,
@@ -278,7 +279,8 @@ function detectVehicle(
  * Returns the collapsed `Integration`, deliberately NOT a `DialectReport`:
  * everywhere else `report.integration` means the UNcollapsed tie-break pick (with
  * `ambiguous` flagging it) — silently pre-collapsing that field would invite a
- * future consumer to misread `ambiguous: true` beside an already-collapsed value.
+ * future consumer to misread `ambiguous: true` beside an already-collapsed value
+ * (the collapse machine: `collapseDialect`, `data/dialect.ts`).
  *
  * `!hass` (Lovelace sets config before hass, so the parent stamp path DOES run
  * here) returns WITHOUT touching `detectVehicle` — which dereferences
@@ -299,25 +301,25 @@ export function detectVehicleDialect(
 }
 
 /**
- * The ONE ambiguity-guard collapse over the scoped probe — single-sourced so the
- * parent stamp ({@link detectVehicleDialect}) and the resolver
- * ({@link resolveEntities}) can never drift [Story 15.1 AC3b]. Preserves the
- * Story-14.2 empty-vs-OMIT scope rule exactly: empty `entityIds` ⇒ the scope is
- * OMITTED (registry-wide probe), never an empty `Set` (which would force a
- * zero-count `source:'default'` on registry-less installs — the regression 14.2
- * explicitly guarded against).
+ * The ambiguity-guard collapse applied over the SCOPED probe — single-sourced so
+ * the parent stamp ({@link detectVehicleDialect}) and the resolver
+ * ({@link resolveEntities}) can never drift [Story 15.1 AC3b]. The collapse RULE
+ * itself lives in `dialect.ts` (`collapseDialect`, Story 17.2 — shared with
+ * `adapterFor`'s dispatch, so even unstamped callers collapse identically); this
+ * helper remains the single place the resolver + stamp apply it over the scoped
+ * probe. Preserves the Story-14.2 empty-vs-OMIT scope rule exactly: empty
+ * `entityIds` ⇒ the scope is OMITTED (registry-wide probe), never an empty `Set`
+ * (which would force a zero-count `source:'default'` on registry-less installs —
+ * the regression 14.2 explicitly guarded against).
  */
 function effectiveDialect(
   hass: HomeAssistant | undefined,
   config: TeslaCardConfig,
   entityIds: readonly string[]
 ): Integration {
-  const report = detectDialect(
-    hass,
-    config,
-    entityIds.length ? new Set(entityIds) : undefined
+  return collapseDialect(
+    detectDialect(hass, config, entityIds.length ? new Set(entityIds) : undefined)
   );
-  return report.ambiguous ? 'tesla_fleet' : report.integration;
 }
 
 /**
@@ -371,7 +373,9 @@ export function resolveEntities(
   //
   // Story 15.1: the scoped probe + collapse live in `effectiveDialect` (single-
   // sourced) so the parent's `detectVehicleDialect` stamp can never disagree with
-  // the dialect this loop aliases by.
+  // the dialect this loop aliases by. Story 17.2: the collapse MACHINE is
+  // `collapseDialect` (`data/dialect.ts`), applied dispatch-wide — `adapterFor`
+  // collapses identically, so unstamped callers agree under ambiguity too.
   const integration = effectiveDialect(hass, config, entityIds);
   const aliases = DIALECT_ENTITY_ALIASES[integration];
   const absent = DIALECT_ABSENT[integration];

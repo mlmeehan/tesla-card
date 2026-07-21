@@ -712,6 +712,146 @@ describe('Story 15.1 — detectVehicleDialect (effective vehicle dialect)', () =
   });
 });
 
+// ── Story 17.2 — unstamped dispatch agrees with the resolver's collapse ──────
+//
+// D-LF-1 (architecture.md D2 amendment (b)): `adapterFor` now dispatches through
+// the same exported `collapseDialect` the resolver's `effectiveDialect` returns
+// through, so under ambiguity BOTH answer the deterministic-conservative
+// `tesla_fleet` — never the tie-break pick.
+describe('Story 17.2 — adapterFor agreement with detectVehicleDialect (the collapse, dispatch-wide)', () => {
+  /** Same-device two-platform fixture (the 15.1 same-device mold, rebuilt locally
+   *  with distinct ids — never reach into another describe's closure): BOTH the
+   *  vehicle-scoped probe and the registry-wide probe are ambiguous over these
+   *  entities, with tie-break tesla_custom (2:1). */
+  function sameDeviceHass(): HomeAssistant {
+    const entities: Record<string, any> = {
+      'sensor.sd_battery': { entity_id: 'sensor.sd_battery', platform: 'tesla_custom', device_id: 'sd1' },
+      'sensor.sd_range': { entity_id: 'sensor.sd_range', platform: 'tesla_custom', device_id: 'sd1' },
+      'sensor.sd_odometer': { entity_id: 'sensor.sd_odometer', platform: 'tesla_fleet', device_id: 'sd1' },
+    };
+    return makeHass({
+      entities,
+      devices: { sd1: { name: 'sd', manufacturer: 'Tesla' } },
+      states: {},
+    });
+  }
+
+  test("(c) agreement pin: unstamped adapterFor.integration === detectVehicleDialect — both 'tesla_fleet' (collapsed), never the tie-break 'tesla_custom'", () => {
+    const hass = sameDeviceHass();
+    // In-body controls: the registry-wide probe IS ambiguous AND its raw
+    // tie-break pick IS the title's tesla_custom — pinned here, not outsourced
+    // to the 15.1 rows above, so a tie-break refactor toward fleet cannot
+    // leave this agreement pin green-but-vacuous [review 17.2].
+    const report = detectDialect(hass, cfg());
+    expect(report.ambiguous).toBe(true);
+    expect(report.integration).toBe('tesla_custom');
+    const dispatched = adapterFor(hass, cfg()).integration;
+    const stamped = detectVehicleDialect(hass, cfg());
+    expect(dispatched).toBe(stamped);
+    expect(dispatched).toBe('tesla_fleet');
+    expect(stamped).toBe('tesla_fleet');
+  });
+
+  // ── The SCOPE boundary, pinned as DOCUMENTED behaviour (not a defect) ──────
+  //
+  // `adapterFor` stays registry-wide UNSCOPED by 14.2 design ("which dialects
+  // exist anywhere" — the scope is passed DOWN as a parameter only by the
+  // resolver). So on a SPLIT-DEVICE household the unstamped dispatch and the
+  // vehicle-scoped resolver answer different QUESTIONS: `detectVehicleDialect`
+  // = the CAR's dialect (scoped, unambiguous — 'tesla_custom' here); unstamped
+  // `adapterFor` = the registry-wide posture, deterministically 'tesla_fleet'
+  // under ambiguity. Pre-17.2 that unstamped answer was a majority-dependent
+  // COIN FLIP: car-majority households happened to get the car's dialect,
+  // PW-majority households (the realistic shape — energy products expose more
+  // sensors) got fleet. The collapse replaces the coin flip with the resolver's
+  // guard posture: under ambiguity, never guess. The STAMP (15.1) is the
+  // mechanism that carries the scoped car dialect to components — do NOT "fix"
+  // the residual divergence by scoping adapterFor (that would re-run
+  // detectVehicle per unstamped call and change the editor-probe semantics
+  // 14.2 deliberately preserved).
+
+  /** CAR-majority split household: the tesla_custom CAR owns MORE entities
+   *  (5 > 3; vehicle-shaped via its odometer), the tesla_fleet Powerwall fewer —
+   *  the inverse of the 15.1 splitHass shape. */
+  function carMajorityHass(): HomeAssistant {
+    const spec: Record<string, { platform: string; device: string }> = {
+      'sensor.car_battery': { platform: 'tesla_custom', device: 'car1' },
+      'sensor.car_range': { platform: 'tesla_custom', device: 'car1' },
+      'sensor.car_odometer': { platform: 'tesla_custom', device: 'car1' },
+      'binary_sensor.car_charging': { platform: 'tesla_custom', device: 'car1' },
+      'sensor.car_temperature_inside': { platform: 'tesla_custom', device: 'car1' },
+      'sensor.pw_battery_power': { platform: 'tesla_fleet', device: 'pw1' },
+      'sensor.pw_solar_power': { platform: 'tesla_fleet', device: 'pw1' },
+      'sensor.pw_grid_power': { platform: 'tesla_fleet', device: 'pw1' },
+    };
+    const entities: Record<string, any> = {};
+    const states: Record<string, any> = {};
+    for (const [id, { platform, device }] of Object.entries(spec)) {
+      entities[id] = { entity_id: id, platform, device_id: device };
+      states[id] = { entity_id: id, state: '1' };
+    }
+    return makeHass({
+      entities,
+      devices: {
+        car1: { name: 'car', manufacturer: 'Tesla' },
+        pw1: { name: 'pw', manufacturer: 'Tesla' },
+      },
+      states,
+    });
+  }
+
+  /** PW-majority split household — the 15.1 `splitHass` LITERALS, rebuilt
+   *  locally (that helper is scoped inside its own describe's closure): the
+   *  tesla_fleet Powerwall owns MORE entities (4 > 3). */
+  function pwMajorityHass(): HomeAssistant {
+    const spec: Record<string, { platform: string; device: string }> = {
+      'sensor.car_battery': { platform: 'tesla_custom', device: 'car1' },
+      'sensor.car_odometer': { platform: 'tesla_custom', device: 'car1' },
+      'binary_sensor.car_charging': { platform: 'tesla_custom', device: 'car1' },
+      'sensor.pw_battery_power': { platform: 'tesla_fleet', device: 'pw1' },
+      'sensor.pw_solar_power': { platform: 'tesla_fleet', device: 'pw1' },
+      'sensor.pw_load_power': { platform: 'tesla_fleet', device: 'pw1' },
+      'sensor.pw_grid_power': { platform: 'tesla_fleet', device: 'pw1' },
+    };
+    const entities: Record<string, any> = {};
+    const states: Record<string, any> = {};
+    for (const [id, { platform, device }] of Object.entries(spec)) {
+      entities[id] = { entity_id: id, platform, device_id: device };
+      states[id] = { entity_id: id, state: '1' };
+    }
+    return makeHass({
+      entities,
+      devices: {
+        car1: { name: 'car', manufacturer: 'Tesla' },
+        pw1: { name: 'pw', manufacturer: 'Tesla' },
+      },
+      states,
+    });
+  }
+
+  test("car-majority split household: detectVehicleDialect 'tesla_custom' (scoped) while unstamped dispatch is 'tesla_fleet' (pre-17.2 the count tie-break coin-flipped it to 'tesla_custom')", () => {
+    const hass = carMajorityHass();
+    // Registry-wide the household IS ambiguous (both platforms present)…
+    expect(detectDialect(hass, cfg()).ambiguous).toBe(true);
+    // …the resolver/stamp answer stays the CAR's scoped, unambiguous dialect…
+    expect(detectVehicleDialect(hass, cfg())).toBe('tesla_custom');
+    // …while the unstamped registry-wide dispatch collapses. Different
+    // QUESTIONS, both honest — the stamp is what carries the car's dialect.
+    expect(adapterFor(hass, cfg()).integration).toBe('tesla_fleet');
+  });
+
+  test("PW-majority split household (the 15.1 splitHass literals): unstamped dispatch is 'tesla_fleet' — BY COLLAPSE now, no longer by count coincidence", () => {
+    const hass = pwMajorityHass();
+    expect(detectDialect(hass, cfg()).ambiguous).toBe(true);
+    // Same answer as the car-majority household — deterministic regardless of
+    // which side outnumbers (pre-17.2 this was green only because the PW side
+    // happened to outnumber the car 4:3).
+    expect(adapterFor(hass, cfg()).integration).toBe('tesla_fleet');
+    // The scoped resolver half is untouched by the collapse: still the car's.
+    expect(detectVehicleDialect(hass, cfg())).toBe('tesla_custom');
+  });
+});
+
 // ── Story 16.2 — override-steered device selection (guarded reorder) ─────────
 //
 // D-DSM-1 (2026-07-15; architecture.md D2 amendment (b)): detectVehicle's

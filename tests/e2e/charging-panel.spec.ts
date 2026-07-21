@@ -186,11 +186,22 @@ test.describe('AC4 — live charging cue derives from canonical charge state', (
     await expect(cue).toContainText('Charging');
   });
 
-  test('an asleep car never claims a false "Charging" — idle, cue dark', async ({ demo }) => {
-    await demo.open({ scenario: 'asleep' }); // charging_status unavailable
+  test('an asleep car reads "Asleep" — never a false connected state, cue dark (Story 17.1)', async ({
+    demo,
+  }) => {
+    // Story 17.1 UPDATED this row (its pre-change form asserted "Idle" and was
+    // the red-first e2e evidence): the panel now consults the SAME isAsleep
+    // predicate as the Hero, and the asleep word outranks even the
+    // `unavailable`→"Idle" short-circuit (the whole-card asleep posture,
+    // EXPERIENCE.md "Hero / whole card" — one rule, no split brain).
+    await demo.open({ scenario: 'asleep' }); // status 'off', charging_status unavailable
     const cue = demo.chargeStatusCue;
     await expect(cue).not.toHaveClass(/live/);
-    await expect(cue).toContainText('Idle');
+    await expect(cue).toHaveText('Asleep'); // normalized-exact: excludes every other word
+    // Belt-and-braces vs the words this row must never regress to.
+    await expect(cue).not.toContainText('Idle');
+    await expect(cue).not.toContainText('Parked');
+    await expect(cue).not.toContainText('Plugged-idle');
   });
 });
 
@@ -221,5 +232,71 @@ test.describe('Story 16.1 — tesla_custom charge words in the panel cue (shape 
     await expect(cue).not.toHaveClass(/live/);
     await expect(cue).toContainText('Parked');
     await expect(cue).not.toHaveText(/^(On|Off)$/);
+  });
+});
+
+// ── Story 17.1 (AC1/AC2/AC6) — env=tesla_custom renders the COMPLETE card ─────
+// The demo's toTeslaCustomShape now renames EVERY divergent alias key (not just
+// the charging triple) and deletes the ABSENT-key fleet twins, so battery /
+// charge controls / lock resolve for real under the flagship env.
+// SHAPE-asserting per the demo-env Testing rule — each awake/parked row was RED
+// against the pre-17.1 demo (the exact ledger symptom: "—" headline, disabled
+// Start-charging pill, disabled amps slider, dead lock signal). The asleep row
+// proves the Story-17.1 panel gate END-TO-END through the dialect path (the
+// derived binary_sensor.…_online 'off' drives isAsleep via the resolved
+// `status` alias).
+test.describe('Story 17.1 — tesla_custom renders the complete card (shape assertions)', () => {
+  test('awake: numeric battery headline — never the "—" dash-out', async ({ demo }) => {
+    await demo.open({ scenario: 'awake', env: 'tesla_custom' });
+    await expect(demo.chargeHeadline).toHaveText('72'); // sensor.…_battery resolves
+  });
+
+  test('awake: the Start/Stop pill and the amps slider are ENABLED (charge controls resolve)', async ({
+    demo,
+  }) => {
+    await demo.open({ scenario: 'awake', env: 'tesla_custom' });
+    await expect(demo.chargeStartPill).toBeEnabled(); // switch.…_charger resolves
+    // number.…_charging_amps resolves → the slider is live (focusable track, a
+    // real numeric value, no .disabled recipe).
+    const ampsTrack = demo.chargeSlider('Charge current').locator('.track');
+    await expect(ampsTrack).toHaveAttribute('tabindex', '0');
+    await expect(ampsTrack).toHaveAttribute('aria-valuenow', /^\d+$/);
+    await expect(ampsTrack).not.toHaveClass(/disabled/);
+  });
+
+  test('awake: the Time-to-full tile is PRESENT and honestly "—" — the timestamp is never mirrored-as-hours', async ({
+    demo,
+  }) => {
+    // Review 17.1: sensor.…_time_charge_complete carries an ISO TIMESTAMP under
+    // this dialect (AC2) — the panel's hours parse NaNs to the honest dash. Any
+    // digit in this tile means the demo mirrored the fleet HOURS value — the
+    // exact plausible-but-false "1h 30m" AC2 exists to prevent. This row is the
+    // ttf special-case's drift alarm (title-claim ⇒ body-assertion).
+    await demo.open({ scenario: 'awake', env: 'tesla_custom' });
+    const tile = demo.chargeStatTiles.filter({ hasText: 'Time to full' });
+    await expect(tile).toHaveCount(1); // resolves → present, never hidden
+    await expect(tile).toContainText('—');
+    await expect(tile).not.toContainText(/\d/); // never a mirrored "Nh Nm"
+  });
+
+  test('parked: the lock signal is PRESENT — hero reads "Locked", the Lock quick-action reads locked (lock.…_doors)', async ({
+    demo,
+  }) => {
+    // Pre-17.1 the lock alias guess dead-ended → the hero status carried no
+    // lock word and the Lock quick-action sat disabled, aria-pressed 'false'.
+    await demo.open({ scenario: 'parked', env: 'tesla_custom' });
+    await expect(demo.heroStatus).toContainText('Locked'); // the hero lock word, via lock.…_doors
+    const lockPill = demo.card.getByRole('button', { name: 'Lock' });
+    await expect(lockPill).toBeEnabled();
+    await expect(lockPill).toHaveAttribute('aria-pressed', 'true');
+  });
+
+  test('asleep × tesla_custom: the cue reads "Asleep" through the dialect path, cue dark', async ({
+    demo,
+  }) => {
+    await demo.open({ scenario: 'asleep', env: 'tesla_custom' });
+    const cue = demo.chargeStatusCue;
+    await expect(cue).not.toHaveClass(/live/);
+    await expect(cue).toHaveText('Asleep');
   });
 });

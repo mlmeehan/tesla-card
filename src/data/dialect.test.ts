@@ -19,6 +19,7 @@ import {
   DIALECT_ABSENT,
   adapterFor,
   classifyChargeState,
+  collapseDialect,
   detectDialect,
   makeAdapter,
   normalizeChargingState,
@@ -26,6 +27,7 @@ import {
   normalizeLockState,
   type ChargingState,
   type DialectAdapter,
+  type DialectReport,
   type Integration,
 } from './dialect';
 import type { HomeAssistant, TeslaCardConfig } from '../types';
@@ -718,5 +720,131 @@ describe('Story 14.2 — detectDialect device scope', () => {
     const r = detectDialect(makeHass({ entities }), cfg({ integration: 'tesla_custom' }), new Set(pw));
     expect(r.integration).toBe('tesla_custom');
     expect(r.source).toBe('override');
+  });
+});
+
+// ── Story 17.2 — collapsed dispatch: adapterFor applies the resolver's guard ──
+//
+// D-LF-1 (architecture.md D2 amendment (b)): the ambiguity-guard collapse
+// (`ambiguous ⇒ 'tesla_fleet'`) is declared ONCE — `collapseDialect`, beside the
+// `DialectReport` type — and applied at DISPATCH: `adapterFor` and the resolver's
+// `effectiveDialect` consume the same export, so a genuinely UNSTAMPED caller on
+// a ≥2-Tesla-platform registry can never classify with the tie-break pick the
+// resolver rejected. The report itself stays RAW (the AC1 rows above pin the
+// tie-break `integration` + surfaced `ambiguous`/`candidates` untouched — the
+// collapse is applied at consumption, never written into the report).
+describe('Story 17.2 — adapterFor dispatches the COLLAPSED dialect under ambiguity', () => {
+  /** The AC1(c) ambiguous registry shape: tesla_custom outnumbers tesla_fleet 7:2,
+   *  so the raw report's tie-break pick is tesla_custom. */
+  function ambiguousHass(): HomeAssistant {
+    return makeHass({
+      entities: entitiesOn([
+        { platform: 'tesla_fleet', count: 2 },
+        { platform: 'tesla_custom', count: 7 },
+      ]),
+    });
+  }
+
+  test("(a) an UNSTAMPED config on a ≥2-platform registry dispatches DIALECTS.tesla_fleet — 'tesla_fleet' by reference identity, never the tie-break pick", () => {
+    const hass = ambiguousHass();
+    // In-body controls for the title's claims: the probe IS ambiguous AND its
+    // raw tie-break pick IS tesla_custom — pinned here, not outsourced to the
+    // AC1(c) sibling row, so a tie-break refactor toward fleet cannot leave
+    // this row green with the collapse deleted [review 17.2].
+    const report = detectDialect(hass, cfg());
+    expect(report.ambiguous).toBe(true);
+    expect(report.integration).toBe('tesla_custom');
+    const adapter = adapterFor(hass, cfg());
+    expect(adapter.integration).toBe('tesla_fleet');
+    // Reference identity, not just the tag: each DIALECTS entry is a distinct
+    // makeAdapter object, so a wrong-object-same-tag regression cannot pass.
+    expect(adapter).toBe(DIALECTS.tesla_fleet);
+  });
+
+  test("(b) the behavioral half: the rejected dialect's capability map cannot leak — 'on' classifies 'unknown' (the fleet default), never 'charging'", () => {
+    // Pre-17.2 this dispatched DIALECTS.tesla_custom, whose boolean charging
+    // override maps 'on' → 'charging' — a surface classifying with a dialect the
+    // resolver rejected. Collapsed dispatch takes the fleet base map: 'unknown'.
+    expect(adapterFor(ambiguousHass(), cfg()).normalizeChargingState('on')).toBe('unknown');
+  });
+
+  test("fleet-ABSENT ambiguity still dispatches the bundled default — a tessie-majority registry with NO tesla_fleet collapses to DIALECTS.tesla_fleet, never a present candidate [review 17.2]", () => {
+    const hass = makeHass({
+      entities: entitiesOn([
+        { platform: 'tessie', count: 3 },
+        { platform: 'tesla_custom', count: 2 },
+      ]),
+    });
+    // In-body controls: ambiguous; raw tie-break = the count-winning PRESENT
+    // candidate (tessie); and tesla_fleet is genuinely absent from candidates.
+    const report = detectDialect(hass, cfg());
+    expect(report.ambiguous).toBe(true);
+    expect(report.integration).toBe('tessie');
+    expect(report.candidates).not.toContain('tesla_fleet');
+    // The collapse is candidates-blind: the bundled default wins even when no
+    // fleet entity exists — "decline to guess", never "prefer a present
+    // candidate" (distinguishes the ratified rule from that plausible rewrite).
+    const adapter = adapterFor(hass, cfg());
+    expect(adapter).toBe(DIALECTS.tesla_fleet);
+    expect(adapter.integration).toBe('tesla_fleet');
+  });
+
+  // ── collapseDialect contract pins (the declared-once machine itself) ───────
+
+  test('identity for every unambiguous report — override/default/probe alike, integration returned VERBATIM', () => {
+    const sources: Array<DialectReport['source']> = ['override', 'probe', 'default'];
+    for (const integration of REAL_INTEGRATIONS) {
+      for (const source of sources) {
+        // Candidates shaped per source (override → [override], default → [],
+        // probe → [integration]) — the collapse must NEVER re-derive from them.
+        const report: DialectReport = {
+          integration,
+          source,
+          ambiguous: false,
+          candidates: source === 'default' ? [] : [integration],
+        };
+        expect(
+          collapseDialect(report),
+          `collapseDialect identity for ${integration}/${source}`
+        ).toBe(integration);
+      }
+    }
+  });
+
+  test("ambiguous → 'tesla_fleet' for EVERY tie-break integration value (incl. fleet itself)", () => {
+    for (const integration of REAL_INTEGRATIONS) {
+      const report: DialectReport = {
+        integration,
+        source: 'probe',
+        ambiguous: true,
+        candidates: byUnion(integration),
+      };
+      expect(
+        collapseDialect(report),
+        `collapseDialect ambiguous collapse for tie-break ${integration}`
+      ).toBe('tesla_fleet');
+    }
+    /** A ≥2-member candidate list containing `i` (ambiguous reports carry >1). */
+    function byUnion(i: Integration): Integration[] {
+      return i === 'tesla_fleet' ? ['tesla_fleet', 'tessie'] : ['tesla_fleet', i];
+    }
+  });
+
+  test('purity: a FROZEN report neither throws nor mutates — fields unchanged (strict-mode write would throw; freezing IS the pin)', () => {
+    const report: DialectReport = {
+      integration: 'tesla_custom',
+      source: 'probe',
+      ambiguous: true,
+      candidates: ['tesla_fleet', 'tesla_custom'],
+    };
+    Object.freeze(report);
+    Object.freeze(report.candidates);
+    expect(() => collapseDialect(report)).not.toThrow();
+    expect(collapseDialect(report)).toBe('tesla_fleet');
+    // The report stays RAW (guardrail (c)): tie-break integration + ambiguity
+    // + candidates all byte-unchanged after the collapse consulted them.
+    expect(report.integration).toBe('tesla_custom');
+    expect(report.ambiguous).toBe(true);
+    expect(report.candidates).toEqual(['tesla_fleet', 'tesla_custom']);
   });
 });

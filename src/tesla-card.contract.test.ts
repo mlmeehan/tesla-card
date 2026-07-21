@@ -141,6 +141,7 @@ describe('AC3 — one bundle load registers the seven elements as DISTINCT custo
     // The vehicle entry pulls its copy from STRINGS (no inlined literals).
     const vehicle = (window.customCards ?? []).find((c) => c.type === 'tesla-card');
     expect(vehicle?.name).toBe(STRINGS.card.name);
+    expect(vehicle?.description).toBe(STRINGS.card.description);
   });
 
   test("every getStubConfig seed carries the `custom:` type prefix (picker-clobber guard)", () => {
