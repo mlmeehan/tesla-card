@@ -22,6 +22,7 @@ import {
   rawState,
   isUnavailable,
   isOn,
+  isAsleep,
   display,
   entityId,
   setNumber,
@@ -105,11 +106,25 @@ export class TcPanelCharging extends TcBase {
     // → 'unknown' → cable-corroborated 'plugged'/'parked'), and the coverage
     // gate below swaps the raw "On"/"Off" for the canonical STRINGS word.
     // NaN-safe: the normalizer returns 'unknown' for absent/'unavailable'.
+    //
+    // ASLEEP outranks the classification entirely (Story 17.1 — the whole-card
+    // asleep posture, EXPERIENCE.md "Hero / whole card"): a sleeping car's
+    // cached charging state may stay *available* ("Charging" the moment it
+    // slept), so classifying the raw value would claim a connected state the
+    // Hero contradicts. The gate is the hero.ts mold — force the classified
+    // visual to 'parked' from the SAME `isAsleep` predicate the Hero consults,
+    // so cue, bolt and gauge all follow dark from the one shared `charging`
+    // const; the span gets its own asleep-first branch below (it must also
+    // outrank the `unavailable`→"Idle" short-circuit — one rule, no split
+    // brain). Tiles/sliders/pill keep their own isUnavailable degradation.
+    const asleep = isAsleep(this.hass, cfg);
     const adapter = adapterFor(this.hass, cfg);
-    const visual = classifyChargeState(
-      adapter.normalizeChargingState(status),
-      isOn(this.hass, cfg, 'charge_cable')
-    );
+    const visual = asleep
+      ? 'parked'
+      : classifyChargeState(
+          adapter.normalizeChargingState(status),
+          isOn(this.hass, cfg, 'charge_cable')
+        );
     const charging = visual === 'charging';
     const rangeNum = num(this.hass, cfg, 'battery_range');
     const rangeUnit = attr(this.hass, cfg, 'battery_range', 'unit_of_measurement') || 'mi';
@@ -171,11 +186,13 @@ export class TcPanelCharging extends TcBase {
               </div>
               <span class="cstatus ${charging ? 'live' : ''}">
                 ${charging ? icon(mdiLightningBolt, { size: 14 }) : nothing}
-                ${status && !isUnavailable(status)
-                  ? adapter.chargingOverrideCovers(status)
-                    ? WORD[visual]
-                    : prettyText(status)
-                  : STRINGS.charging.idle}
+                ${asleep
+                  ? STRINGS.status.asleep
+                  : status && !isUnavailable(status)
+                    ? adapter.chargingOverrideCovers(status)
+                      ? WORD[visual]
+                      : prettyText(status)
+                    : STRINGS.charging.idle}
               </span>
             </div>
           </div>

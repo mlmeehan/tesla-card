@@ -233,13 +233,15 @@
         tesla_custom: { prefix: 'garage_model_y', deviceName: 'Garage Model Y', platform: 'tesla_custom' },
       };
 
-      // Story 15.1 — env=tesla_custom carries the REAL 14.1 entity shape for the
-      // charge-classification chain: the integration exposes NO charging-status
-      // string (research §5) — only the boolean binary_sensor.charging, the plug
-      // binary_sensor.charger, and binary_sensor.online for the status boolean.
-      // DERIVE all three from the scenario's fleet entities BEFORE dropping them
-      // (never hardcode: the scenario builders mutate the fleet string per-scenario
-      // — asleep→'unavailable', parked→'Disconnected', plugged→'Complete' — and
+      // Story 15.1 + 17.1 — env=tesla_custom carries the COMPLETE dialect shape.
+      //
+      // (1) The derived charging triple (Story 15.1): the integration exposes NO
+      // charging-status string (research §5) — only the boolean
+      // binary_sensor.charging, the plug binary_sensor.charger, and
+      // binary_sensor.online for the status boolean. DERIVE all three from the
+      // scenario's fleet entities BEFORE dropping them (never hardcode: the
+      // scenario builders mutate the fleet string per-scenario —
+      // asleep→'unavailable', parked→'Disconnected', plugged→'Complete' — and
       // ?charge= reuses the same builders; a hardcoded 'on' would render
       // ?scenario=parked&env=tesla_custom as a charging car):
       //   boolean charging = 'on' iff raw === 'Charging'; 'unavailable' iff raw is
@@ -250,10 +252,39 @@
       //                      tesla_custom alias is binary_sensor.online; without it
       //                      isAsleep() falls to the aliased-away battery and reads
       //                      the whole env as ASLEEP — charge visuals suppressed)
-      // buildRegistry derives the registry FROM the states object, so the dialect
-      // probe follows these edits automatically.
+      //
+      // (2) The rename map (Story 17.1): every OTHER divergent
+      // DIALECT_ENTITY_ALIASES.tesla_custom key whose fleet twin the corpus
+      // carries is renamed to `${aliasDomain}.${prefix}_${aliasSuffix}` — the
+      // triple's exact naming pattern (the resolver's byCanonical slug-strip
+      // yields the alias verbatim). FULL-object moves, so scenario stamps
+      // survive (the asleep back-dated battery stamp must keep driving
+      // "Asleep · updated 47m ago"). Convergent keys (sentry,
+      // distance_to_arrival, flash, homelink) and alias-less canonicals
+      // (charge_limit, charger_power, windows, …) already resolve — untouched.
+      // time_to_full_charge → time_charge_complete is the one
+      // SEMANTICS-divergent key: a TIMESTAMP on tesla_custom (16.1 Dev Record),
+      // never a mirrored hours value — derived from the entity's own fresh
+      // stamp + the fleet hours, or 'unavailable' when dead-or-≤0.
+      //
+      // (3) ABSENT-twin deletions (Story 17.1): the fleet twins of every
+      // DIALECT_ABSENT.tesla_custom key leave the corpus — they were already
+      // render-inert (the resolver yields '' for ABSENT keys before any
+      // matching), but the env must not carry entities the dialect cannot
+      // produce (corpus honesty; the Media panel's calm empty state becomes
+      // this env's truth).
+      //
+      // MAINTAINED-DATA drift caveat: this map mirrors the dialect tables in
+      // src/data/dialect.ts (themselves MAINTAINED DATA transcribed from the
+      // research doc) — hand-coded here because the demo is a plain inline
+      // script with no src/ import. The Story-17.1 shape-asserting e2e rows
+      // (charging-panel.spec.ts) are the drift alarm: an alias-table change
+      // that breaks this shape fails those rows, never silently.
+      // buildRegistry derives the registry FROM the states object, so the
+      // dialect probe follows all of these edits automatically.
       function toTeslaCustomShape(st, prefix) {
         const out = { ...st };
+        // ── (1) the derived charging triple ──
         const raw = out[`sensor.${prefix}_charging`]?.state;
         const dead = raw === undefined || raw === 'unavailable' || raw === 'unknown';
         out[`binary_sensor.${prefix}_charging`] = s(dead ? 'unavailable' : raw === 'Charging' ? 'on' : 'off');
@@ -264,6 +295,105 @@
         delete out[`sensor.${prefix}_charging`];
         delete out[`binary_sensor.${prefix}_charge_cable`];
         delete out[`binary_sensor.${prefix}_status`];
+        // ── (2) divergent-alias renames (full-object move — stamps survive) ──
+        const mv = (from, to) => {
+          if (out[from] !== undefined) {
+            out[to] = out[from];
+            delete out[from];
+          }
+        };
+        for (const [from, to] of [
+          [`sensor.${prefix}_battery_level`, `sensor.${prefix}_battery`],
+          [`sensor.${prefix}_battery_range`, `sensor.${prefix}_range`],
+          [`sensor.${prefix}_inside_temperature`, `sensor.${prefix}_temperature_inside`],
+          [`sensor.${prefix}_outside_temperature`, `sensor.${prefix}_temperature_outside`],
+          [`number.${prefix}_charge_current`, `number.${prefix}_charging_amps`],
+          [`sensor.${prefix}_charge_rate`, `sensor.${prefix}_charging_rate`],
+          [`sensor.${prefix}_charge_energy_added`, `sensor.${prefix}_energy_added`],
+          [`switch.${prefix}_charge`, `switch.${prefix}_charger`],
+          [`cover.${prefix}_charge_port_door`, `cover.${prefix}_charger_door`],
+          [`lock.${prefix}_charge_cable_lock`, `lock.${prefix}_charge_port_latch`],
+          [`update.${prefix}_update`, `update.${prefix}_software_update`],
+          [`lock.${prefix}_lock`, `lock.${prefix}_doors`],
+          [`climate.${prefix}_climate`, `climate.${prefix}_hvac_climate_system`],
+          // domain climate→select — the state mirrors verbatim.
+          ['climate.cabin_overheat_protection', `select.${prefix}_cabin_overheat_protection`],
+          [`select.${prefix}_seat_heater_front_left`, `select.${prefix}_heated_seat_left`],
+          [`select.${prefix}_seat_heater_front_right`, `select.${prefix}_heated_seat_right`],
+          ['select.seat_heater_rear_left', `select.${prefix}_heated_seat_rear_left`],
+          ['select.seat_heater_rear_center', `select.${prefix}_heated_seat_rear_center`],
+          ['select.seat_heater_rear_right', `select.${prefix}_heated_seat_rear_right`],
+          [`select.${prefix}_steering_wheel_heater`, `select.${prefix}_heated_steering_wheel`],
+          ['sensor.tire_pressure_front_left', `sensor.${prefix}_tpms_front_left`],
+          ['sensor.tire_pressure_front_right', `sensor.${prefix}_tpms_front_right`],
+          ['sensor.tire_pressure_rear_left', `sensor.${prefix}_tpms_rear_left`],
+          ['sensor.tire_pressure_rear_right', `sensor.${prefix}_tpms_rear_right`],
+          [`device_tracker.${prefix}_location`, `device_tracker.${prefix}_location_tracker`],
+          [`device_tracker.${prefix}_route`, `device_tracker.${prefix}_destination_location_tracker`],
+          [`sensor.${prefix}_time_to_arrival`, `sensor.${prefix}_arrival_time`],
+          [`button.${prefix}_wake`, `button.${prefix}_wake_up`],
+          [`button.${prefix}_honk_horn`, `button.${prefix}_horn`],
+          [`button.${prefix}_play_fart`, `button.${prefix}_emissions_test`],
+        ]) {
+          mv(from, to);
+        }
+        // The one semantics-divergent key: a TIMESTAMP, never mirrored hours.
+        const ttf = out[`sensor.${prefix}_time_to_full_charge`];
+        if (ttf !== undefined) {
+          const h = Number(ttf.state);
+          // Valid-epoch guard: an unparseable stamp or out-of-range instant
+          // degrades to 'unavailable', never throws (toISOString RangeErrors;
+          // Math.abs(NaN) fails the bound, so one check covers both).
+          const ms = Date.parse(ttf.last_updated ?? '') + h * 3_600_000;
+          const alive = Number.isFinite(h) && h > 0 && Math.abs(ms) <= 8.64e15;
+          out[`sensor.${prefix}_time_charge_complete`] = {
+            ...ttf,
+            state: alive ? new Date(ms).toISOString() : 'unavailable',
+            attributes: { device_class: 'timestamp' },
+          };
+          delete out[`sensor.${prefix}_time_to_full_charge`];
+        }
+        // ── (3) ABSENT-twin deletions (render-inert; corpus honesty) ──
+        for (const id of [
+          'sensor.usable_battery_level',
+          'sensor.ideal_battery_range',
+          'sensor.estimate_battery_range',
+          `binary_sensor.${prefix}_front_driver_door`,
+          `binary_sensor.${prefix}_front_passenger_door`,
+          `binary_sensor.${prefix}_rear_driver_door`,
+          `binary_sensor.${prefix}_rear_passenger_door`,
+          `binary_sensor.${prefix}_front_driver_window`,
+          `binary_sensor.${prefix}_front_passenger_window`,
+          `binary_sensor.${prefix}_rear_driver_window`,
+          `binary_sensor.${prefix}_rear_passenger_window`,
+          'sensor.driver_temperature_setting',
+          'sensor.passenger_temperature_setting',
+          'binary_sensor.preconditioning',
+          'binary_sensor.preconditioning_enabled',
+          `switch.${prefix}_defrost`,
+          'binary_sensor.cabin_overheat_protection_actively_cooling',
+          `switch.${prefix}_auto_seat_climate_left`,
+          `switch.${prefix}_auto_seat_climate_right`,
+          `switch.${prefix}_auto_steering_wheel_heater`,
+          `sensor.${prefix}_charger_voltage`,
+          `sensor.${prefix}_charger_current`,
+          'binary_sensor.trip_charging',
+          'binary_sensor.charger_has_multiple_phases',
+          'binary_sensor.battery_heater',
+          'sensor.state_of_charge_at_arrival',
+          'binary_sensor.dashcam',
+          'binary_sensor.tire_pressure_warning_front_left',
+          'binary_sensor.tire_pressure_warning_front_right',
+          'binary_sensor.tire_pressure_warning_rear_left',
+          'binary_sensor.tire_pressure_warning_rear_right',
+          'sensor.speed',
+          'sensor.power',
+          'sensor.traffic_delay',
+          `button.${prefix}_keyless_driving`,
+          `media_player.${prefix}_media_player`,
+        ]) {
+          delete out[id];
+        }
         return out;
       }
 

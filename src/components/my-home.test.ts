@@ -917,16 +917,89 @@ describe('Story 8.5 — AC4: arbitrary-topology + the full-union slice-gate', ()
     expect(card.hass.states[bId].state).toBe('55');
   });
 
-  test('truly-unrelated vehicle entities (climate/doors) stay OUT of the slice (anti-thrash)', async () => {
+  test('truly-unrelated vehicle entities (climate/media) stay OUT of the slice (anti-thrash)', async () => {
+    // Story 17.1 INVERTED the old form of this pin: `lock` (and the doors/
+    // windows/cable) moved to the WATCHED side — the security chip and cable
+    // corroboration DO render in the Scene embed (see the 17.1 describe below).
+    // The anti-thrash exemplars are now the reads that render nowhere in the
+    // Scene: climate (`inside_temp`) and media (`media_player`).
     const el = await mount(makeHass(states(awakeFx)));
     const ids = new Set(
       (el as unknown as { _sliceIds(): (string | undefined)[] })._sliceIds()
     );
     const e = resolveEntities(makeHass(states(awakeFx)), CONFIG);
-    // These render NOWHERE in the Scene → must not be in the union (else the gate
-    // would thrash the whole composition on irrelevant churn).
-    expect(ids.has(e.lock)).toBe(false);
     expect(ids.has(e.inside_temp)).toBe(false);
+    expect(ids.has(e.media_player)).toBe(false);
+  });
+
+  test('an inside_temp-only flip still gates away (the embed keeps its hass — anti-thrash held)', async () => {
+    const el = await mount(makeHass(states(awakeFx)));
+    const before = (vehCell(el)!.querySelector('tesla-card') as unknown as { hass: HomeAssistant })
+      .hass;
+    const s = states(awakeFx);
+    const tId = resolveEntities(makeHass(s), CONFIG).inside_temp;
+    s[tId].state = '25';
+    s[tId].last_updated = FUTURE;
+    el.hass = makeHass(s);
+    await el.updateComplete;
+    const after = (vehCell(el)!.querySelector('tesla-card') as unknown as { hass: HomeAssistant })
+      .hass;
+    expect(after).toBe(before); // gated: the new hass never propagated to the embed
+  });
+});
+
+// ── Story 17.1 — the COMPLETE slice union (AC5) ──────────────────────────────
+// The embedded hero surface ALSO reads `charge_cable` (the 15.1 cable-
+// corroboration input to `_chargeVisual`) and the 11.2 security-chip closure
+// set (`lock`, the four doors, `windows`) — so a cable-only or lock-only flip
+// must re-render the Scene embed INSTANTLY, never on the next coincidentally-
+// watched tick. RED-FIRST (pre-union): the id row and both behavioral flips
+// failed — the ids were absent and the embed kept its stale hass.
+describe('Story 17.1 — complete slice union: cable + lock/door/window reads are WATCHED', () => {
+  const embedHass = (el: Scene) =>
+    (vehCell(el)!.querySelector('tesla-card') as unknown as { hass: HomeAssistant }).hass;
+
+  test('all SEVEN new union ids (cable + lock + 4 doors + windows) are IN _sliceIds()', async () => {
+    // Review 17.1: pin the FULL push list — with only a 4-key sample, a targeted
+    // partial regression (e.g. door_fr dropped from the union) would stay green.
+    const el = await mount(makeHass(states(awakeFx)));
+    const ids = new Set(
+      (el as unknown as { _sliceIds(): (string | undefined)[] })._sliceIds()
+    );
+    const e = resolveEntities(makeHass(states(awakeFx)), CONFIG);
+    for (const key of [
+      'charge_cable',
+      'lock',
+      'door_fl',
+      'door_fr',
+      'door_rl',
+      'door_rr',
+      'windows',
+    ] as const) {
+      expect(ids.has(e[key])).toBe(true);
+    }
+  });
+
+  test('a cable-only flip re-renders the embed (the 15.1 corroboration input)', async () => {
+    const el = await mount(makeHass(states(awakeFx)));
+    const s = states(awakeFx);
+    const cId = resolveEntities(makeHass(s), CONFIG).charge_cable;
+    s[cId].state = 'off'; // unplugged — flips the hero's cable corroboration
+    s[cId].last_updated = FUTURE;
+    el.hass = makeHass(s);
+    await el.updateComplete;
+    expect(embedHass(el).states[cId].state).toBe('off'); // the embed received the NEW hass
+  });
+
+  test('a lock-only flip re-renders the embed (the 11.2 security-chip read)', async () => {
+    const el = await mount(makeHass(states(awakeFx)));
+    const s = states(awakeFx);
+    const lId = resolveEntities(makeHass(s), CONFIG).lock;
+    s[lId].state = 'unlocked'; // the chip's primary signal
+    s[lId].last_updated = FUTURE;
+    el.hass = makeHass(s);
+    await el.updateComplete;
+    expect(embedHass(el).states[lId].state).toBe('unlocked');
   });
 });
 

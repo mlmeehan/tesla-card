@@ -386,3 +386,87 @@ describe('Story 16.1 AC2 — fleet .cstatus keeps prettyText verbatim (no word s
     expect(await fleetCue('NoPower')).toBe('NoPower');
   });
 });
+
+// ── Story 17.1 — panel asleep gate: the whole-card asleep posture (AC3) ───────
+// `isAsleep(hass, config)` (src/helpers.ts — the same predicate the Hero
+// consults at hero.ts:302) now outranks EVERY `.cstatus` branch, INCLUDING the
+// `unavailable`→"Idle" short-circuit: a sleeping car whose cached charging
+// state stays *available* must never render a confident connected-state word
+// the Hero contradicts (EXPERIENCE.md Asleep row — "Hero / whole card"). The
+// classified visual is forced 'parked' (the hero.ts mold), so the cue, bolt
+// AND gauge follow dark from the one shared `charging` const — never a second
+// asleep read per surface. Unit-land resolution: `status` resolves via
+// DEFAULT_ENTITIES (no override below), so flipping
+// `binary_sensor.…_status` to 'off' is the asleep switch.
+// RED-FIRST evidence (pre-gate, recorded in the story Dev Record): the four
+// rows rendered "Idle" / "Charging"+live / "Plugged-idle" / "Idle".
+describe('Story 17.1 — asleep outranks every span word: .cstatus reads "Asleep" on all dialects', () => {
+  // The vehicle online boolean — NOT ID.status (which is the charging STRING).
+  const ONLINE_ID = DEFAULT_ENTITIES.status;
+
+  // Loud alias derivation (the 15.1/16.1 mold): a dropped/renamed table entry
+  // must fail HERE, never silently build a self-consistent wrong id.
+  const TC_CHARGING = ((): string => {
+    const alias = DIALECT_ENTITY_ALIASES.tesla_custom?.charging_status ?? '';
+    const dot = alias.indexOf('.');
+    if (dot < 0) throw new Error("no tesla_custom alias for 'charging_status' — table drift");
+    return `${alias.slice(0, dot)}.mycar_${alias.slice(dot + 1)}`;
+  })(); // binary_sensor.mycar_charging
+
+  const TC_CONFIG: Partial<TeslaCardConfig> = {
+    integration: 'tesla_custom',
+    entities: { charging_status: TC_CHARGING },
+  };
+
+  /** Stamped-tesla_custom states: fleet charging STRING dropped, the boolean at
+   *  the alias-derived id, and the car ASLEEP (online boolean 'off'). The cable
+   *  stays the DEFAULT-resolved fixture 'on' — the cached-'off' row would read
+   *  "Plugged-idle" awake (the CABLED mold), which is exactly the confident
+   *  word the gate must outrank. */
+  function tcAsleepStates(boolState: string): Record<string, HassEntity> {
+    const states = baseStates();
+    delete states[ID.status];
+    states[TC_CHARGING] = {
+      entity_id: TC_CHARGING,
+      state: boolState,
+      attributes: {},
+    } as HassEntity;
+    states[ONLINE_ID].state = 'off';
+    return states;
+  }
+
+  const cueOf = (el: PanelEl) => el.shadowRoot!.querySelector('.cstatus')!;
+  const cueWord = (el: PanelEl) => cueOf(el).textContent?.trim().replace(/\s+/g, ' ') ?? '';
+
+  test('fleet asleep (status \'off\' + charging_status \'unavailable\') → "Asleep", never "Idle"', async () => {
+    const states = baseStates();
+    states[ONLINE_ID].state = 'off';
+    states[ID.status].state = 'unavailable'; // the common fleet asleep read
+    const el = await mount(makeHass(states));
+    expect(cueWord(el)).toBe(STRINGS.status.asleep);
+    expect(cueOf(el).classList.contains('live')).toBe(false);
+  });
+
+  test("stamped tesla_custom asleep, cached-AVAILABLE boolean 'on' → \"Asleep\", cue dark (the strongest honesty row)", async () => {
+    const el = await mount(makeHass(tcAsleepStates('on')), TC_CONFIG);
+    expect(cueWord(el)).toBe(STRINGS.status.asleep);
+    expect(cueOf(el).classList.contains('live')).toBe(false);
+    expect(cueOf(el).querySelector('svg')).toBeNull(); // no bolt on a sleeping car
+  });
+
+  test("stamped tesla_custom asleep, cached boolean 'off' (cabled) → \"Asleep\", never \"Plugged-idle\"", async () => {
+    const el = await mount(makeHass(tcAsleepStates('off')), TC_CONFIG);
+    expect(cueWord(el)).toBe(STRINGS.status.asleep);
+    expect(cueOf(el).classList.contains('live')).toBe(false);
+  });
+
+  test('asleep via the battery-fallback arm (status missing + battery_level unavailable) → "Asleep"', async () => {
+    const states = baseStates();
+    delete states[ONLINE_ID]; // no resolvable status → isAsleep falls back to battery
+    states[ID.battery].state = 'unavailable';
+    states[ID.status].state = 'unavailable';
+    const el = await mount(makeHass(states));
+    expect(cueWord(el)).toBe(STRINGS.status.asleep);
+    expect(cueOf(el).classList.contains('live')).toBe(false);
+  });
+});

@@ -178,9 +178,14 @@ export class TeslaCardPage {
     return this.chargingPanel.locator('.grid.g3 .stat');
   }
 
-  /** The live charge-state cue ("Charging"/"Idle") — `.live` when canonical state is charging (AC4). */
+  /** The live charge-state cue ("Charging"/"Idle"/"Asleep") — `.live` when canonical state is charging (AC4). */
   get chargeStatusCue(): Locator {
     return this.chargingPanel.locator('.cstatus');
+  }
+
+  /** The Start/Stop-charging pill (`.bigpill`) — disabled when charge_switch is unresolvable (Story 17.1). */
+  get chargeStartPill(): Locator {
+    return this.chargingPanel.locator('.bigpill');
   }
 
   // ── Tires panel (Story 5.8) ────────────────────────────────────────────────

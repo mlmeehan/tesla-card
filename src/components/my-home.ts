@@ -496,18 +496,32 @@ export class TcMyHome extends LitElement implements LovelaceCard {
     // The Solar card's vignette reads HA CORE entities (not energy function-slugs).
     const w = this._config?.weather;
     ids.push(w?.entity ?? 'weather.home', w?.sun ?? 'sun.sun');
-    // Story 8.5 (the 6.5 full-union lesson): the vehicle cell reads these vehicle
-    // ids — gating on the energy `*_power` union ALONE would FREEZE the cell (and it
-    // would never reflow when the car appears/disappears). Add exactly the ids the
-    // cell surfaces; keep truly-unrelated vehicle entities (climate/doors/media…) OUT
-    // (they don't render in the Scene) so the AC3c anti-thrash invariant still holds.
+    // Story 8.5 (the 6.5 full-union lesson) + Story 17.1 (the COMPLETED union):
+    // the vehicle cell reads these vehicle ids — gating on the energy `*_power`
+    // union ALONE would FREEZE the cell (and it would never reflow when the car
+    // appears/disappears). The union is EVERY entity the embedded hero surface
+    // reads: the four summary ids + `charge_cable` (the Story-15.1 cable-
+    // corroboration input to `_chargeVisual`) + the Story-11.2 security-chip /
+    // aperture closure set (`lock`, the four doors, `windows`) — a cable-only
+    // or lock-only flip re-renders the embed instantly, never on the next
+    // coincidentally-watched tick. Truly-unrelated vehicle entities
+    // (climate/media…) stay OUT (they don't render in the Scene) so the AC3c
+    // anti-thrash invariant still holds. ABSENT-dialect ids are the `''`
+    // sentinel and contribute no gate (sliceChanged skips falsy ids).
     const cfg = this._resolvedConfig ?? this._config;
     if (cfg) {
       ids.push(
         entityId(cfg, 'battery_level'),
         entityId(cfg, 'charging_status'),
         entityId(cfg, 'battery_range'),
-        entityId(cfg, 'status')
+        entityId(cfg, 'status'),
+        entityId(cfg, 'charge_cable'),
+        entityId(cfg, 'lock'),
+        entityId(cfg, 'door_fl'),
+        entityId(cfg, 'door_fr'),
+        entityId(cfg, 'door_rl'),
+        entityId(cfg, 'door_rr'),
+        entityId(cfg, 'windows')
       );
     }
     // Story 9.7: `_energy` is the BASE resolution (covers instance #1 + the global
