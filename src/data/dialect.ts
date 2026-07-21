@@ -618,6 +618,29 @@ export interface DialectReport {
   candidates: Integration[];
 }
 
+/**
+ * The ambiguity-guard collapse, declared ONCE (Story 17.2 / D-LF-1): under
+ * ambiguity NEVER classify with the tie-break guess — fall to the conservative
+ * bundled default `tesla_fleet` (the resolver's guard posture, now
+ * dispatch-wide). Identity for every unambiguous report —
+ * `source:'override'`/`'default'`/unambiguous-`'probe'` alike: returns
+ * `report.integration` VERBATIM, never re-derived from candidates/precedence
+ * (an override report's `candidates` is `[override]`, a default report's is
+ * `[]` — deriving would break both). Pure function of the report: no `hass`,
+ * no registry read, no mutation. Consumed by `adapterFor`'s dispatch (below)
+ * and the resolver's `effectiveDialect` (`resolve.ts`) so the collapse RULE
+ * can never drift between them — their probe SCOPES still differ
+ * (registry-wide vs vehicle-device), so their RESULTS may legitimately differ
+ * on a split household (the Story-17.2 scope-boundary pins document exactly
+ * that). The REPORT stays raw — the collapse is applied at CONSUMPTION, never
+ * written into `DialectReport` (see the design note on `detectVehicleDialect`,
+ * `resolve.ts`: pre-collapsing `integration` would invite a consumer to
+ * misread `ambiguous: true` beside an already-collapsed value).
+ */
+export function collapseDialect(report: DialectReport): Integration {
+  return report.ambiguous ? 'tesla_fleet' : report.integration;
+}
+
 /** Order a candidate set by the deterministic precedence. */
 function byPrecedence(candidates: Iterable<Integration>): Integration[] {
   return [...candidates].sort(
@@ -727,11 +750,13 @@ export function detectDialect(
  * an O(1) table dispatch per call, no registry scan, and hero/panel classify with
  * the SAME dialect the resolver aliased by. Only genuinely unstamped callers
  * (the Scene's `bindFlowModel` energy path, pre-first-resolve renders) still
- * reach the registry-wide probe.
+ * reach the registry-wide probe — and collapse exactly as the resolver does
+ * (`collapseDialect`, Story 17.2): an ambiguous ≥2-platform probe dispatches
+ * the conservative `tesla_fleet` adapter, never the tie-break pick.
  */
 export function adapterFor(
   hass: HomeAssistant | undefined,
   config: TeslaCardConfig
 ): DialectAdapter {
-  return DIALECTS[detectDialect(hass, config).integration];
+  return DIALECTS[collapseDialect(detectDialect(hass, config))];
 }
