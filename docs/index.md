@@ -1,6 +1,6 @@
 # tesla-card Documentation Index
 
-**Repo:** `tesla-card/` (public, standalone git repo — `github.com/mlmeehan/tesla-card`) · **Last Updated:** 2026-07-03
+**Repo:** `tesla-card/` (public, standalone git repo — `github.com/mlmeehan/tesla-card`) · **Last Updated:** 2026-07-20
 **Type:** Frontend UI component library — custom Lovelace card (HACS plugin)
 **Primary Language:** TypeScript (strict) · **Framework:** Lit 3
 
@@ -23,8 +23,12 @@ normal form) for setup, theming, per-entity overrides, and Scene customization; 
 render-polish for the composed Scene + its embedded vehicle cell. **Epic 12** removed the vehicle
 Hero's energy-flow overlay (flow visualization now lives only on the Scene bus + Energy panel); the
 **D-CQ-1** follow-on moved standalone responsiveness from viewport `@media` to element-relative
-**container queries** so a narrow Lovelace column or embedded cell collapses correctly regardless of
-viewport width.
+**container queries**. **Epic 13** hardened the Scene's overflow bus legs (straight-preferred,
+orthogonally routed around blockers on conflict), and **Epics 14–17** built out first-class
+**integration dialects**: per-dialect entity aliases (Tessie, `tesla_custom`, legacy `tesla`),
+vehicle-device-scoped detection, an effective-dialect stamp consumed end-to-end by the charging
+surfaces, and a single ambiguity-collapse authority. **v1.0.0 was released 2026-07-12** (HACS
+custom-repository install; default-store submission deliberately deferred).
 
 It bundles to a single file consumed by Home Assistant and distributed via HACS, organized as a
 `data/ ← flow/ ← components/` layered architecture. Its core design features are **entity resolution by
@@ -33,25 +37,26 @@ energy sign-convention** that drives the Scene bus + Energy panel.
 
 ## Quick Reference
 
-- **Tech Stack:** TypeScript `~5.7.3`, Lit `^3.2.1`, `@mdi/js` `^7.4.47`, Rollup `^4.30.1` + terser, Vitest `4.1.8` (exact pin), Playwright `^1.49.1`, Vite `^7`
-- **Entry Point:** `src/tesla-card.ts` → `dist/tesla-card.js` (≈ 346–360 KB minified, single inlined file)
-- **Architecture Pattern:** single `@customElement('tesla-card')` orchestrating flat `tc-*` children (shadow-DOM component tree); **20 custom elements**, **8** `window.customCards` picker cards; the GUI editor (`tesla-card-editor`, ~2,657 LOC) is lazy-loaded
+- **Tech Stack:** TypeScript `^5.7.3`, Lit `^3.2.1`, `@mdi/js` `^7.4.47`, Rollup `^4.30.1` + terser, Vitest `4.1.8` (exact pin), Playwright `^1.49.1`, Vite `^7`
+- **Entry Point:** `src/tesla-card.ts` → `dist/tesla-card.js` (~357 KB minified — 365,786 B at v1.0.0 — single inlined file)
+- **Architecture Pattern:** single `@customElement('tesla-card')` orchestrating flat `tc-*` children (shadow-DOM component tree); **20 custom elements**, **8** `window.customCards` picker cards; the GUI editor (`tesla-card-editor`, ~2,656 LOC) is lazy-loaded
 - **Build:** `npm run build` (Rollup → single inlined ES bundle); dev loop is Vite (`npm run dev`)
-- **Gates:** `npm run typecheck` + `npm run test` (Vitest) + `npm run lint` (**8-gate** chain) + `npm run build` + Playwright E2E + the NFR-1 profiler — see [CI Pipeline](./ci.md)
+- **Gates:** `npm run typecheck` + `npm run test` (Vitest) + `npm run lint` (**8-gate** chain) + the **test-census** inventory gate (`npm run test:census`) + `npm run build` + Playwright E2E + the NFR-1 profiler — see [CI Pipeline](./ci.md)
 - **Min HA:** `2024.4.0` · **CI runtime:** Node 20 · **Runtime deps:** only `lit` + `@mdi/js`
-- **Tests:** Vitest unit suite — **68 files / 1,655 tests** (+ **298 e2e tests / 24 spec files** — 23 active by default; `visual.spec.ts` collects only under `VISUAL=1`)
-- **Version:** `0.3.0` — `CARD_VERSION` in `src/const.ts`, kept in sync with `package.json` + git tag (**CI-enforced** by the `version-sync` lint gate + a `release.yml` tag assertion); the version tracks real releases via version-sync
+- **Tests:** Vitest unit suite — **69 files / 1,784 tests** (+ **309 e2e tests / 24 spec files** — 23 active by default; `visual.spec.ts` collects only under `VISUAL=1`); counts pinned by `tests/test-census.json`
+- **Version:** `1.0.0` — **released 2026-07-12** (tag `v1.0.0`, GitHub Release with the CI-built bundle attached); `CARD_VERSION` in `src/const.ts` kept in sync with `package.json` + the git tag (**CI-enforced** by the `version-sync` lint gate + a `release.yml` tag assertion)
 
 ## Generated Documentation
 
-- [Architecture](./architecture.md) — component tree, entity resolution, energy engine (**AR-6**), design tokens, Lovelace contract, build pipeline, **Enhanced Configuration (Epic 9)**, and **Scene-aware editor + render polish (Epics 10–11)**
+- [Architecture](./architecture.md) — component tree, entity resolution + **integration dialects (Epics 14–17)**, energy engine (**AR-6**), design tokens, Lovelace contract, build pipeline, **Enhanced Configuration (Epic 9)**, and the post-1.0 hardening arcs (Epics 10–17)
 - [Component & Primitive Inventory](./component-inventory.md) — every `tc-*` element, render helper, `data/`/`flow/` module, `ui.ts` primitive, `--tc-*` token, the 8 accents, and the full config surface
-- [Development Guide](./development-guide.md) — commands, demo harness + URL params, adding a component / energy node (the AR-6 pattern), testing, CI, release/version-sync
-- [CI Pipeline](./ci.md) — the 3 workflows (validate / test / release), the 8 quality gates, local-parity scripts, the version-sync release-tag assertion, the NFR-1 profiler, troubleshooting
+- [Development Guide](./development-guide.md) — commands, demo harness + URL params, adding a component / energy node (**AR-6**) / dialect (**AR-4**), testing + the census workflow, CI, release/version-sync
+- [CI Pipeline](./ci.md) — the 3 workflows (validate / test / release), the 8 quality gates + the **test-census gate**, local-parity scripts, the version-sync release-tag assertion, the NFR-1 profiler, troubleshooting
 - [Source Tree Analysis](./source-tree-analysis.md) — annotated `src/` and project layout, the layering arrow, where gates/tests live
 
-## Reference & Deep-Dives (hand-curated)
+## User Guides & Reference (hand-curated)
 
+- [Troubleshooting](./troubleshooting.md) — **the deep diagnostics guide**: entity resolution, integration dialects, asleep/wake/staleness, charging states, energy detection, editor issues, appearance, and how to report an issue well (the README's [Troubleshooting](../README.md#troubleshooting) has the quick hits)
 - [Privacy](./privacy.md) — no-network-egress / no-telemetry affirmation, the merge-blocking gate, and the sanctioned HA channel
 - [Layer contract (`@unstable`)](./layer-contract.md) — the published body-render contract: named layers/nodes, the 3/4 camera, the 1024×687 anchor, and the one-way-door freeze warning
 - [Recolorable body](./recolorable-body.md) — how to bake the four layers the Layer contract composites (bring-your-own render)
@@ -61,12 +66,13 @@ energy sign-convention** that drives the Scene bus + Energy panel.
 ## Quality Audits & Profiling (snapshots)
 
 - [R6 suite audit](./audit-r6-suite.md) · [R6 vehicle-card audit](./audit-r6-vehicle-card.md) — composed-suite & whole-vehicle-card review snapshots
-- [NFR-1 profiler checklist](./profiler-checklist-nfr1.md) — the ~60fps composed-Scene gate procedure
+- [NFR-1 profiler checklist](./profiler-checklist-nfr1.md) — the ~60fps composed-Scene gate procedure (gate passed pre-1.0; kept for re-runs)
 
 ## Existing Project Docs
 
-- [`../README.md`](../README.md) — user-facing: features, install, options table, entity resolution
-- [`../PUBLISHING.md`](../PUBLISHING.md) — HACS release / version-sync checklist
+- [`../README.md`](../README.md) — user-facing: features, install, options table, entity resolution, troubleshooting quick hits
+- [`../CONTRIBUTING.md`](../CONTRIBUTING.md) — contributor guide: setup, the verification ladder, the census rule, house rules, PR expectations
+- [`../PUBLISHING.md`](../PUBLISHING.md) — HACS release / version-sync checklist (v1.0.0 shipped; default-store submission = the documented next step)
 
 ## Getting Started
 
@@ -76,7 +82,7 @@ npm ci
 npm run typecheck   # strict type-check (must pass)
 npm run build       # emits dist/tesla-card.js (must succeed)
 npm run dev         # Vite dev server, or open demo/index.html in a browser (no HA needed)
-# try ?scenario=asleep / ?env=renamed / ?panel=charging / ?card=my-home / ?editor=1
+# try ?scenario=asleep / ?env=renamed / ?env=tesla_custom / ?panel=charging / ?card=my-home / ?editor=1
 ```
 
 ## For AI-Assisted Development
@@ -90,12 +96,15 @@ invariants (full list in architecture §13):
 - **One sign convention per layer, never copied** — consume `flow/balance.ts` (the **AR-6** frozen authority:
   zero production diff since Story 4.1; `model.ts` carries only the `id ?? role` seam); a new energy node/role
   is registry + component metadata, never a balance/compute edit.
+- **Dialects resolve + collapse in ONE place** — adding one is a `data/dialect.ts` table edit (`DIALECTS` +
+  `DIALECT_ENTITY_ALIASES` + `DIALECT_ABSENT` + an optional status override), never a component or
+  resolver-loop edit; children read the parent-stamped effective dialect.
 - **Editor writes:** REPLACE-not-MERGE for deletable keys; reset/default = DELETE the key; paint swatches write curated HEX; theme is card-only. The Scene-aware editor has **no in-editor preview** (HA's native split-pane is authoritative).
 - **Keep the Lovelace contract** (`setConfig`/`getCardSize`/`getStubConfig`/`getConfigElement`) and the forward-compat spread.
 - **`variant:'compact'` is presentation-only** — it does not hide the tab shell; the embedded vehicle cell honors `hide_*`/`default_panel`.
-- **Never commit `dist/`**; keep the bundle dependency-free beyond `lit` + `@mdi/js`.
+- **Never commit `dist/`**; keep the bundle dependency-free beyond `lit` + `@mdi/js`. **Adding or removing tests requires regenerating `tests/test-census.json`** (`npm run test:census -- --write`).
 - This is the **standalone public card repo** — commit card changes inside `tesla-card/`; planning artifacts belong in the sibling `tesla-card-planning/` repo.
 
 ---
 
-_Documentation generated by the BMAD Method `document-project` workflow · last regenerated 2026-07-03._
+_Documentation generated by the BMAD Method `document-project` workflow · last regenerated 2026-07-20._

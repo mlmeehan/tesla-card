@@ -1,11 +1,11 @@
 # tesla-card — Component & Primitive Inventory
 
-**Repo:** `tesla-card/` (public, standalone git repo) · **Date:** 2026-07-03 · **Version:** `0.3.0` · **Min HA:** 2024.4.0 · **Node:** 20
+**Repo:** `tesla-card/` (public, standalone git repo) · **Date:** 2026-07-20 · **Version:** `1.0.0` · **Min HA:** 2024.4.0 · **Node:** 20
 
 Catalog of every custom element, render helper, `data/`/`flow/` module, UI primitive, helper, and
 design-token group in the card. For how they fit together see [`architecture.md`](./architecture.md).
 
-> Current as of Epic 12 + D-CQ-1 (Epics 9–11 baseline); see footer for counts.
+> Current as of Epic 17 + v1.0.0 (Epics 9–16 baseline); see footer for counts.
 
 ---
 
@@ -21,23 +21,23 @@ element (render helpers / abstract base).
 ### Parent + editor
 | Tag | File | Base | Responsibility |
 |---|---|---|---|
-| `tesla-card` | `src/tesla-card.ts` (~418 LOC) | `LitElement` (implements `LovelaceCard`) | Orchestration parent; tab shell shows **one panel at a time**, splices the Energy tab in at **index 2** when a site is detected, routes `@open-panel`; `getCardSize()→16`; `getStubConfig()→{type}`; `getConfigElement()` lazy-imports the editor; `updated()` reflects the `theme` + `compact` **host attributes**; the `.root` is a `container-type: inline-size` query container so the tab-label reveal keys on `@container (min-width: 760px)` — the card's OWN width, not the viewport (D-CQ-1); pushes the `tesla-card` `window.customCards` entry |
-| `tesla-card-editor` | `src/editor.ts` (~2,657 LOC) | `LitElement` (implements `LovelaceCardEditor`) | **Full no-YAML GUI editor (Epic 9):** `WIZARD_STEPS` = `detect → confirm → appearance → tune → finish` + a normal form + a Scene-aware compose mode for `_isMyHome`; `_emit` (REPLACE) vs `_patch` (merge) discipline; reset = **DELETE** the key + prune (`OVERRIDE_TARGET`); `PAINT_SWATCHES` write curated HEX; theme is card-only via `:host([theme='light'])`; hex entered as `{text:{}}` verbatim; `_convertPressure` does psi/bar/kPa; D7 `_liveness` 4-state. **No in-editor My-Home preview** — `_renderPreview` returns nothing when `_isMyHome`. Reads its **own** `hass.states` under the D7 exception (presence + liveness only) |
+| `tesla-card` | `src/tesla-card.ts` (~452 LOC) | `LitElement` (implements `LovelaceCard`) | Orchestration parent; tab shell shows **one panel at a time**, splices the Energy tab in at **index 2** when a site is detected, routes `@open-panel`; **`_resolve()` stamps the resolver's effective vehicle dialect onto `_resolvedConfig.integration`** (in-memory only; children's `adapterFor` reads it, 15.1); `getCardSize()→16`; `getStubConfig()→{type}`; `getConfigElement()` lazy-imports the editor; `updated()` reflects the `theme` + `compact` **host attributes**; the `.root` is a `container-type: inline-size` query container so the tab-label reveal keys on `@container (min-width: 760px)` — the card's OWN width, not the viewport (D-CQ-1); pushes the `tesla-card` `window.customCards` entry |
+| `tesla-card-editor` | `src/editor.ts` (~2,656 LOC) | `LitElement` (implements `LovelaceCardEditor`) | **Full no-YAML GUI editor (Epic 9):** `WIZARD_STEPS` = `detect → confirm → appearance → tune → finish` + a normal form + a Scene-aware compose mode for `_isMyHome`; `_emit` (REPLACE) vs `_patch` (merge) discipline; reset = **DELETE** the key + prune (`OVERRIDE_TARGET`); `PAINT_SWATCHES` write curated HEX; theme is card-only via `:host([theme='light'])`; hex entered as `{text:{}}` verbatim; `_convertPressure` does psi/bar/kPa; D7 `_liveness` 4-state. **No in-editor My-Home preview** — `_renderPreview` returns nothing when `_isMyHome`. Reads its **own** `hass.states` under the D7 exception (presence + liveness only) |
 
 ### Base classes
 | Class | File | Supplies |
 |---|---|---|
 | `TcBase` | `src/base.ts` | `@property({attribute:false}) hass?: HomeAssistant` and `@property({attribute:false}) config!: TeslaCardConfig` (the **resolved** config) to every vehicle child |
-| `EcosystemCard` | `src/components/ecosystem-card.ts` (~383 LOC) | Abstract (unregistered) shell `extends TcBase`: `renderShell` + exported `ecosystemShellStyles` + the one pure accent-hex composer `accentVar`; carries the `'neutral'` sentinel; extended by the **6** ecosystem cards |
+| `EcosystemCard` | `src/components/ecosystem-card.ts` (~382 LOC) | Abstract (unregistered) shell `extends TcBase`: `renderShell` + exported `ecosystemShellStyles` + the one pure accent-hex composer `accentVar`; carries the `'neutral'` sentinel; extended by the **6** ecosystem cards |
 
 ### Vehicle children (`tc-*`, extend `TcBase`)
 | Tag | File | Responsibility |
 |---|---|---|
-| `tc-hero` | `components/hero.ts` (~677 LOC) | Living hero: recolorable car (`carView`) + battery gauge + status/lock line; derived `_chargeVisual` **3 states** (parked/plugged/charging), `_apertures` **4 booleans**, `_security` (11.2); compact-variant **asleep → cached last-known SoC/range** |
-| `tc-quick-actions` | `components/quick-actions.ts` (~252 LOC) | The canonical **optimistic-then-reconcile** toggles (lock/climate/charge-port/sentry/…); exports **`RECONCILE_TIMEOUT_MS = 10_000`**; host is a `container-type: inline-size` query container — the 6→3-column grid collapse keys on `@container (max-width: 540px)` (element-relative, D-CQ-1), with a `:host([compact])` backup |
-| `tc-commands` | `components/commands.ts` (~317 LOC) | Fire-and-forget command buttons (`button.press`: wake/honk/flash/HomeLink/…); `isMissing`-only degrade; wake-gated; host is a `container-type: inline-size` query container — the 6→3-column grid collapse keys on `@container (max-width: 540px)` (element-relative, D-CQ-1), with a `:host([compact])` backup |
-| `tc-slider` | `components/slider.ts` (~234 LOC) | Reusable bar slider; commits `value-changed` **on release only** (never mid-drag); reused by charging/media panels **and the Powerwall backup-reserve control** |
-| `tc-panel-charging` | `components/panel-charging.ts` | Battery summary, start/stop, charge-limit & current sliders (`tc-slider`), live stat tiles |
+| `tc-hero` | `components/hero.ts` (~655 LOC) | Living hero: recolorable car (`carView`) + battery gauge + status/lock line; derived `_chargeVisual` **3 states** (parked/plugged/charging) via the shared `adapterFor`/`classifyChargeState` collapse (15.1/16.1), `_apertures` **4 booleans**, `_security` (11.2); compact-variant **asleep → cached last-known SoC/range** |
+| `tc-quick-actions` | `components/quick-actions.ts` (~266 LOC) | The canonical **optimistic-then-reconcile** toggles (lock/climate/charge-port/sentry/…); exports **`RECONCILE_TIMEOUT_MS = 10_000`**; host is a `container-type: inline-size` query container — the 6→3-column grid collapse keys on `@container (max-width: 540px)` (element-relative, D-CQ-1), with a `:host([compact])` backup |
+| `tc-commands` | `components/commands.ts` (~331 LOC) | Fire-and-forget command buttons (`button.press`: wake/honk/flash/HomeLink/…); `isMissing`-only degrade; wake-gated; host is a `container-type: inline-size` query container — the 6→3-column grid collapse keys on `@container (max-width: 540px)` (element-relative, D-CQ-1), with a `:host([compact])` backup |
+| `tc-slider` | `components/slider.ts` (~233 LOC) | Reusable bar slider; commits `value-changed` **on release only** (never mid-drag); reused by charging/media panels **and the Powerwall backup-reserve control** |
+| `tc-panel-charging` | `components/panel-charging.ts` (~460 LOC) | Battery summary, start/stop, charge-limit & current sliders (`tc-slider`), live stat tiles; classifies via `adapterFor`/`classifyChargeState` (15.1/16.1); **asleep-first `.cstatus` branch** — the shared `isAsleep` predicate renders "Asleep" on all dialects, outranking the `unavailable`→"Idle" short-circuit (17.1) |
 | `tc-panel-climate` | `components/panel-climate.ts` | Temp set, seat/wheel heaters, defrost, cabin-overheat (generalized optimistic contract) |
 | `tc-panel-energy` | `components/panel-energy.ts` | In-card energy overview (solar/powerwall/grid/home/vehicle/WC/generator tiles); reads **RAW** sensor signs; `THRESH = 0.05`; consumes an `entities` prop |
 | `tc-panel-closures` | `components/panel-closures.ts` | Doors/windows/lock closures with freshness; non-optimistic (physical closures); `normalizeCoverState`/`LockState` |
@@ -59,7 +59,7 @@ Each renders the shared shell with a per-node **stat grid** and deep-links to th
 ### Scene element
 | Tag | File | Base | Responsibility |
 |---|---|---|---|
-| `tc-my-home` | `components/my-home.ts` (~2,206 LOC) | `LitElement` | The "My Home" energy Scene: live `SceneBusRenderer` over composed cards (incl. embedded **Vehicle presentation cells** via `wcVehicleEdge`, full + compact variants) + the **self-powered ribbon**; node hide/reorder/cross-row-promote/multi-instance + WRAP overflow; detected-but-hidden advisory; reflow lifecycle (`ResizeObserver`/`IntersectionObserver` → `RafCoalescer` → cached geometry → pure-CSS dash); delegates all math to `flow/my-home.ts`; **side-effect-imports all six ecosystem children** so a standalone mount registers them; vehicle embed cached per-instance (`_pruneVehicleCache` scans the **source∪load union**); `variant:'compact'` is presentation-only; the embed suppresses its Energy tab via `energy.hide:true` |
+| `tc-my-home` | `components/my-home.ts` (~2,537 LOC) | `LitElement` | The "My Home" energy Scene: live `SceneBusRenderer` over composed cards (incl. embedded **Vehicle presentation cells** via `wcVehicleEdge`, full + compact variants) + the **self-powered ribbon**; node hide/reorder/cross-row-promote/multi-instance + WRAP overflow (overflow-card bus legs **per-gap-derived, straight-preferred / routed-on-conflict** via `_overflowLegPlans`, 13.1/17.3); detected-but-hidden advisory; the reflow slice-gate (`_sliceIds`) watches the **full 11-key vehicle union** (+`charge_cable`/`lock`/4 doors/`windows`, 17.1); reflow lifecycle (`ResizeObserver`/`IntersectionObserver` → `RafCoalescer` → cached geometry → pure-CSS dash); delegates all math to `flow/my-home.ts`; **side-effect-imports all six ecosystem children** so a standalone mount registers them; vehicle embed cached per-instance (`_pruneVehicleCache` scans the **source∪load union**); `variant:'compact'` is presentation-only; the embed suppresses its Energy tab via `energy.hide:true` |
 
 ---
 
@@ -80,14 +80,15 @@ to its `static styles`). They register **no** custom element.
 
 ## 3. Data layer — `src/data/` (the only runtime subtree that may read `hass.states`)
 
-**8** modules.
+**9** modules.
 
 | Module | Key exports | Purpose |
 |---|---|---|
 | `data/freshness.ts` | `read`, `readKey`, `readRaw`, `referenceNow`, `isQuiescent`, `Staleness` | **Sole runtime reader of `hass.states`**; freshness/staleness read-model (thresholds: fresh 5 min / asleep 30 min) + the sanctioned arbitrary-entity reader (`readRaw`) |
-| `data/dialect.ts` | `normalizeChargingState`/`LockState`/`CoverState`, `DIALECTS`, `detectDialect`, `makeAdapter`, `normalizePower`, `Integration` | Per-integration spelling quarantine (D2); identity maps for `tesla_fleet`; `normalizePower` flips raw battery `−=charging` → canonical at the boundary. `ChargingState = charging\|starting\|stopped\|complete\|disconnected\|no_power\|unknown` (the parked/plugged/charging triad is the **hero's** derived `_chargeVisual`, not this) |
-| `data/registry.ts` | `ROLES` (**7**), `Role`/`EnergyRole`, `FUNCTION_KEYS` (**84 vehicle + 22 energy** keys), `ALL_KEYS`, `BUS_ORIENTATION`, `roleOf` | Canonical function-key vocabulary — single source of truth; pure leaf. `ROLES = ['vehicle','solar','powerwall','grid','home','wall_connector','generator']`. `BUS_ORIENTATION`: solar/grid/generator `+1`, powerwall/home/wall_connector `−1`. *(NOTE: the in-source comment still says "21" energy keys — stale; the real count is **22** after the `generator_power` add.)* |
-| `data/resolve.ts` | `resolveEntities`, `slugify`, `TESLA_PLATFORMS` | Vehicle entity resolution by stable function-slug (override → registry → guess → bare → default) |
+| `data/dialect.ts` | `normalizeChargingState`/`LockState`/`CoverState`, `DIALECTS`, `detectDialect` (optional `scope`, 14.2), `adapterFor`, `collapseDialect`, `classifyChargeState`, `makeAdapter`, `DIALECT_ENTITY_ALIASES`, `DIALECT_ABSENT`, `normalizePower`, `Integration` | Per-integration spelling quarantine (D2); identity maps for `tesla_fleet`; **the alias tables are LIVE** — `resolveEntities` consults `DIALECT_ENTITY_ALIASES`/`DIALECT_ABSENT` (14.1); `collapseDialect(report)` is the single ambiguity-collapse authority (ambiguous ⇒ `tesla_fleet`, else verbatim; 17.2); `classifyChargeState` + the adapter's `chargingOverrideCovers` are the shared 7→3 charge-word collapse + coverage predicate (hero + panel single-sourced, 16.1); `adapterFor` dispatches `DIALECTS[collapseDialect(detectDialect(…))]` (17.2). `normalizePower` flips raw battery `−=charging` → canonical at the boundary. `ChargingState = charging\|starting\|stopped\|complete\|disconnected\|no_power\|unknown` (the parked/plugged/charging triad is the **hero's** derived `_chargeVisual`, not this) |
+| `data/registry.ts` | `ROLES` (**7**), `Role`/`EnergyRole`, `FUNCTION_KEYS` (**84 vehicle + 22 energy** keys), `ALL_KEYS`, `BUS_ORIENTATION`, `roleOf` | Canonical function-key vocabulary — single source of truth; pure leaf. `ROLES = ['vehicle','solar','powerwall','grid','home','wall_connector','generator']`. `BUS_ORIENTATION`: solar/grid/generator `+1`, powerwall/home/wall_connector `−1`. |
+| `data/resolve.ts` | `resolveEntities`, `slugify`, `detectVehicleDialect` | Vehicle entity resolution by stable function-slug (override → registry → guess → bare → default); `detectVehicle` is override-steered with a guarded **four-tier** fallback (`config.device` → integration-override steer → `VEHICLE_SIGNATURES` score → most-entities, 16.2); consults `dialect.ts`'s alias/ABSENT tables (14.1) and exports `detectVehicleDialect` = the **effective vehicle-scoped dialect** incl. ambiguity collapse (15.1). *(`TESLA_PLATFORMS` moved to the new leaf `data/platforms.ts`.)* |
+| `data/platforms.ts` | `TESLA_PLATFORMS` | **★Story 14.1** — the shared Tesla-platform `Set` (`tesla_fleet`/`teslemetry`/`tessie`/`tesla_custom`/`tesla`); a leaf importing nothing internal, so `resolve.ts` and `dialect.ts` co-import it without forming a cycle |
 | `data/energy.ts` | `resolveEnergyEntities`, `hasEnergySite`, `detectEnergySite`, `numById`, `stateById`, `unitById`, `attrById`, `EnergyEntities`, `RULES` | Energy-site/WC resolution by function-slug substring (`_2`-tolerant); NaN-safe reads. `unitById` (live units — WC temp °F) + `attrById` (array/non-string attrs, e.g. `select` options). `EnergyEntities` includes `generator_power?` |
 | `data/history.ts` | `fetchHistory`, `fetchCardHistory`, `parseSeries`, `bucketDailyDelta`, `HistorySample`/`HistorySeries`/`DayBucket`/`HistoryWindow`/`CardHistory` | Recorder history over `hass.callWS('history/history_during_period')` — never polled, never `hass.states`, id-gated/cached, NaN-safe **drop-not-zero** ("empty ≠ zero") |
 | `data/slice.ts` | `sliceChanged(prev, next, ids)` | Tick-coalescing slice-gate; must watch the **full union** of entities its consumers read |
@@ -110,7 +111,7 @@ to its `static styles`). They register **no** custom element.
 | `flow/balance.ts` | `computeBalance`, `Balance`, `EPSILON_KW = 0.05` | **Sole** sign/unit-convention owner (kW; battery `+` = charging; grid `+` = import); per-node `net` + conservation (`balanced` ⇔ `\|residual\| ≤ EPSILON_KW`). Role-generic. **Frozen (AR-6, zero diff since 4.1)** |
 | `flow/model.ts` | `buildFlowModel`, `FlowNode`/`FlowEdge`/`FlowModel`/`FlowInput`, `BUS_NODE_ID = 'bus'`, `IDLE_KW = 0.05`, `senseOf`, `Provenance`, `Direction` | Flow data-model assembler; carries the additive `const id = input.id ?? input.role` identity seam (9.7); `senseOf` derives `forward`/`reverse`/`none` against `IDLE_KW` |
 | `flow/binding.ts` | `bindFlowModel`, `flowInputsFrom`, `POWER_KEY`, `ENERGY_ROLES` (**6**), `DEADBAND` (= `IDLE_KW`), `absentInput` | Turns `(hass, config)` into a `FlowModel`; auto-detects the **6** energy roles. `flowInputsFrom` is the seam for node **hide** (forces `kW:undefined` via `absentInput`) and **N-instance** (flat-maps role → N inputs); accepts a `hide` set |
-| `flow/renderer.ts` | `FlowRenderer` (interface `{update}`), `edgeVisual`/`edgeVisuals`, `NODE_COLOR`, `NODE_ICON` | The renderer seam + the **one shared** kW→visual derivation the renderer uses: `width = 1.6 + \|kW\|·0.55`, `durSec = max(0.5, 1.7 − \|kW\|·0.16)`. `NODE_COLOR.generator` = copper, `NODE_ICON.generator` = `mdiGeneratorStationary` |
+| `flow/renderer.ts` | `FlowRenderer` (interface `{update}`), `edgeVisual`/`edgeVisuals`, `NODE_COLOR`, `NODE_ICON` | The renderer seam + the **one shared** kW→visual derivation the renderer uses: `width = 1.6 + \|kW\|·0.55`, `durSec = max(0.5, 1.7 − \|kW\|·0.16)`. `NODE_COLOR.generator` = copper, `NODE_ICON.generator` = `mdiGeneratorStationary`. The typecheck-invisible `NODE_COLOR`/`NODE_ICON`/`edgeVisual`-coefficient **values** are pinned in the dedicated `renderer.test.ts` (tsc proves the keys, not the values) |
 | `flow/scene-bus.ts` | `SceneBusRenderer`, `setAnchors`, `sceneBusStyles`, `RectLike` | The **sole live `FlowRenderer`** — draws the `FlowModel` against live `getBoundingClientRect` anchors; per-instance chip lookup by `n.id` |
 | `flow/my-home.ts` | `gatewaySegments`, `sceneAggregates`/`selfPowered`/`ribbonTiles`, `coupledRoles`/`roleKind`, `wcVehicleEdge`, `RafCoalescer`, `busAxis`/`axisForWidth`, `SCENE_PHONE_MAX = 540`, `BUS_WIDTH_MAX = 7`, `VEHICLE_NODE_ID = 'vehicle'` | "My Home" Scene geometry, reflow, and **all composed-Scene views** — every one a pure **VIEW** of `computeBalance().net` (not the frozen authority); `axisForWidth(w) = w ≤ SCENE_PHONE_MAX ? 'y' : 'x'`; `BUS_WIDTH_MAX` caps stroke width. **No `_trunk`/`P()` helper exists** (that was a doc phantom). `tc-my-home` delegates here |
 | `flow/instances.ts` | `instanceId`, `roleOfInstance`, `roleInstances`, `instanceSpecs` | **★Epic 9 (9.7)** — DOM-free per-instance identity: `instanceId = count<=1 ? role : ${role}:${i+1}` (**bare for single = zero-diff**); consumes the descriptor-list schema |
@@ -121,9 +122,9 @@ to its `static styles`). They register **no** custom element.
 
 | Module | Key exports | Purpose |
 |---|---|---|
-| `const.ts` | `CARD_VERSION` (**`'0.3.0'`**), `HERO_VIEWBOX` (`{width:1024, height:687}`), `DEFAULT_ENTITIES` (~84 keys `satisfies Record<VehicleKey,string>`), `EntityKey` | Constants + the live entity catalog. **No `DEFAULT_IMAGE`** (removed) |
+| `const.ts` | `CARD_VERSION` (**`'1.0.0'`**), `HERO_VIEWBOX` (`{width:1024, height:687}`), `DEFAULT_ENTITIES` (~84 keys `satisfies Record<VehicleKey,string>`), `EntityKey` | Constants + the live entity catalog. **No `DEFAULT_IMAGE`** (removed) |
 | `types.ts` | `TeslaCardConfig` + sub-shapes (`BodyLayers`, `EnergyConfig`, `NodeCustomization`, `InstanceSpec`, `SceneRow`, `TiresConfig`, `AppearanceConfig`) + HA-platform interfaces (`HassEntity`, `HomeAssistant` incl. optional `callWS?<T>`, `LovelaceCard`, `LovelaceCardEditor`, `PanelId`) | Shared TS types — **public config + sub-shapes + HA-platform interfaces only** (Hero-internal types live with their owners in `car.ts`) |
-| `helpers.ts` | `UNAVAILABLE_STATES`, `entityId`, `stateObj`, `rawState`, `isUnavailable` / `isMissing`, `num`/`attr`/`unit`/`isOn`/`isAsleep`, `formatNumber`/`prettyText`/`formatAge`/`display`, `toggleEntity`/`pressButton`/`setNumber`/`selectOption`, `fireEvent`/`moreInfo`/`domainOf`, `srState`, `clamp` | Pure entity-read / format / service helpers. `isMissing` is **deliberately narrow** (`undefined`/`'unavailable'` only — so a never-pressed button stays wakeable); `isUnavailable` is the wider sensor/toggle guard |
+| `helpers.ts` | `UNAVAILABLE_STATES`, `entityId`, `stateObj`, `rawState`, `isUnavailable` / `isMissing`, `num`/`attr`/`unit`/`isOn`/`isAsleep`, `formatNumber`/`prettyText`/`formatAge`/`display`, `toggleEntity`/`pressButton`/`setNumber`/`selectOption`, `fireEvent`/`moreInfo`/`domainOf`, `srState`, `clamp` | Pure entity-read / format / service helpers. `isMissing` is **deliberately narrow** (`undefined`/`'unavailable'` only — so a never-pressed button stays wakeable); `isUnavailable` is the wider sensor/toggle guard; `isAsleep` is the **shared** asleep predicate consumed by `hero.ts`, `panel-charging.ts` and the Scene embed (17.1) |
 | `ui.ts` | shared render primitives + honest-age helpers (detailed in §6) | Shared render primitives (`TemplateResult` builders) + the honest-age helpers (here, not `helpers.ts`, to avoid a `helpers ↔ data/freshness` cycle) |
 | `styles.ts` | `tokens`, `sharedStyles`, `LIGHT_TOKENS`, `ACCENT_SEMANTICS` (**8**), `INTERACTION_PRIMITIVES`/`INTERACTION_BANS`, `FRESHNESS_STATES` (**6**), `BREAKPOINTS` (`{compact:540, full:760}`) | Design tokens + shared CSS + machine-checkable contract maps + the card-only light palette; the locked a11y keyframe corpus in `sharedStyles` is `{tc-pulse, tc-shimmer}` |
 | `paint.ts` | `PAINT_PRESETS`, `PaintSource`, `resolvePaint` | Hero body-paint resolution — **3 forms in order**: literal CSS colour/keyword (**passthrough FIRST**) → `PAINT_PRESETS` name → live `PaintSource`. ⚠ the literal-keyword branch wins first, so writers (editor swatches) must write the curated HEX. `PAINT_PRESETS` = generic colour names only |
@@ -225,7 +226,7 @@ never throws on extras (R9). **Epic 9 added many additive, zero-diff-when-absent
 | **`appearance`** | **`AppearanceConfig`** | **Card-only `theme?: 'light'\|'dark'` (Auto = absent) (9.12)** |
 | `device` / `prefix` | `string` | Force the vehicle device (registry id / name) / entity-prefix slug |
 | `entities` | `Partial<Record<EntityKey,string>>` | Per-key vehicle entity-id overrides — highest precedence |
-| `integration` | `Integration` | Force the dialect (`tesla_fleet`/…) instead of auto-detect (D2) |
+| `integration` | `Integration` | Force the dialect — one of **`tesla_fleet` / `teslemetry` / `tessie` / `tesla_custom` / `tesla`** (legacy, Fleet-family) — instead of auto-detect (D2); also **steers** anonymous vehicle-device selection among cars on a mixed-platform install (16.2) |
 | `default_panel` | `PanelId` | Initial tab; falls back to first available if absent/hidden |
 | `hide_panels` / `hide_quick_actions` / `hide_commands` | `boolean` | Section visibility toggles |
 | `variant` | `'full' \| 'compact'` | `'full'` (default). `'compact'` renders hero + status + gauge ONLY (implies the three hide flags + suppresses flow labels; asleep → cached SoC/range). Presentation-only — does **not** hide the My-Home tab shell. Set by the My-Home in-line vehicle embed |
@@ -252,7 +253,7 @@ unknown/garbage values degrade gracefully (R9 / FR-24), never throw.
 
 | Constant | Value | Home |
 |---|---|---|
-| `CARD_VERSION` | `'0.3.0'` | `const.ts` |
+| `CARD_VERSION` | `'1.0.0'` | `const.ts` |
 | `HERO_VIEWBOX` | `{ width: 1024, height: 687 }` | `const.ts` |
 | `RECONCILE_TIMEOUT_MS` | `10_000` | `components/quick-actions.ts` (exported; `powerwall.ts` imports it, never redefines) |
 | `WAKE_COOLDOWN_DEFAULT_MS` | `60_000` | `data/wake.ts` |
@@ -274,7 +275,7 @@ unknown/garbage values degrade gracefully (R9 / FR-24), never throw.
 
 ---
 
-_Generated by the BMAD `document-project` workflow (exhaustive rescan, 2026-06-24; refreshed 2026-07-03
-for Epic 12 + D-CQ-1). Counts: **20** custom elements · **8** `window.customCards` picker cards · **7**
-roles (1 vehicle + 6 energy) · **6** `ENERGY_ROLES` · **8** `ACCENT_SEMANTICS` accents · **68** unit test
-files (**1,655** cases) / **24** e2e specs (**298** cases) · **8** lint gates._
+_Generated by the BMAD `document-project` workflow (exhaustive rescan, 2026-06-24; refreshed 2026-07-20
+for Epics 13–17 + v1.0.0). Counts: **20** custom elements · **8** `window.customCards` picker cards · **7**
+roles (1 vehicle + 6 energy) · **6** `ENERGY_ROLES` · **8** `ACCENT_SEMANTICS` accents · **69** unit test
+files (**1,784** cases) / **24** e2e specs (**309** cases) · **8** lint gates._
