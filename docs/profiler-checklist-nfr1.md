@@ -1,9 +1,12 @@
 # NFR-1 composed-Scene ~60fps profiler — turnkey checklist
 
-**Purpose.** This is the one remaining manual step to flip the tesla-card 1.0.0
-release gate (`bmad-testarch-trace`) from 🟡 **CONCERNS** → ✅ **PASS**. Story 6.8 /
-8.8 **AC3** requires that the composed "My Home" Scene — 6 live cards + Gateway bus +
-weather vignette — sustains **~60fps** on the NFR-1 reference device. By design this
+**Purpose.** This checklist was the last manual step to flip the tesla-card 1.0.0
+release gate (`bmad-testarch-trace`) from 🟡 **CONCERNS** → ✅ **PASS** — since done
+(§ AC3 signed off 2026-06-21, via the instrumented run below; v1.0.0 shipped
+2026-07-12). It stays as the gold-standard device procedure to re-run after any
+Scene-affecting change. Story 6.8 / 8.8 **AC3** requires that the composed "My Home"
+Scene — 6 live cards + Gateway bus + weather vignette — sustains **~60fps** on the
+NFR-1 reference device. By design this
 is a **[PROFILER]** measurement on physical hardware, not a CI assertion (see
 `docs/audit-r6-suite.md` § AC3). Everything that *can* be automated already is.
 

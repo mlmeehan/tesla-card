@@ -504,6 +504,8 @@ default, fully auto-detected scene.
 - **No Energy tab** — it only appears when an energy site is detected; check
   the `powerwall` / `tesla_fleet` integrations, or wire `energy.entities`
   yourself.
+- For deeper diagnostics — entity resolution, dialects, energy detection, and
+  editor behaviour — see the [Troubleshooting guide](docs/troubleshooting.md).
 - Still stuck? [Open an issue](https://github.com/mlmeehan/tesla-card/issues)
   with your HA version and integration.
 
@@ -528,6 +530,8 @@ The harness exposes scenario and mode URL params (`?panel=`, `?scenario=`,
 `?editor=`, `?env=`, `?paint=`, `?recolor=`, …) — see the full contract, plus the
 rest of the build/test/release workflow, in the
 **[Development Guide](docs/development-guide.md)**.
+
+Contributions welcome — see [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## License
 

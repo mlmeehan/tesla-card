@@ -1,13 +1,13 @@
 # tesla-card — CI Pipeline
 
-**Repo:** `tesla-card/` (public, standalone git repo) · **Last Updated:** 2026-06-24
-**Platform:** GitHub Actions · **Runtime:** Node 20 (`.nvmrc` + CI) · **Version:** 0.3.0
+**Repo:** `tesla-card/` (public, standalone git repo) · **Last Updated:** 2026-07-20
+**Platform:** GitHub Actions · **Runtime:** Node 20 (`.nvmrc`; `validate.yml` + `release.yml` pin it inline) · **Version:** 1.0.0
 
 How the card's continuous-integration pipeline is structured, what gates a change must
 clear, and how to reproduce it locally. Test-authoring details live in
 [`../tests/README.md`](../tests/README.md); release mechanics in [`../PUBLISHING.md`](../PUBLISHING.md).
 
-The shipped artifact is a **single Rollup ES bundle** `dist/tesla-card.js` (~346–360 KB,
+The shipped artifact is a **single Rollup ES bundle** `dist/tesla-card.js` (~357 KB,
 `inlineDynamicImports: true`), with **only two runtime deps** (`lit` + `@mdi/js`). `dist/`
 is gitignored and built in CI — never committed.
 
@@ -57,10 +57,13 @@ flowchart LR
   (`tsconfig.json`) and the E2E suite (`tests/tsconfig.json`). The **8 structural lint gates**
   (`npm run lint`) run in `validate.yml`'s `lint` job, not here.
 - **unit** (`test.yml:unit`, "Unit (Vitest)") — `npm run test` (the co-located Vitest unit
-  suite — **68 files / 1,655 cases**, node env, fully offline: committed fixtures only, no
-  network, no live HA, no browser). The Rollup release path is not exercised here.
+  suite — **69 files / 1,784 cases**, node env, fully offline: committed fixtures only, no
+  network, no live HA, no browser). The Rollup release path is not exercised here. The job then
+  runs **`npm run test:census`** (the test-inventory gate — see §Test-census gate);
+  `playwright test --list` needs no browser binaries, so the census check runs here without the
+  E2E job's chromium install.
 - **test** (`test.yml:test`, "E2E (Playwright)") — `npm run test:e2e` (Playwright drives the
-  offline `demo/` mock-hass harness — **298 cases / 24 specs (23 active by default;
+  offline `demo/` mock-hass harness — **309 cases / 24 specs (23 active by default;
   `visual.spec.ts` under `VISUAL=1`)**). On CI the config
   auto-enables `retries:2`, `workers:2`, `forbidOnly`. Caches `~/.cache/ms-playwright`,
   installs chromium, then uploads `playwright-report/` + `test-results/` (HTML report,
@@ -91,6 +94,9 @@ Single `build` job (`release.yml:build`), Node 20, triggered on `release: publis
    version comes from `CARD_VERSION` (not stamped from the tag); the assertion in step 2
    guarantees the tag already agrees with it, so no stamping is needed.
 
+This path has run for real at **v1.0.0** (2026-07-12): the published tag `v1.0.0` cleared the
+step-2 assertion and the job attached the CI-built `dist/tesla-card.js` to the GitHub Release.
+
 ---
 
 ## The 8 structural lint gates
@@ -114,12 +120,32 @@ type-lint, and these gates are the structural/policy lint.
 
 ---
 
+## Test-census gate
+
+Separate from `npm run lint` and run as its own ladder step (`npm run test:census` →
+`scripts/lint/test-census.mjs`): a mechanical **test-inventory** check. It recomputes the live
+tree's numbers and fails if they drift from the committed snapshot in
+[`tests/test-census.json`](../tests/test-census.json):
+
+- **`unitTests`** — collected Vitest cases (`vitest list`) — currently **1,784**.
+- **`e2eTests`** — the Playwright default-grep total (`playwright test --list`, `@visual`
+  excluded to match `npm run test:e2e`) — currently **309**.
+- **`e2eSpecFiles`** — the sorted `tests/e2e/**/*.spec.ts` list — currently **24 files**.
+
+It invokes the test runners (a few seconds, mostly Vitest collection), so it lives OUTSIDE the 8
+fast static gates. It runs in `test.yml`'s **`unit`** job (right after `npm run test`) and in
+`scripts/ci-local.sh`. Add or remove a test / e2e spec and it goes red until you regenerate the
+snapshot in the same change — `npm run test:census -- --write` — and that regenerated census is
+the ground truth a story's File List / Dev Record transcribes from.
+
+---
+
 ## Quality gates
 
 A change is green when **every** job above passes:
 
 - **Type gate** (`Type-check`)
-- **Unit gate** (`Unit (Vitest)`)
+- **Unit gate** (`Unit (Vitest)`) — also runs the `test:census` inventory check
 - **E2E gate** (`E2E (Playwright)`) — 100% of the suite must pass (no partial-pass threshold;
   Playwright exits non-zero on any failure → the job fails). The 2 opt-in `@visual` baseline
   specs are **excluded** from the default gate (`grepInvert: /@visual/`); opt in with
@@ -158,8 +184,9 @@ gh api -X PUT repos/mlmeehan/tesla-card/branches/main/protection \
 
 | Command | Mirrors |
 |---|---|
-| `npm run ci:local` (`scripts/ci-local.sh`) | The whole gate: `npm ci` → typecheck → typecheck:e2e → `npm run lint` (all 8 gates) → build + bundle-exists check → `CI=1` e2e |
+| `npm run ci:local` (`scripts/ci-local.sh`) | The whole gate: `npm ci` → typecheck → typecheck:e2e → `npm run lint` (all 8 gates) → `npm run test:census` → build + bundle-exists check → `CI=1` e2e |
 | `npm run lint` | The `validate.yml` `Structural gates (lint)` job (all 8 gates, in order) |
+| `npm run test:census` (`scripts/lint/test-census.mjs`) | The `unit` job's inventory check — live counts vs `tests/test-census.json` |
 | `npm run test:e2e:burn-in` (`scripts/burn-in.sh`) | The `burn-in` job (`--repeat-each=10 --retries=0`, one server session); pass a count: `./scripts/burn-in.sh 20` |
 | `npm run test:e2e` | The `test` job's E2E run |
 | `npm run test` | The `unit` job (Vitest) |
@@ -169,8 +196,7 @@ gh api -X PUT repos/mlmeehan/tesla-card/branches/main/protection \
 
 > **Stale echoes (harmless):** `ci-local.sh` prints a banner naming only 5 of the 8 gates, but
 > it runs `npm run lint` (all 8). Same for the comment block in `validate.yml`'s `lint` job,
-> which names only 6 — it predates `token-defined` + `no-planning-artifacts`. The chain itself
-> is the source of truth.
+> which enumerates 7 — it omits `token-defined`. The chain itself is the source of truth.
 
 ### The native pre-commit hook
 
@@ -259,6 +285,9 @@ The only optional secret is `SLACK_WEBHOOK_URL` — see Notifications.
 - **`forbidOnly` failure** — a `test.only`/`describe.only` was committed; remove it.
 - **`version-sync` fails on release** — the published tag must be `v${version}` and
   `package.json` `version` must equal `src/const.ts` `CARD_VERSION`; bump both together.
+- **`test:census` fails** — you added or removed a test or an e2e spec, so the live tree drifted
+  from `tests/test-census.json`; regenerate it in the same change with
+  `npm run test:census -- --write`.
 - **Lint gate fails locally** — run the single offending gate directly, e.g.
   `node scripts/lint/token-defined.mjs`; each prints a greppable `FAIL` line.
 
@@ -266,7 +295,8 @@ _Burn-in/caching/artifact strategy follows the TEA `ci-burn-in` knowledge fragme
 
 ---
 
-_Regenerated 2026-06-24 by an exhaustive `document-project` rescan, reflecting Epics 9–11.
-Verified against `package.json`, `src/const.ts`, `hacs.json`, the three workflows, the 8
-`scripts/lint/*.mjs` gates, `scripts/ci-local.sh`, `scripts/hooks/pre-commit`,
+_Refreshed 2026-07-20 — surgical drift-reconciliation for the **v1.0.0** release and the
+test-census gate. Verified against `package.json`, `src/const.ts`, `hacs.json`,
+`tests/test-census.json`, the three workflows, the 8 `scripts/lint/*.mjs` gates plus
+`scripts/lint/test-census.mjs`, `scripts/ci-local.sh`, `scripts/hooks/pre-commit`,
 `scripts/burn-in.sh`, and `scripts/profiler/README.md`._

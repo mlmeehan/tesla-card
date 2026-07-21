@@ -1,10 +1,11 @@
 # tesla-card — Development Guide
 
-**Repo:** `tesla-card/` (public, standalone git repo) · **Date:** 2026-06-24 (Epics 9–11 doc regeneration)
+**Repo:** `tesla-card/` (public, standalone git repo) · **Date:** 2026-07-20 (post-Epics 13–17 / v1.0.0 drift-reconciliation)
 
 How to build, verify, preview, and release the card. Verification is **gate-based**: `typecheck` +
-the **8-gate `npm run lint` chain** + `build`, backed by a co-located **Vitest** unit suite and a
-demo-driven **Playwright** E2E suite over a shared demo harness (§3).
+the **8-gate `npm run lint` chain** + the separate **`test:census`** inventory gate + `build`, backed
+by a co-located **Vitest** unit suite and a demo-driven **Playwright** E2E suite over a shared demo
+harness (§3).
 
 ---
 
@@ -21,7 +22,7 @@ npm ci          # lockfile-exact; or `npm install` to update the lock
 
 Runtime dependencies are **only** `lit ^3.2.1` + `@mdi/js ^7.4.47` (named icon imports only) — keep
 it that way. Everything else (`rollup`, `vite`, `vitest`, `@playwright/test`, `http-server`,
-`typescript ~5.7.3`, `tslib`) is `devDependencies`; none of it enters the shipped bundle.
+`typescript ^5.7.3`, `tslib`) is `devDependencies`; none of it enters the shipped bundle.
 
 ---
 
@@ -36,6 +37,7 @@ it that way. Everything else (`rollup`, `vite`, `vitest`, `@playwright/test`, `h
 | `npm run dev` | `vite` — dev server over `demo/` with HMR against live `src/` (see §3). |
 | `npm run test` | `vitest run` — the co-located unit suite (`src/**/*.test.ts`). **Must stay green.** |
 | `npm run test:watch` | `vitest` — same suite in watch mode for the inner loop. |
+| `npm run test:census` | `node scripts/lint/test-census.mjs` — the **test-inventory gate**: fails if the unit/e2e counts or the e2e spec-file list drift from `tests/test-census.json`. Regenerate with `npm run test:census -- --write`. |
 | `npm run lint` | the **8-gate** node-script chain (see below) — **not** ESLint; all merge-blocking. |
 | `npm run demo` | builds, then echoes a reminder to open `demo/index.html` (does **not** start a server). |
 | `npm run serve:demo` | `http-server . -a 127.0.0.1 -p 4173 -c-1 -s` — serves the repo root so the harness can import the built bundle. |
@@ -54,8 +56,8 @@ guard is wired on first install.
 → `version-sync` → `token-defined` → `no-planning-artifacts`. Each is a `scripts/lint/*.mjs` CLI;
 what each gate asserts lives in the `ci.md` guide linked above.
 
-> ⚠️ `typecheck`, `test`, `lint`, **and** `build` must all be green before any release. E2E
-> (`test:e2e`) runs in CI and is part of the gate too.
+> ⚠️ `typecheck`, `test`, `lint`, `test:census`, **and** `build` must all be green before any
+> release. E2E (`test:e2e`) runs in CI and is part of the gate too.
 
 ---
 
@@ -86,8 +88,10 @@ changing `src/` for the `serve:demo` path does.
 - `?scenario=` — `asleep` | `parked` | `plugged` | `apertures` | `unresolved` (default = awake/charging).
 - `?panel=<id>` — initial tab (default `charging`).
 - `?env=` — `default` (Garage Model Y / `garage_model_y_*` / `teslemetry`), `renamed` (My Tesla /
-  `my_tesla_*` / `tesla_fleet`), or `tesla_custom` (the costly distinct dialect) — proves name-based
-  resolution and the dialect seam.
+  `my_tesla_*` / `tesla_fleet`), or `tesla_custom` — proves name-based resolution and the dialect
+  seam. Since Story 17.1, `tesla_custom` renders the **complete** dialect shape (every divergent-alias
+  rename + the `time_charge_complete` timestamp special-case + the absent-twin deletions + the derived
+  boolean charging triple), so the harness is a genuine dialect test bed, not merely a probe trigger.
 - `?card=my-home` — mounts the full `tc-my-home` Scene (six cards + Gateway bus + weather vignette)
   as the sole subject for the NFR-1 profiler.
 - `?editor=1&setup=<bare|progress|done>&editortype=<vehicle|my-home>` — mounts the **real lazy
@@ -111,8 +115,8 @@ The shipped artifact is built by **Rollup**, not Vite — the dev loop and the r
 **decoupled by design** (do not fold the build into Vite). `rollup.config.mjs` takes a single input
 `src/tesla-card.ts` → `dist/tesla-card.js`, `format: 'es'`, `inlineDynamicImports: true`, with
 `terser` applied when not `ROLLUP_WATCH` (`compress.passes: 2`). The output is one self-contained ES
-bundle, **~346–360KB**, and `dist/` is **gitignored** (built in CI, attached to releases). Vite is
-dev/test only.
+bundle (**365,786 B** at v1.0.0, terser-minified), and `dist/` is **gitignored** (built in CI,
+attached to releases). Vite is dev/test only.
 
 **tsconfig contract** (load-bearing, do not flip): target `ES2021`, module `ESNext`,
 `moduleResolution: 'bundler'`, **`useDefineForClassFields: false`** (Lit decorators depend on this),
@@ -124,7 +128,7 @@ full `strict` plus `noUnusedLocals` / `noUnusedParameters` / `noImplicitOverride
 
 Two tiers, both driving the *real* code:
 
-**Unit — Vitest (co-located).** `src/**/*.test.ts`, **68 files / 1,655 cases**, configured inside
+**Unit — Vitest (co-located).** `src/**/*.test.ts`, **69 files / 1,784 cases**, configured inside
 `vite.config.ts` (`environment: 'node'`, `include: ['src/**/*.test.ts']`) — there is intentionally
 **no** separate `vitest.config.ts`. Pure `data/`/`flow/` hubs are node-testable; a DOM-touching test
 opts into jsdom **per file** with `// @vitest-environment jsdom` (jsdom is installed for exactly
@@ -135,7 +139,7 @@ seven committed `flow-*.json` fixtures asserted against its `FlowModel`). Each *
 a meta-test that shells out to its `scripts/lint/*.mjs` CLI (exit-0 clean, non-zero on a planted
 violation) and unit-tests the pure matcher; the structural gates parse the real TS AST.
 
-**E2E — Playwright (demo-driven, hermetic).** `tests/e2e/*.spec.ts`, **298 cases / 24 specs (23
+**E2E — Playwright (demo-driven, hermetic).** `tests/e2e/*.spec.ts`, **309 cases / 24 specs (23
 active by default; `visual.spec.ts` under `VISUAL=1`)**, drive
 the **built bundle** in the demo harness so they cover computed styles / layout / `@media` /
 `@container` / PointerEvents that jsdom can't. Config in `playwright.config.ts`: `testDir ./tests/e2e`,
@@ -151,6 +155,12 @@ E2E support lives under `tests/support/`:
 - `scenarios.ts` — scenario data + expected rendered strings (`72%`, `235 mi`, …) asserted once.
 - page objects (`page-objects/tesla-card.page.ts`, `tesla-editor.page.ts`) — selectors as behaviour.
   The card ships **no `data-testid`**; selectors are role/text/aria only and pierce nested shadow DOM.
+
+**Test census (a required dev-loop step since PR #7).** The unit/e2e counts above are
+machine-checked: `tests/test-census.json` is the authoritative inventory, and `npm run test:census`
+(CI's `Unit (Vitest)` job + `ci:local`) fails the build on any drift. **Adding or removing a unit test
+or an e2e spec means regenerating it — `npm run test:census -- --write` — and committing
+`tests/test-census.json` in the same change**, or CI goes red.
 
 **Visual baselines** are opt-in (`@visual`, **2 committed baselines**, `maxDiffPixelRatio 0.02`),
 excluded from the default gate via `grepInvert` unless `VISUAL=1`. Cross-OS AA differences make pixel
@@ -195,9 +205,9 @@ which role-keyed tables you must fill*.
 The **`generator`** role (Story 9.14) is the worked example. Adding `generator` to `ROLES` forced
 exactly these:
 
-- `data/registry.ts`: `FUNCTION_KEYS.generator = ['generator_power']`, `BUS_ORIENTATION.generator = 1`,
-  `POWER_KEY` entry. (`ENERGY_ROLES = Object.keys(POWER_KEY)`, so the node auto-flows through
-  binding → model → balance → ribbon → bus by construction.)
+- `data/registry.ts`: `FUNCTION_KEYS.generator = ['generator_power']`, `BUS_ORIENTATION.generator = 1`.
+- `flow/binding.ts`: the `POWER_KEY` entry. (`ENERGY_ROLES = Object.keys(POWER_KEY)`, so the node
+  auto-flows through binding → model → balance → ribbon → bus by construction.)
 - `data/energy.ts`: `EnergyEntities.generator_power?` + the resolution `RULES`.
 - renderer: `NODE_COLOR` / `NODE_ICON` (`mdiGeneratorStationary`).
 - editor: `NODE_LABELS`.
@@ -213,7 +223,33 @@ reads `hass.states` (plus the editor, under D7).
 
 ---
 
-## 8. CI gates
+## 8. Adding a dialect — the AR-4 pattern
+
+Integrations name the same Tesla facts differently (`tesla_fleet` vs the HACS `tesla_custom` vs
+Teslemetry vs Tessie). **Everything dialect-specific is quarantined in `src/data/dialect.ts`**, behind
+pure functions in tables — never an OO hierarchy, never a `=== 'Charging'` scattered across
+components. AR-4 (narrowed in Story 14.1): a fully-covered new dialect touches **up to four
+coordinated data structures there and nothing downstream** — no `resolve.ts` loop edit, no component
+or `flow/` churn. The resolver's one-time `detectDialect` consult is the single binding, proven by the
+co-located seam test.
+
+1. Add the platform to the `Integration` union **and** to `TESLA_PLATFORMS` in the leaf
+   `src/data/platforms.ts`. That shared set — not the dialect table — is what `detectDialect` scans, so
+   an unregistered platform is never probed; this is the one shared-constant edit, by design.
+2. One `DIALECTS` entry: `makeAdapter({ integration: '…' })`. Every other `AdapterSpec` field is
+   optional and **degrades to the fleet default** — a status override (`charging` / `lock` / `cover`
+   maps), `combine` / `split`, or `flipPower`.
+3. As needed: `DIALECT_ENTITY_ALIASES` (per-key `"domain.suffix"` renames where the dialect spells an
+   entity differently) and `DIALECT_ABSENT` (canonical keys the dialect never produces).
+
+`tesla_custom` is the fully-worked example (all three tables populated); `teslemetry` / `tessie` /
+bare `tesla` are present entries that degrade to the default dialect, fillable incrementally. The
+demo's `?env=tesla_custom` (§3) renders the complete shape, and the shape-asserting
+`charging-panel.spec.ts` rows are the drift alarm.
+
+---
+
+## 9. CI gates
 
 Three workflows run on push / PR (full guide: [`docs/ci.md`](./ci.md)), Node 20 from `.nvmrc`:
 
@@ -227,7 +263,8 @@ Three workflows run on push / PR (full guide: [`docs/ci.md`](./ci.md)), Node 20 
 
 **`.github/workflows/test.yml`** ("Test Pipeline") — the quality pipeline:
 - **`Type-check`** — `typecheck` + `typecheck:e2e`.
-- **`Unit (Vitest)`** — `npm run test`.
+- **`Unit (Vitest)`** — `npm run test`, then `npm run test:census` (the test-inventory gate;
+  `playwright test --list` needs no browser binaries, so it rides this job).
 - **`E2E (Playwright)`** — the demo-harness suite (browser-cached).
 - **`Burn-In (flaky detection)`** (PRs / weekly / manual) — repeats the suite with retries off.
 - **`Report`** — writes a stage-results summary to the run page.
@@ -236,16 +273,22 @@ Mirror the whole gate locally with `npm run ci:local`; repeat-stress it with `np
 
 ---
 
-## 9. Release flow
+## 10. Release flow
 
-`.github/workflows/release.yml` runs on `release: published`: `npm ci` → `npm run build` →
-`softprops/action-gh-release@v2` attaches `dist/tesla-card.js` to the release.
+**v1.0.0 shipped 2026-07-12**, so the path below is a real, exercised flow — not a future event.
+`.github/workflows/release.yml` runs on `release: published`: `npm ci` → **assert the published tag
+equals `v${version}`** (`node scripts/lint/version-sync.mjs --release-tag` — the release-time leg of
+the version-sync invariant, so a tag can never ship a bundle whose banner disagrees) → `npm run build`
+→ `softprops/action-gh-release@v2` attaches the CI-built `dist/tesla-card.js`. The card is distributed
+as a **HACS custom repository** (live); default-store submission is deliberately deferred.
 
 **Checklist (see `tesla-card/PUBLISHING.md`):**
 
 1. Bump **all three** to the same version: `package.json` `version`, `src/const.ts` `CARD_VERSION`,
-   and the git tag (`vX.Y.Z`). The `version-sync` gate enforces the first two (current: **0.3.0**).
-2. `npm run typecheck`, `npm run test`, `npm run lint`, and `npm run build` all green.
+   and the git tag (`vX.Y.Z`). The `version-sync` lint gate enforces the first two on every push
+   (current: **1.0.0**); `release.yml` asserts the tag matches them at publish time.
+2. `npm run typecheck`, `npm run test`, `npm run test:census`, `npm run lint`, and `npm run build`
+   all green (or just `npm run ci:local`, which mirrors the whole chain).
 3. Tag → create a GitHub Release → `release.yml` builds and attaches `tesla-card.js`.
 4. `hacs.json` `filename` must equal the released asset name (`tesla-card.js`).
 
@@ -256,7 +299,7 @@ Mirror the whole gate locally with `npm run ci:local`; repeat-stress it with `np
 
 ---
 
-## 10. Common gotchas
+## 11. Common gotchas
 
 - **`useDefineForClassFields: false`** in `tsconfig.json` is load-bearing for Lit's decorators —
   never flip it.
@@ -270,7 +313,7 @@ Mirror the whole gate locally with `npm run ci:local`; repeat-stress it with `np
 
 ---
 
-## 11. Consuming the card in Home Assistant
+## 12. Consuming the card in Home Assistant
 
 ```yaml
 type: custom:tesla-card
@@ -282,8 +325,13 @@ name: Model Y
 
 For the full user-facing options table and entity-resolution behaviour, see the card
 [`README.md`](../README.md); for the no-YAML setup experience, use the GUI editor (the card's
-**Edit** pencil in Lovelace).
+**Edit** pencil in Lovelace). Related docs: contributor workflow in
+[`CONTRIBUTING.md`](../CONTRIBUTING.md), runtime/setup issues in
+[`docs/troubleshooting.md`](./troubleshooting.md), release mechanics in
+[`PUBLISHING.md`](../PUBLISHING.md), and the gate details in [`docs/ci.md`](./ci.md).
 
 ---
 
-_Generated by the BMAD `document-project` workflow (exhaustive scan, 2026-06-24 — Epics 9–11 regeneration)._
+_Generated by the BMAD `document-project` workflow (exhaustive scan, 2026-06-24 — Epics 9–11
+regeneration); drift-reconciled 2026-07-20 against `main` @ `3b08d7f` (post-Epics 13–17, v1.0.0,
+census gate)._
