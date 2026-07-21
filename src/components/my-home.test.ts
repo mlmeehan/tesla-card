@@ -3052,3 +3052,435 @@ describe('Story 13.1 — routed overflow legs (analytical straight-vs-route)', (
     expect(leg.querySelector('path.sb-flow'), 'an idle leg carries no animated flow dash').toBeNull();
   });
 });
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Story 17.3 (D-LF-1) — non-uniform (D1) geometry: per-card leg derivation.
+// The 13.1 planner averaged the channel pitch from the FIRST/LAST primary centres —
+// correct only while `grid-auto-columns` forces uniform tracks (the 13.1 review's
+// Defer-D1). This stub family puts an OFFSET/WIDE middle primary in the band (CSS
+// cannot produce that today — the fixture IS the point) and pins the per-gap rule:
+// each straight leg lands on ITS OWN inter-primary channel (AC1), and the route
+// branch executes under non-uniform spacing with the FULL P6 machinery — ≥2
+// simultaneously-blocked legs, ascending-tap-x lane discipline, the outer-edge
+// tie-break, sibling-overflow clearance, a load-band route (AC2). The uniform grid
+// stays byte-identical (AC3 pin pair). Drive = the 13.1 mold: inject a model +
+// synthetic anchors, assert the RENDERED SVG (never the private planner).
+// ═══════════════════════════════════════════════════════════════════════════
+describe('Story 17.3 — non-uniform (D1) geometry: per-card leg derivation', () => {
+  type Rect = { left: number; top: number; width: number; height: number };
+
+  // The 13.1 `inject` sibling that ALSO takes the model — the instance rosters below
+  // need `generator:n`/`wall_connector:n` node ids the fixed `wrapModel` cannot carry.
+  const injectD1 = async (
+    el: Scene,
+    model: FlowModel,
+    anchors: Record<string, Rect>
+  ): Promise<void> => {
+    await flushGeometry();
+    const inst = el as unknown as {
+      _model: FlowModel;
+      _anchors: Record<string, unknown>;
+      _axis: string;
+      requestUpdate(): void;
+    };
+    inst._model = model;
+    inst._anchors = anchors;
+    inst._axis = 'x';
+    inst.requestUpdate();
+    await el.updateComplete;
+  };
+  const baseOf = (el: Scene, id: string): Element | null =>
+    legOf(el, id)?.querySelector('.gw-leg-base') ?? null;
+
+  // The 13.1 path helpers are describe-scoped up there; the purely-ADDITIVE test diff
+  // re-declares them here rather than editing the existing block.
+  const pathPoints = (d: string): { x: number; y: number }[] => {
+    const pts: { x: number; y: number }[] = [];
+    for (const t of d.match(/[MLQ][^MLQ]*/g) ?? []) {
+      const n = (t.slice(1).match(/-?\d+(?:\.\d+)?/g) ?? []).map(Number);
+      if (t[0] === 'Q') pts.push({ x: n[2], y: n[3] });
+      else pts.push({ x: n[0], y: n[1] });
+    }
+    return pts;
+  };
+  const pathClearsRect = (d: string, r: Rect): boolean => {
+    const pts = pathPoints(d);
+    for (let i = 0; i < pts.length - 1; i++) {
+      const a = pts[i];
+      const b = pts[i + 1];
+      const overlap =
+        Math.max(a.x, b.x) > r.left &&
+        Math.min(a.x, b.x) < r.left + r.width &&
+        Math.max(a.y, b.y) > r.top &&
+        Math.min(a.y, b.y) < r.top + r.height;
+      if (overlap) return false;
+    }
+    return true;
+  };
+  const endOf = (d: string): { x: number; y: number } => pathPoints(d).at(-1)!;
+
+  // Every instance node is ACTIVE (2.4 kW measured) — the arrowhead/pill re-asserts are
+  // active-gated, so the quiescent 0.02 mold above must never leak into this family.
+  const gen1Model = (): FlowModel =>
+    buildFlowModel([
+      { role: 'solar', kW: 3, provenance: 'measured' },
+      { role: 'powerwall', kW: 1, provenance: 'measured' },
+      { role: 'grid', kW: 2, provenance: 'measured' },
+      { role: 'generator', kW: 2.4, provenance: 'measured' },
+      { role: 'home', kW: 5, provenance: 'measured' },
+    ]);
+  const gen2Model = (): FlowModel =>
+    buildFlowModel([
+      { role: 'solar', kW: 3, provenance: 'measured' },
+      { role: 'powerwall', kW: 1, provenance: 'measured' },
+      { role: 'grid', kW: 2, provenance: 'measured' },
+      { role: 'generator', id: 'generator:1', kW: 2.4, provenance: 'measured' },
+      { role: 'generator', id: 'generator:2', kW: 2.4, provenance: 'measured' },
+      { role: 'home', kW: 5, provenance: 'measured' },
+    ]);
+  const gen3Model = (): FlowModel =>
+    buildFlowModel([
+      { role: 'solar', kW: 3, provenance: 'measured' },
+      { role: 'powerwall', kW: 1, provenance: 'measured' },
+      { role: 'grid', kW: 2, provenance: 'measured' },
+      { role: 'generator', id: 'generator:1', kW: 2.4, provenance: 'measured' },
+      { role: 'generator', id: 'generator:2', kW: 2.4, provenance: 'measured' },
+      { role: 'generator', id: 'generator:3', kW: 2.4, provenance: 'measured' },
+      { role: 'home', kW: 5, provenance: 'measured' },
+    ]);
+  const wc2Model = (): FlowModel =>
+    buildFlowModel([
+      { role: 'solar', kW: 3, provenance: 'measured' },
+      { role: 'powerwall', kW: 1, provenance: 'measured' },
+      { role: 'grid', kW: 2, provenance: 'measured' },
+      { role: 'home', kW: 5, provenance: 'measured' },
+      { role: 'wall_connector', id: 'wall_connector:1', kW: 2.4, provenance: 'measured' },
+      { role: 'wall_connector', id: 'wall_connector:2', kW: 2.4, provenance: 'measured' },
+    ]);
+
+  // Config drives cell expansion (`_orderedRows` expands instances from cfg; presence
+  // comes from the injected model) — the 9.7/9.8 instances precedent.
+  const GEN2_CFG: TeslaCardConfig = {
+    type: 'tc-my-home',
+    energy: { nodes: { instances: { generator: [{}, {}] } } },
+  };
+  const GEN3_CFG: TeslaCardConfig = {
+    type: 'tc-my-home',
+    energy: { nodes: { instances: { generator: [{}, {}, {}] } } },
+  };
+  // The car goes FIRST so the load band's overflow cell is the leg-bearing
+  // wall_connector:2, not the legless vehicle cell (9.3 order domain includes it).
+  const WC2_CFG: TeslaCardConfig = {
+    type: 'tc-my-home',
+    energy: {
+      nodes: {
+        instances: { wall_connector: [{}, {}] },
+        order: ['vehicle', 'home', 'wall_connector'],
+      },
+    },
+  };
+
+  // F1 — the D1 straight family: an OFFSET middle primary (powerwall w50 at c350) makes
+  // the gaps unequal {250, 150}; three overflow instances sit AT their true channels
+  // (in-gap 225/425 + beyond-last 575 = 500 + 150/2). Trunk cross y = 300.
+  const d1Anchors: Record<string, Rect> = {
+    solar: { left: 50, top: 0, width: 100, height: 50 }, // c100
+    powerwall: { left: 325, top: 0, width: 50, height: 50 }, // c350 — the offset middle
+    grid: { left: 450, top: 0, width: 100, height: 50 }, // c500
+    'generator:1': { left: 155, top: -200, width: 140, height: 50 }, // c225
+    'generator:2': { left: 355, top: -200, width: 140, height: 50 }, // c425
+    'generator:3': { left: 505, top: -200, width: 140, height: 50 }, // c575
+    home: { left: 250, top: 500, width: 100, height: 50 },
+    bus: { left: 0, top: 300, width: 0, height: 0 },
+  };
+
+  // F3 — a WIDE middle primary (powerwall spans 180..480) straddles the single overflow
+  // card's true channel mid(100,330) = 215 ⇒ the leg must ROUTE. Gaps {230, 280}.
+  const blockedMidAnchors: Record<string, Rect> = {
+    solar: { left: 50, top: 0, width: 100, height: 50 }, // c100
+    powerwall: { left: 180, top: 0, width: 300, height: 50 }, // c330 — WIDE middle
+    grid: { left: 560, top: 0, width: 100, height: 50 }, // c610
+    generator: { left: 145, top: -200, width: 140, height: 50 }, // c215 (its true channel)
+    home: { left: 250, top: 500, width: 100, height: 50 },
+    bus: { left: 0, top: 300, width: 0, height: 0 },
+  };
+
+  // F4 — BOTH overflow channels blocked (wide powerwall + very wide grid): gaps
+  // {290, 710}, per-gap outer lanes {-95, 1855}; both legs prefer -95 ⇒ contested.
+  const contestedAnchors: Record<string, Rect> = {
+    solar: { left: 50, top: 0, width: 100, height: 50 }, // c100
+    powerwall: { left: 180, top: 0, width: 420, height: 50 }, // c390 — wide [180..600]
+    grid: { left: 700, top: 0, width: 800, height: 50 }, // c1100 — very wide [700..1500]
+    'generator:1': { left: 175, top: -200, width: 140, height: 50 }, // c245 ∈ powerwall
+    'generator:2': { left: 675, top: -200, width: 140, height: 50 }, // c745 ∈ grid
+    home: { left: 250, top: 500, width: 100, height: 50 },
+    bus: { left: 0, top: 300, width: 0, height: 0 },
+  };
+
+  // F5 — the exact-tie geometry: gaps {400, 500}; from the blocked tap channel 300 the
+  // clearing lanes 750 (inner between-lane) and -150 (per-gap outer) are BOTH 450 away.
+  const tieAnchors: Record<string, Rect> = {
+    solar: { left: 50, top: 0, width: 100, height: 50 }, // c100
+    powerwall: { left: 280, top: 0, width: 440, height: 50 }, // c500 — wide [280..720]
+    grid: { left: 950, top: 0, width: 100, height: 50 }, // c1000
+    generator: { left: 230, top: -200, width: 140, height: 50 }, // c300
+    home: { left: 250, top: 500, width: 100, height: 50 },
+    bus: { left: 0, top: 300, width: 0, height: 0 },
+  };
+
+  // F6 — the sibling-clearance pair: wide GRID blocks gen:2's channel 470; gen:1 combs
+  // straight on 215. Control gen:1 h50; the tall variant (h140, y -200..-60) straddles
+  // the hop-y -75 and forces the route beyond it. Gaps {230, 280} ⇒ outers {-65, 900}.
+  const siblingAnchors = (gen1Height: number): Record<string, Rect> => ({
+    solar: { left: 50, top: 0, width: 100, height: 50 }, // c100
+    powerwall: { left: 280, top: 0, width: 100, height: 50 }, // c330
+    grid: { left: 460, top: 0, width: 300, height: 50 }, // c610 — wide, grid-side
+    'generator:1': { left: 145, top: -200, width: 140, height: gen1Height }, // c215
+    'generator:2': { left: 400, top: -200, width: 140, height: 50 }, // c470 ∈ grid
+    home: { left: 250, top: 500, width: 100, height: 50 },
+    bus: { left: 0, top: 300, width: 0, height: 0 },
+  });
+
+  // F7 — the LOAD-band route (the 13.1 P1 pathological stub): `home` hugs the trunk
+  // (y 305..345, x 230..690) between the trunk (300) and the overflow card (top 400),
+  // wide enough to block BOTH derivations' taps. Load primaries vehicle/home/wc:1;
+  // gaps {360, 240} ⇒ per-gap outer-left -130 = 50 - 360/2.
+  const loadBandAnchors: Record<string, Rect> = {
+    solar: { left: 50, top: 0, width: 100, height: 50 },
+    powerwall: { left: 250, top: 0, width: 100, height: 50 },
+    grid: { left: 450, top: 0, width: 100, height: 50 },
+    vehicle: { left: 50, top: 500, width: 100, height: 50 }, // c100 — load primary
+    home: { left: 230, top: 305, width: 460, height: 40 }, // c460 — the trunk-hugger
+    'wall_connector:1': { left: 650, top: 500, width: 100, height: 50 }, // c700
+    'wall_connector:2': { left: 210, top: 400, width: 140, height: 50 }, // c280 — overflow
+    bus: { left: 0, top: 300, width: 0, height: 0 },
+  };
+
+  // AC3 — the EXISTING uniform track (the 13.1 `clearAnchors` literals, re-declared
+  // additively): solar@100 · powerwall@300 · grid@500, every gap exactly 200.
+  const uniformAnchors: Record<string, Rect> = {
+    solar: { left: 50, top: 0, width: 100, height: 50 },
+    powerwall: { left: 250, top: 0, width: 100, height: 50 },
+    grid: { left: 450, top: 0, width: 100, height: 50 },
+    generator: { left: 130, top: -200, width: 140, height: 50 }, // measured centre 200
+    home: { left: 250, top: 500, width: 100, height: 50 },
+    bus: { left: 0, top: 300, width: 0, height: 0 },
+  };
+
+  test('AC1 (D1) — OFFSET middle primary (gaps 250/150): each straight leg lands on ITS OWN per-gap channel {225, 425, 575} with leg == card (Δ ≤ 1), never the averaged-pitch {200, 400, 600}', async () => {
+    const el = await mount(makeHass(states(awakeFx)), GEN3_CFG);
+    await injectD1(el, gen3Model(), d1Anchors);
+    const ids = ['generator:1', 'generator:2', 'generator:3'] as const;
+    const xs = ids.map((id) => {
+      const base = baseOf(el, id)!;
+      expect(base.tagName.toLowerCase(), `${id} drop is clear on both derivations`).toBe('line');
+      return Number(base.getAttribute('x1'));
+    });
+    // Per-gap channel centres: mid(100,350) = 225 · mid(350,500) = 425 · beyond-last
+    // stepped by the LAST actual gap: 500 + 0.5*150 = 575. (The averaged pitch 200
+    // would deliver 200/400/600 — every leg detached from its card.)
+    expect(xs).toEqual([225, 425, 575]);
+    // 13.1 AC3 extended beyond uniform pitch: each leg agrees with ITS card, Δ ≈ 0.
+    ids.forEach((id, i) => {
+      const r = d1Anchors[id];
+      expect(Math.abs(xs[i] - (r.left + r.width / 2)), `${id} leg == card`).toBeLessThanOrEqual(1);
+    });
+    expect(Number(baseOf(el, 'generator:1')!.getAttribute('x2'))).toBe(225); // one vertical line
+  });
+
+  test('AC1 (D1) — stale-anchor fence: an overflow anchor slid OFF its channel (centre 170) still plans the PRIMARY-derived 225 — never the stale 170, never the averaged 200 (DSD-2 holds under D1)', async () => {
+    const el = await mount(makeHass(states(awakeFx)), GEN3_CFG);
+    // gen:1 measured at a stale post-widen offset (centre 170) — the derivation must
+    // NEVER read the overflow card's own x (the forbidden naive rewrite).
+    await injectD1(el, gen3Model(), {
+      ...d1Anchors,
+      'generator:1': { left: 100, top: -200, width: 140, height: 50 }, // centre 170
+    });
+    const base = baseOf(el, 'generator:1')!;
+    expect(base.tagName.toLowerCase()).toBe('line');
+    const x = Number(base.getAttribute('x1'));
+    // EXACT assert — the fence anchor sits off-channel BY DESIGN, so the Δ≤1-vs-own-
+    // anchor template of the row above must not apply here.
+    expect(x).toBe(225);
+    expect(x).not.toBe(170); // never the overflow card's own (stale) centre
+    expect(x).not.toBe(200); // never the averaged-pitch interpolation
+  });
+
+  test('AC2(a) (D1) — a WIDE middle primary blocks the per-gap channel 215: the leg ROUTES to the per-gap outer lane -65 with two 8px elbows, clears every card box, carries arrowhead + pill, and NO identity token (single instance)', async () => {
+    const el = await mount(makeHass(states(awakeFx)));
+    await injectD1(el, gen1Model(), blockedMidAnchors);
+    const base = baseOf(el, 'generator')!;
+    expect(base.tagName.toLowerCase()).toBe('path'); // blocked ⇒ routed
+    const d = base.getAttribute('d') ?? '';
+    // PARSED-shape elbow pin (never a verbatim d-string compare): tap 215 → drop to the
+    // gap (-83, then the 8px arc onto -75) → hop to the claimed lane → drop to the trunk.
+    // The lane is the PER-GAP outer -65 = 50 - 230/2 (today's averaged pitch would land
+    // -77.5, and its 215 between-lane fails the ≥2R gate at tap 227.5: |Δ| = 12.5 < 16).
+    expect(pathPoints(d)).toEqual([
+      { x: 215, y: -150 },
+      { x: 215, y: -83 },
+      { x: 207, y: -75 },
+      { x: -57, y: -75 },
+      { x: -65, y: -67 },
+      { x: -65, y: 300 },
+    ]);
+    // Exactly two quarter-arc elbows, each a LEG_ELBOW_R = 8px offset in ONE axis.
+    const arcs = d.match(/Q[^MLQ]*/g) ?? [];
+    expect(arcs).toHaveLength(2);
+    for (const arc of arcs) {
+      const [cx, cy, ex, ey] = (arc.match(/-?\d+(?:\.\d+)?/g) ?? []).map(Number);
+      expect(Math.abs(ex - cx) + Math.abs(ey - cy), `elbow arc ${arc} is an 8px quarter-arc`).toBe(8);
+    }
+    // AC2 — no path segment enters ANY card box in the band.
+    for (const [id, r] of Object.entries(blockedMidAnchors)) {
+      if (id === 'bus') continue;
+      expect(pathClearsRect(d, r), `routed path must not enter ${id}`).toBe(true);
+    }
+    const leg = legOf(el, 'generator')!;
+    expect(leg.querySelector('.gw-head')).not.toBeNull(); // active ⇒ routed-only arrowhead
+    expect(leg.querySelector('.gw-pill-txt')?.textContent).toContain('2.4');
+    // Single-instance roster: id === role ⇒ the `dup` guard renders NO token on this row.
+    expect(leg.querySelector('.gw-leg-id')).toBeNull();
+  });
+
+  test('AC2(b) (D1) — TWO simultaneously-blocked legs claim DISTINCT lanes by the ascending-tap-x greedy: the contested nearest lane -95 goes to the LEFTMOST tap (gen:1) and gen:2 takes 1855; each identity token re-anchors to its tap', async () => {
+    const el = await mount(makeHass(states(awakeFx)), GEN2_CFG);
+    await injectD1(el, gen2Model(), contestedAnchors);
+    const b1 = baseOf(el, 'generator:1')!;
+    const b2 = baseOf(el, 'generator:2')!;
+    expect(b1.tagName.toLowerCase()).toBe('path'); // channel 245 ∈ wide powerwall
+    expect(b2.tagName.toLowerCase()).toBe('path'); // channel 745 ∈ very wide grid
+    const e1 = endOf(b1.getAttribute('d') ?? '');
+    const e2 = endOf(b2.getAttribute('d') ?? '');
+    // BOTH legs prefer -95 (gen:1 |340| < |1610|; gen:2 |840| < |1110|): the ascending-
+    // tap-x walk processes gen:1 (tap 245) first, so IT claims the contested lane and
+    // gen:2 falls to the far outer 1855 — a descending order would swap the pair.
+    expect([e1.x, e2.x]).toEqual([-95, 1855]);
+    expect(new Set([e1.x, e2.x]).size).toBe(2); // AC4 lane discipline: no shared lane
+    // Dup-id roster (DSD-4): each ROUTED leg re-anchors its ordinal token to the TAP.
+    const t1 = legOf(el, 'generator:1')!.querySelector('.gw-leg-id')!;
+    const t2 = legOf(el, 'generator:2')!.querySelector('.gw-leg-id')!;
+    expect(t1.textContent).toBe('1');
+    expect(Number(t1.getAttribute('x'))).toBe(e1.x + 13);
+    expect(t2.textContent).toBe('2');
+    expect(Number(t2.getAttribute('x'))).toBe(e2.x + 13);
+  });
+
+  test('AC2(c) (D1) — two clearing lanes EXACTLY equidistant from the tap: the tie breaks TOWARD THE OUTER EDGE (claims -150, farther from the band centre), never the inner 750', async () => {
+    const el = await mount(makeHass(states(awakeFx)));
+    await injectD1(el, gen1Model(), tieAnchors);
+    // The tie itself, derived in-body from the fixture rects (not a title claim): the
+    // inner between-lane and the per-gap outer sit the SAME 450px from the tap channel.
+    const c = (r: Rect): number => r.left + r.width / 2;
+    const inner = (c(tieAnchors.powerwall) + c(tieAnchors.grid)) / 2;
+    const outer = tieAnchors.solar.left - (c(tieAnchors.powerwall) - c(tieAnchors.solar)) / 2;
+    const tap = (c(tieAnchors.solar) + c(tieAnchors.powerwall)) / 2;
+    expect(inner).toBe(750);
+    expect(outer).toBe(-150);
+    expect(Math.abs(inner - tap)).toBe(Math.abs(outer - tap)); // the exact 450 == 450 tie
+    const base = baseOf(el, 'generator')!;
+    expect(base.tagName.toLowerCase()).toBe('path'); // channel 300 ∈ wide powerwall
+    const pts = pathPoints(base.getAttribute('d') ?? '');
+    // laneKey's -|lane - bandCentre| term picks the lane FARTHER from the band centre
+    // 550. (Today's averaged pitch taps at 325 ⇒ distances 500 vs 425 — no tie exists,
+    // and the inner 750 wins outright; the per-gap tap 300 is what creates the tie.)
+    expect({ start: pts[0].x, end: pts.at(-1)!.x }).toEqual({ start: 300, end: -150 });
+    expect(pts.at(-1)!.x).not.toBe(750); // the tie must never fall inward
+  });
+
+  test('AC2(d) (D1) — sibling pair CONTROL: straight gen:1 combs its channel (x1 215) while blocked gen:2 routes to end.x 215 — the SAME x side by side (the ACCEPTED lane-share degeneracy)', async () => {
+    const el = await mount(makeHass(states(awakeFx)), GEN2_CFG);
+    await injectD1(el, gen2Model(), siblingAnchors(50));
+    const b1 = baseOf(el, 'generator:1')!;
+    const b2 = baseOf(el, 'generator:2')!;
+    expect(b1.tagName.toLowerCase()).toBe('line'); // its per-gap channel 215 is clear
+    expect(b2.tagName.toLowerCase()).toBe('path'); // its channel 470 ∈ the wide grid
+    const pts = pathPoints(b2.getAttribute('d') ?? '');
+    // DELIBERATE coincidence, pinned KNOWINGLY: gen:2's nearest clearing lane IS gen:1's
+    // occupied channel — straight legs never enter the `claimed` set and `laneClears`
+    // tests card BOXES only, so the routed trunk drop lands on the straight sibling's
+    // channel (coincident verticals + stacked taps at (215, 300)). "Never through a
+    // card" is the ratified invariant; leg-over-leg is outside the lane model. An
+    // avoidance delta would be NEW design — ledgered on deferred-work, not built here.
+    expect({
+      straightX: Number(b1.getAttribute('x1')),
+      routedStart: pts[0].x, // per-gap channel mid(330,610) = 470 (averaged pitch: 482.5)
+      routedEnd: pts.at(-1)!.x,
+    }).toEqual({ straightX: 215, routedStart: 470, routedEnd: 215 });
+  });
+
+  test('AC2(d) (D1) — a TALL sibling overflow card (h140) straddling the hop-y rejects BOTH near lanes (215, -65): the route lands beyond it at 900 and clears the sibling box', async () => {
+    const el = await mount(makeHass(states(awakeFx)), GEN2_CFG);
+    const anchors = siblingAnchors(140); // gen:1 spans y -200..-60 — a taller card type
+    await injectD1(el, gen2Model(), anchors);
+    const b2 = baseOf(el, 'generator:2')!;
+    expect(b2.tagName.toLowerCase()).toBe('path');
+    const d = b2.getAttribute('d') ?? '';
+    const end = endOf(d);
+    // The hop rides gapY -75, inside the tall sibling's body (y -200..-60): every
+    // leftward lane's hop crosses it, so the leg lands at the far per-gap outer
+    // 900 = 760 + 280/2 (the averaged pitch would land 887.5).
+    expect(end.x).toBe(900);
+    expect(end.x).not.toBe(215); // the control's lane — its hop now pierces the sibling
+    expect(end.x).not.toBe(-65); // the near outer — same piercing hop
+    // AC2 sibling-overflow clearance: the winning path never enters the tall card box.
+    expect(pathClearsRect(d, anchors['generator:1'])).toBe(true);
+  });
+
+  test('AC2(e) (D1) — LOAD band (dir -1, facing = cross): a trunk-hugging blocker forces the route — start 280 (per-gap channel), hop at gapY 350 between the card top and the trunk, end at the per-gap outer -130, clearing the blocker', async () => {
+    const el = await mount(makeHass(states(awakeFx)), WC2_CFG);
+    await injectD1(el, wc2Model(), loadBandAnchors);
+    const base = baseOf(el, 'wall_connector:2')!;
+    // The classification drop (400 → 300) pierces `home` (y 305..345) at BOTH taps
+    // (280 per-gap AND 250 averaged) — the blocker is wide by design so the red stays
+    // route-shaped, differing in VALUES only.
+    expect(base.tagName.toLowerCase()).toBe('path');
+    const d = base.getAttribute('d') ?? '';
+    const pts = pathPoints(d);
+    expect({ start: pts[0], end: pts.at(-1) }).toEqual({
+      start: { x: 280, y: 400 }, // per-gap mid(100,460); the averaged pitch taps 250
+      end: { x: -130, y: 300 }, // per-gap outer 50 - 360/2; the averaged pitch: -100
+    });
+    // The route drops UP — card top 400 → the hop in the card-top/trunk gap at
+    // gapY = (400 + 300)/2 = 350 (the `facing = cross` branch: on a load band the
+    // overflow row is on the TRUNK side, no primary between) → the trunk at 300.
+    const ys = pts.map((p) => p.y);
+    expect(ys[0]).toBe(400);
+    expect(pts[2].y).toBe(350); // the hop entry rides gapY
+    expect(pts[3].y).toBe(350); // ... and the hop exit
+    expect(ys.at(-1)).toBe(300);
+    for (let i = 1; i < ys.length; i++) expect(ys[i]).toBeLessThanOrEqual(ys[i - 1]);
+    // AC2: hop + both drops clear the trunk-hugging blocker.
+    expect(pathClearsRect(d, loadBandAnchors.home)).toBe(true);
+  });
+
+  test('AC3 — uniform pin: on the uniform 100/300/500 grid the straight overflow x stays EXACTLY 200 (per-gap reduces algebraically to the interpolation when every gap is equal)', async () => {
+    const el = await mount(makeHass(states(awakeFx)));
+    await injectD1(el, gen1Model(), uniformAnchors);
+    const base = baseOf(el, 'generator')!;
+    expect(base.tagName.toLowerCase()).toBe('line');
+    // Integer fixture coordinates ⇒ the equivalence is float-EXACT, so toBe not closeTo:
+    // mid(100, 300) = 200 == p0 + pitch/2 = 100 + 100.
+    expect(Number(base.getAttribute('x1'))).toBe(200);
+    expect(Number(base.getAttribute('x2'))).toBe(200);
+  });
+
+  test('AC3 — uniform pin: the wide-solar BLOCKED variant keeps its FULL routed d byte-identical (uniform-pitch route plans are untouched by the per-gap derivation)', async () => {
+    const el = await mount(makeHass(states(awakeFx)));
+    // CENTRE-PRESERVING premise (do not reshape this fixture): the wide solar
+    // {left:-100, width:400} KEEPS centre 100, so the gaps stay {200,200} AND the
+    // outer-left lane stays -200 under BOTH derivations — exactly what makes this a
+    // valid byte-identity pin across the change.
+    await injectD1(el, gen1Model(), {
+      ...uniformAnchors,
+      solar: { left: -100, top: 0, width: 400, height: 50 },
+    });
+    const base = baseOf(el, 'generator')!;
+    expect(base.tagName.toLowerCase()).toBe('path');
+    // Captured VERBATIM from the pre-change run (Task 1.3) — the routed-plan
+    // byte-identity witness under uniform pitch.
+    expect(base.getAttribute('d')).toBe(
+      'M 200 -150 L 200 -83 Q 200 -75 208 -75 L 392 -75 Q 400 -75 400 -67 L 400 300'
+    );
+  });
+});
